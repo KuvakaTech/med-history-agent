@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.local.example
+node_modules/
+.next/
+out/
+.turbo/
+npm-debug.log*
+yarn-error.log*
+*.log

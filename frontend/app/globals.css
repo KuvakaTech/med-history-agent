@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-[#f5f4ff] text-gray-900;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white/80 backdrop-blur border border-white rounded-2xl p-6 shadow-lg shadow-indigo-500/5;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500
+           text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200
+           shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40
+           disabled:opacity-50 disabled:cursor-not-allowed active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply bg-white hover:bg-slate-50 text-slate-700 font-medium
+           px-5 py-2.5 rounded-xl border border-slate-200 transition-all duration-150
+           shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-slate-200 bg-white focus:border-indigo-400
+           focus:ring-4 focus:ring-indigo-500/10 outline-none px-4 py-3
+           text-gray-900 placeholder-gray-400 transition-all duration-200 shadow-sm;
+  }
+
+  .flag-critical {
+    @apply bg-red-50 border-l-4 border-red-500 rounded-xl p-3 text-red-800 text-sm font-medium;
+  }
+  .flag-red {
+    @apply bg-amber-50 border-l-4 border-amber-400 rounded-xl p-3 text-amber-800 text-sm font-medium;
+  }
+  .flag-important {
+    @apply bg-yellow-50 border-l-4 border-yellow-400 rounded-xl p-3 text-yellow-800 text-sm font-medium;
+  }
+  .flag-note {
+    @apply bg-sky-50 border-l-4 border-sky-400 rounded-xl p-3 text-sky-800 text-sm font-medium;
+  }
+}
+
+/* ── Orb glow rings ── */
+@keyframes ring-expand {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.ring-1 { animation: ring-expand 1.6s ease-out infinite; }
+.ring-2 { animation: ring-expand 1.6s ease-out infinite 0.4s; }
+.ring-3 { animation: ring-expand 1.6s ease-out infinite 0.8s; }
+
+/* ── Waveform bars ── */
+@keyframes wave-bar {
+  0%, 100% { height: 5px; }
+  50% { height: 28px; }
+}
+.bar-1 { height: 5px; animation: wave-bar 0.65s ease-in-out infinite 0s; }
+.bar-2 { height: 5px; animation: wave-bar 0.65s ease-in-out infinite 0.1s; }
+.bar-3 { height: 5px; animation: wave-bar 0.65s ease-in-out infinite 0.2s; }
+.bar-4 { height: 5px; animation: wave-bar 0.65s ease-in-out infinite 0.1s; }
+.bar-5 { height: 5px; animation: wave-bar 0.65s ease-in-out infinite 0s; }
+
+/* ── Orb idle breathing ── */
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+.orb-breathe { animation: orb-breathe 3s ease-in-out infinite; }
+
+/* ── Orb active pulse ── */
+@keyframes orb-speak {
+  0%, 100% { transform: scale(1.06); }
+  50% { transform: scale(1.12); }
+}
+.orb-speak { animation: orb-speak 0.5s ease-in-out infinite; }
+
+/* ── Float ── */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.float { animation: float 4s ease-in-out infinite; }
+
+/* ── Fade slide up ── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.4s ease-out forwards; }
+
+/* ── Shimmer gradient background ── */
+@keyframes shimmer-move {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.shimmer-bg {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed, #06b6d4, #4f46e5);
+  background-size: 300% 300%;
+  animation: shimmer-move 6s ease infinite;
+}

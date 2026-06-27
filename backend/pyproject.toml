@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "kuvaka-backend"
+version = "1.0.0"
+description = "kuvaka Clinical AI — production backend"
+authors = []
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+fastapi = "^0.115.6"
+uvicorn = {extras = ["standard"], version = "^0.30.0"}
+pydantic = "^2.7.0"
+pydantic-settings = "^2.3.0"
+anthropic = "^0.40.0"
+google-genai = "^2.10.0"
+motor = "^3.5.0"
+boto3 = "^1.34.0"
+deepgram-sdk = "^3.7.0"
+python-multipart = "^0.0.20"
+python-dotenv = "^1.0.1"
+httpx = "^0.27.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.1"
+pytest-asyncio = "^0.23.0"
+black = "^24.4.2"
+ruff = "^0.4.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

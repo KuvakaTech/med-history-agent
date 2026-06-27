@@ -1,0 +1,58 @@
+# ── Secrets (never commit these) ──
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.local.example
+*.local
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.log
+
+# ── Node / Next.js ──
+node_modules/
+.next/
+out/
+.turbo/
+.vercel/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDEs ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Docker ──
+*.override.yml
+
+# ── Misc ──
+*.tmp
+*.bak

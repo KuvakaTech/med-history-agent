@@ -1,0 +1,55 @@
+version: "3.9"
+
+# Copy backend/.env.example → backend/.env and fill in your API keys before running.
+# See README.md for full setup instructions.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: kuvaka
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    # Create backend/.env from backend/.env.example before running
+    env_file:
+      - path: ./backend/.env
+        required: true
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: kuvaka
+      BACKEND_CORS_ALLOW_ALL: "false"
+      BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://backend:8001
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:
