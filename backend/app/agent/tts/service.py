@@ -1,7 +1,9 @@
-"""Deepgram TTS — returns MP3 bytes using the v7 async SDK."""
+"""Deepgram TTS — returns MP3 bytes via Deepgram REST API."""
 from __future__ import annotations
 
 import logging
+
+import httpx
 
 from app.core.config import settings
 
@@ -9,16 +11,15 @@ log = logging.getLogger(__name__)
 
 
 async def synthesize(text: str) -> bytes:
-    """Synthesize text to MP3 bytes using Deepgram TTS (SDK v7)."""
-    from deepgram import AsyncDeepgramClient
-
-    dg = AsyncDeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
-
-    chunks: list[bytes] = []
-    async for chunk in dg.speak.v1.audio.generate(
-        text=text,
-        model=settings.DEEPGRAM_TTS_MODEL,
-    ):
-        chunks.append(chunk)
-
-    return b"".join(chunks)
+    """Synthesize text to MP3 bytes using Deepgram TTS REST API."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"https://api.deepgram.com/v1/speak?model={settings.DEEPGRAM_TTS_MODEL}",
+            headers={
+                "Authorization": f"Token {settings.DEEPGRAM_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={"text": text},
+        )
+        response.raise_for_status()
+        return response.content
