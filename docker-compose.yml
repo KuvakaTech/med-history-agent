@@ -20,7 +20,6 @@ services:
       - 8.8.4.4
     environment:
       BACKEND_CORS_ALLOW_ALL: "false"
-      BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
 
   frontend:
     build:
