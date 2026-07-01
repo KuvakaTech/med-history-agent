@@ -42,7 +42,12 @@ export default function ProcessingScreen({ sessionId, onComplete }: Props) {
   const anyRunning = steps.some(s => s.state === "running");
 
   useEffect(() => {
-    const es = new EventSource(api.pipelineUrl(sessionId));
+    let es: EventSource;
+    let cancelled = false;
+
+    api.pipelineUrl(sessionId).then((url) => {
+      if (cancelled) return;
+      es = new EventSource(url);
 
     es.onmessage = (e) => {
       // Ignore SSE keepalive comments (they arrive as empty data)
@@ -68,15 +73,16 @@ export default function ProcessingScreen({ sessionId, onComplete }: Props) {
       }
     };
 
-    es.onerror = () => {
-      // Only show error if we haven't already completed
-      if (es.readyState !== EventSource.CLOSED) {
-        setError("Connection lost. Please refresh and try again.");
-        setSteps((prev) => prev.map((s) => s.state === "running" ? { ...s, state: "error" } : s));
-      }
-      es.close();
-    };
-    return () => es.close();
+      es.onerror = () => {
+        if (es.readyState !== EventSource.CLOSED) {
+          setError("Connection lost. Please refresh and try again.");
+          setSteps((prev) => prev.map((s) => s.state === "running" ? { ...s, state: "error" } : s));
+        }
+        es.close();
+      };
+    });
+
+    return () => { cancelled = true; es?.close(); };
   }, [sessionId]); // onComplete intentionally excluded — stable via ref above
 
   return (

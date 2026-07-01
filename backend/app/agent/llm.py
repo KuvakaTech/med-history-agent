@@ -55,13 +55,54 @@ async def complete_structured(
 async def stream_complete(
     prompt: str, system: str = "", fast: bool = True
 ) -> AsyncGenerator[str, None]:
-    """Stream text tokens. Uses fast model by default for low latency."""
-    if settings.GOOGLE_API_KEY:
-        async for token in _gemini_stream(prompt, system, fast=fast):
-            yield token
-    else:
-        async for token in _anthropic_stream(prompt, system, fast=fast):
-            yield token
+    """Stream text tokens. Groq active; Gemini/Anthropic paths kept for reference."""
+    async for token in _groq_stream(prompt, system):
+        yield token
+    # ── old paths (commented out, not removed) ──────────────────────────────
+    # if settings.GOOGLE_API_KEY:
+    #     async for token in _gemini_stream(prompt, system, fast=fast):
+    #         yield token
+    # else:
+    #     async for token in _anthropic_stream(prompt, system, fast=fast):
+    #         yield token
+
+
+# ─────────────────────────────────────────────
+# Groq  (OpenAI-compatible, used for streaming)
+# ─────────────────────────────────────────────
+
+async def _groq_stream(prompt: str, system: str) -> AsyncGenerator[str, None]:
+    import httpx
+
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        async with client.stream(
+            "POST",
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={"model": settings.GROQ_MODEL, "messages": messages, "stream": True, "temperature": 0.4},
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data.strip() == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                    delta = chunk["choices"][0]["delta"].get("content", "")
+                    if delta:
+                        yield delta
+                except Exception:
+                    continue
 
 
 # ─────────────────────────────────────────────

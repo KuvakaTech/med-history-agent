@@ -6,9 +6,11 @@ import json
 import uuid
 from typing import Any, AsyncGenerator, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from app.auth.deps import verify_token, verify_ws_token
 
 from app.agent.summarization.service import SummarizationService
 from app.agent.transcription.service import transcribe_bytes
@@ -44,6 +46,7 @@ class StartRequest(BaseModel):
     patient_age: Optional[int] = None
     patient_gender: Optional[str] = None
     chief_complaint: Optional[str] = None
+    patient_id: Optional[str] = None
 
 
 class StartResponse(BaseModel):
@@ -101,8 +104,8 @@ class OverrideRequest(BaseModel):
 # ─────────────────────────────────────────────
 
 
-async def _get_session(session_id: str) -> ConsultationContext:
-    ctx = await session_store.get(session_id)
+async def _get_session(session_id: str, user_id: str) -> ConsultationContext:
+    ctx = await session_store.get(session_id, user_id=user_id)
     if not ctx:
         raise HTTPException(status_code=404, detail="Session not found.")
     return ctx
@@ -198,25 +201,39 @@ async def _stream_answer_generator(
 
 
 @router.post("/start", response_model=StartResponse)
-async def start_consultation(body: StartRequest) -> StartResponse:
+async def start_consultation(body: StartRequest, user: dict = Depends(verify_token)) -> StartResponse:
+    patient_name = body.patient_name
+    patient_age = body.patient_age
+    patient_gender = body.patient_gender
+
+    if body.patient_id:
+        from app.clinical import patient_store
+        patient = await patient_store.get(patient_id=body.patient_id, doctor_id=user["sub"])
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found.")
+        patient_name = patient.name
+        patient_age = patient.age
+        patient_gender = patient.gender
+
     ctx = ConsultationContext(
         session_id=str(uuid.uuid4()),
         specialty=body.specialty,
         patient_language=body.patient_language,
-        patient_name=body.patient_name,
-        patient_age=body.patient_age,
-        patient_gender=body.patient_gender,
+        patient_name=patient_name,
+        patient_age=patient_age,
+        patient_gender=patient_gender,
         chief_complaint=body.chief_complaint,
+        patient_id=body.patient_id,
     )
     engine = LLMHistoryEngine(body.specialty, language=body.patient_language)
     opening = await engine.opening_question(
-        patient_name=body.patient_name,
-        patient_age=body.patient_age,
-        patient_gender=body.patient_gender,
+        patient_name=patient_name,
+        patient_age=patient_age,
+        patient_gender=patient_gender,
         chief_complaint=body.chief_complaint,
     )
     ctx.current_question = opening
-    await session_store.create(ctx)
+    await session_store.create(ctx, user_id=user["sub"])
 
     return StartResponse(
         session_id=ctx.session_id,
@@ -227,8 +244,8 @@ async def start_consultation(body: StartRequest) -> StartResponse:
 
 
 @router.get("/{session_id}", response_model=SessionStateResponse)
-async def get_session(session_id: str) -> SessionStateResponse:
-    ctx = await _get_session(session_id)
+async def get_session(session_id: str, user: dict = Depends(verify_token)) -> SessionStateResponse:
+    ctx = await _get_session(session_id, user["sub"])
     return SessionStateResponse(
         session_id=ctx.session_id,
         specialty=ctx.specialty.value,
@@ -243,8 +260,8 @@ async def get_session(session_id: str) -> SessionStateResponse:
 
 
 @router.post("/{session_id}/answer", response_model=AnswerResponse)
-async def submit_answer(session_id: str, body: AnswerRequest) -> AnswerResponse:
-    ctx = await _get_session(session_id)
+async def submit_answer(session_id: str, body: AnswerRequest, user: dict = Depends(verify_token)) -> AnswerResponse:
+    ctx = await _get_session(session_id, user["sub"])
     if ctx.current_stage != ConsultationStage.QUESTIONNAIRE:
         raise HTTPException(400, f"Session is in stage '{ctx.current_stage}', not questionnaire.")
     if not ctx.current_question:
@@ -253,12 +270,12 @@ async def submit_answer(session_id: str, body: AnswerRequest) -> AnswerResponse:
 
 
 @router.post("/{session_id}/answer-stream")
-async def submit_answer_stream(session_id: str, body: AnswerRequest):
+async def submit_answer_stream(session_id: str, body: AnswerRequest, user: dict = Depends(verify_token)):
     """
     SSE endpoint — streams question tokens then sends a done event.
     Events: {type:"token",text:"word"} ... {type:"done",next_question,history_complete,new_flags}
     """
-    ctx = await _get_session(session_id)
+    ctx = await _get_session(session_id, user["sub"])
     if ctx.current_stage != ConsultationStage.QUESTIONNAIRE:
         raise HTTPException(400, f"Session is in stage '{ctx.current_stage}', not questionnaire.")
     if not ctx.current_question:
@@ -272,9 +289,9 @@ async def submit_answer_stream(session_id: str, body: AnswerRequest):
 
 @router.post("/{session_id}/answer-audio", response_model=AnswerResponse)
 async def submit_answer_audio(
-    session_id: str, audio_file: UploadFile = File(...)
+    session_id: str, audio_file: UploadFile = File(...), user: dict = Depends(verify_token)
 ) -> AnswerResponse:
-    ctx = await _get_session(session_id)
+    ctx = await _get_session(session_id, user["sub"])
     if ctx.current_stage != ConsultationStage.QUESTIONNAIRE:
         raise HTTPException(400, f"Session is in stage '{ctx.current_stage}', not questionnaire.")
     if not ctx.current_question:
@@ -303,8 +320,8 @@ async def submit_answer_audio(
 
 
 @router.get("/{session_id}/qa-log", response_model=QALogResponse)
-async def get_qa_log(session_id: str) -> QALogResponse:
-    ctx = await _get_session(session_id)
+async def get_qa_log(session_id: str, user: dict = Depends(verify_token)) -> QALogResponse:
+    ctx = await _get_session(session_id, user["sub"])
     return QALogResponse(
         qa_log=[e.model_dump(mode="json") for e in ctx.qa_log],
         flags=[f.model_dump(mode="json") for f in ctx.flags],
@@ -314,8 +331,8 @@ async def get_qa_log(session_id: str) -> QALogResponse:
 
 
 @router.patch("/{session_id}/answer/{question_id}")
-async def edit_answer(session_id: str, question_id: str, body: EditAnswerRequest):
-    ctx = await _get_session(session_id)
+async def edit_answer(session_id: str, question_id: str, body: EditAnswerRequest, user: dict = Depends(verify_token)):
+    ctx = await _get_session(session_id, user["sub"])
     for entry in ctx.qa_log:
         if entry.question_id == question_id:
             entry.answer = body.answer.strip()
@@ -333,8 +350,8 @@ def _sse(event: str, data: Any) -> str:
     return f"data: {json.dumps({'event': event, **data})}\n\n"
 
 
-async def _pipeline_generator(session_id: str) -> AsyncGenerator[str, None]:
-    ctx = await session_store.get(session_id)
+async def _pipeline_generator(session_id: str, user_id: str) -> AsyncGenerator[str, None]:
+    ctx = await session_store.get(session_id, user_id=user_id)
     if not ctx:
         yield _sse("error", {"message": "Session not found"})
         return
@@ -413,9 +430,9 @@ async def _pipeline_generator(session_id: str) -> AsyncGenerator[str, None]:
 
 
 @router.get("/{session_id}/pipeline")
-async def run_pipeline(session_id: str):
+async def run_pipeline(session_id: str, user: dict = Depends(verify_ws_token)):
     return StreamingResponse(
-        _pipeline_generator(session_id),
+        _pipeline_generator(session_id, user["sub"]),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -425,8 +442,8 @@ async def run_pipeline(session_id: str):
 
 
 @router.post("/{session_id}/prescribe")
-async def prescribe(session_id: str, body: PrescribeRequest):
-    ctx = await _get_session(session_id)
+async def prescribe(session_id: str, body: PrescribeRequest, user: dict = Depends(verify_token)):
+    ctx = await _get_session(session_id, user["sub"])
     svc = PrescriptionService()
     ctx.prescription = await svc.prescribe(ctx, body.confirmed_diagnosis)
     ctx.current_stage = ConsultationStage.PRESCRIPTION
@@ -435,16 +452,16 @@ async def prescribe(session_id: str, body: PrescribeRequest):
 
 
 @router.post("/{session_id}/finalize")
-async def finalize(session_id: str):
-    ctx = await _get_session(session_id)
+async def finalize(session_id: str, user: dict = Depends(verify_token)):
+    ctx = await _get_session(session_id, user["sub"])
     ctx.current_stage = ConsultationStage.FINALIZED
     await session_store.update(ctx)
     return ctx.model_dump(mode="json")
 
 
 @router.post("/{session_id}/override")
-async def doctor_override(session_id: str, body: OverrideRequest):
-    ctx = await _get_session(session_id)
+async def doctor_override(session_id: str, body: OverrideRequest, user: dict = Depends(verify_token)):
+    ctx = await _get_session(session_id, user["sub"])
     original = getattr(ctx, body.field, None)
     ctx.overrides.append(
         DoctorOverride(
@@ -467,7 +484,11 @@ async def doctor_override(session_id: str, body: OverrideRequest):
 
 
 @router.websocket("/{session_id}/voice-stream")
-async def voice_stream(websocket: WebSocket, session_id: str) -> None:
+async def voice_stream(
+    websocket: WebSocket,
+    session_id: str,
+    user: dict = Depends(verify_ws_token),
+) -> None:
     """
     Binary audio chunks arrive from the browser while the user speaks.
     On "stop", we run R2 upload and Deepgram transcription concurrently,
@@ -475,7 +496,7 @@ async def voice_stream(websocket: WebSocket, session_id: str) -> None:
     """
     await websocket.accept()
 
-    ctx = await session_store.get(session_id)
+    ctx = await session_store.get(session_id, user_id=user["sub"])
     if not ctx:
         await websocket.send_json({"type": "error", "message": "Session not found"})
         await websocket.close(code=1008)
@@ -580,7 +601,7 @@ async def voice_stream(websocket: WebSocket, session_id: str) -> None:
     await websocket.close()
 
 
-@router.delete("/{session_id}")
+@router.delete("/{session_id}", dependencies=[Depends(verify_token)])
 async def end_session(session_id: str):
     await _get_session(session_id)
     await session_store.delete(session_id)

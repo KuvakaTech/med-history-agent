@@ -264,7 +264,8 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
     setupAnalyser(stream);
 
     const mime = detectMime();
-    const ws = new WebSocket(api.voiceStreamUrl(sessionId));
+    const wsUrl = await api.voiceStreamUrl(sessionId);
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
 

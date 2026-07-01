@@ -98,8 +98,8 @@ export default function ConsultationPage() {
         </div>
       </header>
 
-      {/* Critical flags banner */}
-      {flags.some(f => f.flag_type === "CRITICAL_RED_FLAG") && (
+      {/* Critical flags banner — only shown to doctor on review/results, not during patient Q&A */}
+      {screen !== "questionnaire" && flags.some(f => f.flag_type === "CRITICAL_RED_FLAG") && (
         <div className="bg-red-600 text-white text-xs font-semibold text-center py-2 px-4 flex items-center justify-center gap-2">
           🚨 Critical clinical alert detected — physician review required immediately
         </div>

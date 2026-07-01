@@ -1,20 +1,83 @@
 import type {
   AnswerResponse,
+  ConsultationSummary,
+  Patient,
   PrescriptionResult,
   QALogResponse,
   Specialty,
   StartResponse,
 } from "./types";
+import { setUser, clearAuth, type User } from "./auth";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8001";
 const API = `${BASE}/api/v1`;
 
+// ── Token management ──────────────────────────────────────────────────────────
+// Access token: in-memory only (15 min). Refresh token: httpOnly cookie (7 days).
+// On expiry /auth/refresh is tried first; if that fails the user must log in again.
+
+let _token: string | null = null;
+let _tokenExpiry: number = 0;
+
+interface TokenPayload {
+  access_token: string;
+  expires_in: number;
+  user: User;
+}
+
+function _cache(data: TokenPayload): string {
+  _token = data.access_token;
+  _tokenExpiry = Date.now() + (data.expires_in - 30) * 1000;
+  setUser(data.user);
+  return _token;
+}
+
+async function _refresh(): Promise<string> {
+  const res = await fetch(`${API}/auth/refresh`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error("refresh_failed");
+  return _cache(await res.json());
+}
+
+export async function getToken(): Promise<string> {
+  if (_token && Date.now() < _tokenExpiry) return _token;
+  return _refresh(); // throws if no valid refresh cookie → UI redirects to /login
+}
+
+// ── Base request helper ───────────────────────────────────────────────────────
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const token = await getToken();
+
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(body ? { "Content-Type": "application/json" } : {}),
+      Authorization: `Bearer ${token}`,
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  if (res.status === 401) {
+    _token = null;
+    const fresh = await _refresh();
+    const retry = await fetch(`${API}${path}`, {
+      method,
+      headers: {
+        ...(body ? { "Content-Type": "application/json" } : {}),
+        Authorization: `Bearer ${fresh}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!retry.ok) {
+      const err = await retry.json().catch(() => ({ detail: retry.statusText }));
+      throw new Error(err.detail || `HTTP ${retry.status}`);
+    }
+    return retry.json() as Promise<T>;
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || `HTTP ${res.status}`);
@@ -22,7 +85,71 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.json() as Promise<T>;
 }
 
+// ── API surface ───────────────────────────────────────────────────────────────
+
 export const api = {
+  // Auth
+  login: async (email: string, password: string): Promise<User> => {
+    const res = await fetch(`${API}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "Login failed.");
+    }
+    const data: TokenPayload = await res.json();
+    _cache(data);
+    return data.user;
+  },
+
+  register: async (name: string, email: string, password: string): Promise<User> => {
+    const res = await fetch(`${API}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ name, email, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "Registration failed.");
+    }
+    const data: TokenPayload = await res.json();
+    _cache(data);
+    return data.user;
+  },
+
+  logout: async (): Promise<void> => {
+    _token = null;
+    _tokenExpiry = 0;
+    clearAuth();
+    await fetch(`${API}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => {});
+  },
+
+  // Patients
+  createPatient: (name: string, age: number, gender?: string, phone?: string) =>
+    req<Patient>("POST", "/patients", { name, age, gender, phone }),
+
+  listPatients: () => req<{ patients: Patient[] }>("GET", "/patients"),
+
+  getPatient: (patientId: string) =>
+    req<Patient>("GET", `/patients/${patientId}`),
+
+  getPatientHistory: (patientId: string) =>
+    req<{ patient: Patient; sessions: ConsultationSummary[] }>(
+      "GET",
+      `/patients/${patientId}/history`
+    ),
+
+  updatePatient: (patientId: string, updates: Partial<Pick<Patient, "name" | "age" | "gender" | "phone">>) =>
+    req<Patient>("PATCH", `/patients/${patientId}`, updates),
+
+  // Consultations
   startConsultation: (
     specialty: Specialty,
     patientLanguage?: string,
@@ -30,6 +157,7 @@ export const api = {
     patientAge?: number,
     patientGender?: string,
     chiefComplaint?: string,
+    patientId?: string,
   ) =>
     req<StartResponse>("POST", "/consultation/start", {
       specialty,
@@ -38,16 +166,19 @@ export const api = {
       patient_age: patientAge || undefined,
       patient_gender: patientGender || undefined,
       chief_complaint: chiefComplaint || undefined,
+      patient_id: patientId || undefined,
     }),
 
   submitAnswer: (sessionId: string, answer: string) =>
     req<AnswerResponse>("POST", `/consultation/${sessionId}/answer`, { answer }),
 
   submitAudioAnswer: async (sessionId: string, blob: Blob): Promise<AnswerResponse> => {
+    const token = await getToken();
     const form = new FormData();
     form.append("audio_file", blob, "answer.wav");
     const res = await fetch(`${API}/consultation/${sessionId}/answer-audio`, {
       method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
       body: form,
     });
     if (!res.ok) {
@@ -81,9 +212,10 @@ export const api = {
     const ctrl = new AbortController();
     (async () => {
       try {
+        const token = await getToken();
         const res = await fetch(`${API}/consultation/${sessionId}/answer-stream`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ answer }),
           signal: ctrl.signal,
         });
@@ -114,9 +246,10 @@ export const api = {
 
   speak: async (text: string): Promise<string | null> => {
     try {
+      const token = await getToken();
       const res = await fetch(`${API}/note/speak`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ text }),
       });
       if (!res.ok) return null;
@@ -127,9 +260,14 @@ export const api = {
     }
   },
 
-  pipelineUrl: (sessionId: string) =>
-    `${API}/consultation/${sessionId}/pipeline`,
+  pipelineUrl: async (sessionId: string): Promise<string> => {
+    const token = await getToken();
+    return `${API}/consultation/${sessionId}/pipeline?token=${token}`;
+  },
 
-  voiceStreamUrl: (sessionId: string) =>
-    `${BASE.replace(/^http/, "ws")}/api/v1/consultation/${sessionId}/voice-stream`,
+  voiceStreamUrl: async (sessionId: string): Promise<string> => {
+    const token = await getToken();
+    const wsBase = BASE.replace(/^http/, "ws");
+    return `${wsBase}/api/v1/consultation/${sessionId}/voice-stream?token=${token}`;
+  },
 };

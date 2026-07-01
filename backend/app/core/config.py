@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"          # diagnosis, summary, completeness
     ANTHROPIC_FAST_MODEL: str = "claude-haiku-4-5-20251001"  # conversational turns
+    # Groq — used for streaming when key is set (fastest inference)
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # STT / TTS
     DEEPGRAM_API_KEY: str = ""
@@ -47,6 +50,17 @@ class Settings(BaseSettings):
 
     HOST: str = "0.0.0.0"
     PORT: int = 8001
+
+    # Auth
+    JWT_SECRET_KEY: str = ""                 # Secret used to sign JWTs (generate with: openssl rand -hex 32)
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 15             # Short-lived access token (OAuth2 standard)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7       # Long-lived refresh token stored in httpOnly cookie
+
+    # Rate limiting — requests per minute (per IP, per uvicorn worker)
+    RATE_LIMIT_DEFAULT: str = "60/minute"   # General API endpoints
+    RATE_LIMIT_AUTH: str = "10/minute"      # Token endpoint — tight to prevent brute force
+    RATE_LIMIT_VOICE: str = "20/minute"     # Audio / streaming endpoints
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

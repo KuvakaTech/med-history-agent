@@ -97,3 +97,25 @@ export type ConsultationScreen =
   | "review"
   | "processing"
   | "results";
+
+export interface Patient {
+  patient_id: string;
+  name: string;
+  age: number;
+  gender?: string;
+  phone?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConsultationSummary {
+  session_id: string;
+  specialty: string;
+  created_at: string;
+  current_stage: string;
+  chief_complaint?: string;
+  patient_name?: string;
+  summary?: Record<string, unknown>;
+  diagnosis?: DiagnosisResult;
+  prescription?: PrescriptionResult;
+}

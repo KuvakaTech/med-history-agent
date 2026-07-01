@@ -289,12 +289,7 @@ export default function QuestionnaireScreen({
         )}
       </div>
 
-      {/* Clinical flags */}
-      {recentFlags.length > 0 && (
-        <div className="space-y-2">
-          {recentFlags.map((f, i) => <FlagBadge key={i} flag={f} />)}
-        </div>
-      )}
+      {/* Clinical flags are intentionally hidden during patient Q&A — shown to doctor on review screen */}
 
       {/* Voice answer */}
       <div className="card space-y-3">

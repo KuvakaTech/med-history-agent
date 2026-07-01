@@ -116,3 +116,6 @@ class ConsultationContext(BaseModel):
 
     # R2 keys for stored audio files
     audio_keys: list[str] = []
+
+    # Patient record reference (set when consultation is linked to a patient)
+    patient_id: Optional[str] = None
