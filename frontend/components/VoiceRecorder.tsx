@@ -64,7 +64,7 @@ function LiveMicWaveform({ analyser }: { analyser: AnalyserNode | null }) {
       // Subtle dashed center baseline
       ctx.save();
       ctx.beginPath();
-      ctx.strokeStyle = "rgba(79,70,229,0.1)";
+      ctx.strokeStyle = "rgba(51,4,159,0.1)";
       ctx.lineWidth = 1;
       ctx.setLineDash([2, 8]);
       ctx.moveTo(0, H / 2);
@@ -96,8 +96,8 @@ function LiveMicWaveform({ analyser }: { analyser: AnalyserNode | null }) {
         ctx.lineTo(0, H / 2);
         ctx.closePath();
         const gUp = ctx.createLinearGradient(0, 4, 0, H / 2);
-        gUp.addColorStop(0, `rgba(79,70,229,${fillA})`);
-        gUp.addColorStop(1, "rgba(79,70,229,0.01)");
+        gUp.addColorStop(0, `rgba(51,4,159,${fillA})`);
+        gUp.addColorStop(1, "rgba(51,4,159,0.01)");
         ctx.fillStyle = gUp;
         ctx.fill();
 
@@ -108,19 +108,19 @@ function LiveMicWaveform({ analyser }: { analyser: AnalyserNode | null }) {
         ctx.lineTo(0, H / 2);
         ctx.closePath();
         const gDn = ctx.createLinearGradient(0, H / 2, 0, H - 4);
-        gDn.addColorStop(0, "rgba(79,70,229,0.01)");
-        gDn.addColorStop(1, `rgba(79,70,229,${fillA})`);
+        gDn.addColorStop(0, "rgba(51,4,159,0.01)");
+        gDn.addColorStop(1, `rgba(51,4,159,${fillA})`);
         ctx.fillStyle = gDn;
         ctx.fill();
 
         // Waveform lines
         const lineA = 0.4 + sv * 0.6;
         ctx.globalAlpha = lineA;
-        ctx.strokeStyle = "#4f46e5";
+        ctx.strokeStyle = "#33049f";
         ctx.lineWidth = 1.5;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
-        ctx.shadowColor = "rgba(99,102,241,0.45)";
+        ctx.shadowColor = "rgba(51,4,159,0.35)";
         ctx.shadowBlur = sv > 0.08 ? 6 : 0;
 
         ctx.beginPath();
@@ -168,7 +168,7 @@ function LiveMicWaveform({ analyser }: { analyser: AnalyserNode | null }) {
               key={i}
               className="flex-1 rounded-full"
               style={{
-                background: active ? "#4f46e5" : "#e8e7f5",
+                background: active ? "#33049f" : "#ede9fe",
                 opacity: active ? 1 : 0.5,
                 transition: "background 60ms ease",
               }}
@@ -352,7 +352,7 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
             disabled={disabled}
             className={clsx(
               "flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm",
-              "shimmer-bg text-white shadow-md hover:opacity-90 active:scale-95 transition-all",
+              "bg-brand hover:bg-brand-dark text-white shadow-sm active:scale-95 transition-all",
               disabled && "opacity-40 cursor-not-allowed"
             )}
           >
@@ -360,15 +360,15 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
             Speak your answer
           </button>
         ) : stage === "connecting" ? (
-          <button disabled className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-slate-200 text-slate-500 cursor-wait">
+          <button disabled className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-gray-100 text-gray-500 cursor-wait">
             <Loader2 className="w-4 h-4 animate-spin" /> Connecting…
           </button>
         ) : stage === "recording" ? (
-          <button onClick={stop} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-red-500 hover:bg-red-600 text-white shadow-md active:scale-95 transition-all">
+          <button onClick={stop} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-red-500 hover:bg-red-600 text-white shadow-sm active:scale-95 transition-all">
             <Square className="w-4 h-4 fill-white" /> Stop recording
           </button>
         ) : (
-          <button disabled className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-slate-200 text-slate-500 cursor-wait">
+          <button disabled className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-gray-100 text-gray-500 cursor-wait">
             <Loader2 className="w-4 h-4 animate-spin" />
             {stage === "transcribing" ? "Transcribing…" : "AI thinking…"}
           </button>
@@ -398,7 +398,7 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
         <div className={clsx(
           "rounded-xl border-2 p-3 text-sm min-h-[56px] transition-all",
           stage === "transcribing" && "border-amber-200 bg-amber-50/50",
-          (stage === "thinking" || streamedQuestion) && "border-indigo-200 bg-indigo-50/50",
+          (stage === "thinking" || streamedQuestion) && "border-brand/20 bg-brand-light/40",
         )}>
           {stage === "transcribing" && (
             <span className="text-amber-700 flex items-center gap-2">
@@ -406,15 +406,15 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
             </span>
           )}
           {stage === "thinking" && !streamedQuestion && (
-            <span className="text-indigo-600 flex items-center gap-2">
+            <span className="text-brand flex items-center gap-2">
               <Loader2 className="w-3 h-3 animate-spin" />
-              {transcript ? <span className="text-slate-600 italic">"{transcript}"</span> : "AI thinking…"}
+              {transcript ? <span className="text-gray-600 italic">"{transcript}"</span> : "AI thinking…"}
             </span>
           )}
           {streamedQuestion && (
             <p className="text-gray-700 font-medium leading-relaxed">
               {streamedQuestion}
-              <span className="inline-block w-0.5 h-4 bg-indigo-500 ml-0.5 animate-pulse align-middle" />
+              <span className="inline-block w-0.5 h-4 bg-brand ml-0.5 animate-pulse align-middle" />
             </p>
           )}
         </div>

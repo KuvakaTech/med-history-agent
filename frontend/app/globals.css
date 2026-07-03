@@ -1,39 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@200..900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   html {
-    font-family: "Inter", system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
-    @apply bg-[#f5f4ff] text-gray-900;
+    @apply bg-white text-gray-900;
+  }
+  h1, h2, h3 {
+    font-family: "Noto Serif JP", "Noto Serif JP Fallback", Georgia, serif;
   }
 }
 
 @layer components {
+  /*
+   * Brand utility classes — bg-brand, text-brand, border-brand are auto-generated
+   * by Tailwind from the brand.DEFAULT value in tailwind.config.ts.
+   * To retheme the app, change brand.DEFAULT there.
+   */
+
   .card {
-    @apply bg-white/80 backdrop-blur border border-white rounded-2xl p-6 shadow-lg shadow-indigo-500/5;
+    @apply bg-white border border-gray-100 rounded-2xl p-6 shadow-sm;
   }
 
   .btn-primary {
-    @apply bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500
-           text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200
-           shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40
-           disabled:opacity-50 disabled:cursor-not-allowed active:scale-95;
+    @apply bg-brand hover:bg-brand-dark text-white font-semibold px-6 py-3 rounded-xl
+           transition-all duration-150 shadow-sm
+           disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98];
   }
 
   .btn-secondary {
-    @apply bg-white hover:bg-slate-50 text-slate-700 font-medium
-           px-5 py-2.5 rounded-xl border border-slate-200 transition-all duration-150
+    @apply bg-white hover:bg-gray-50 text-gray-700 font-medium
+           px-5 py-2.5 rounded-xl border border-gray-200 transition-all duration-150
            shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .input-field {
-    @apply w-full rounded-xl border border-slate-200 bg-white focus:border-indigo-400
-           focus:ring-4 focus:ring-indigo-500/10 outline-none px-4 py-3
-           text-gray-900 placeholder-gray-400 transition-all duration-200 shadow-sm;
+    @apply w-full rounded-xl border border-gray-200 bg-gray-50
+           focus:border-brand focus:bg-white focus:ring-4 focus:ring-brand/10
+           outline-none px-4 py-3 text-sm
+           text-gray-900 placeholder-gray-400 transition-all duration-150;
   }
 
   .flag-critical {
@@ -97,15 +108,3 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-up { animation: fade-up 0.4s ease-out forwards; }
-
-/* ── Shimmer gradient background ── */
-@keyframes shimmer-move {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-.shimmer-bg {
-  background: linear-gradient(135deg, #4f46e5, #7c3aed, #06b6d4, #4f46e5);
-  background-size: 300% 300%;
-  animation: shimmer-move 6s ease infinite;
-}

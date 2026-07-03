@@ -1,38 +1,33 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
-import { UserPlus, Search, LogOut, Users, ChevronRight, User } from "lucide-react";
+import { UserPlus, Search, LogOut, ChevronRight, User, X } from "lucide-react";
 import { api, getToken } from "@/lib/api";
 import { getUser, type User as AuthUser } from "@/lib/auth";
 import type { Patient } from "@/lib/types";
 
-const GENDER_COLORS: Record<string, string> = {
-  Male: "bg-blue-100 text-blue-700",
-  Female: "bg-pink-100 text-pink-700",
-  Other: "bg-purple-100 text-purple-700",
-};
-
-const AVATAR_COLORS = [
-  "from-indigo-500 to-violet-500",
-  "from-cyan-500 to-blue-500",
-  "from-emerald-500 to-teal-500",
-  "from-rose-500 to-pink-500",
-  "from-amber-500 to-orange-500",
+const AVATAR_PALETTES = [
+  "bg-brand-light text-brand",
+  "bg-blue-100 text-blue-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-amber-100 text-amber-800",
+  "bg-rose-100 text-rose-700",
 ];
 
-function avatarColor(name: string): string {
+const GENDER_BADGE: Record<string, string> = {
+  Male:   "bg-blue-50 text-blue-600 border border-blue-100",
+  Female: "bg-pink-50 text-pink-600 border border-pink-100",
+  Other:  "bg-purple-50 text-purple-600 border border-purple-100",
+};
+
+function avatarPalette(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xfffff;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  return AVATAR_PALETTES[h % AVATAR_PALETTES.length];
 }
 
 function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join("");
+  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 }
 
 function formatDate(iso: string): string {
@@ -70,25 +65,27 @@ export default function PatientsPage() {
     router.replace("/login");
   };
 
+  const closeModal = () => {
+    setShowCreate(false);
+    setCreateError("");
+    setCreateName(""); setCreateAge(""); setCreateGender(""); setCreatePhone("");
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createName.trim()) { setCreateError("Name is required."); return; }
     if (!createAge || isNaN(Number(createAge)) || Number(createAge) < 1) {
-      setCreateError("Valid age is required.");
-      return;
+      setCreateError("Valid age is required."); return;
     }
     setCreateError("");
     setCreating(true);
     try {
       const patient = await api.createPatient(
-        createName.trim(),
-        Number(createAge),
-        createGender || undefined,
-        createPhone.trim() || undefined,
+        createName.trim(), Number(createAge),
+        createGender || undefined, createPhone.trim() || undefined,
       );
       setPatients((p) => [patient, ...p]);
-      setShowCreate(false);
-      setCreateName(""); setCreateAge(""); setCreateGender(""); setCreatePhone("");
+      closeModal();
       router.push(`/patients/${patient.patient_id}`);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create patient.");
@@ -104,42 +101,45 @@ export default function PatientsPage() {
   if (loading) return null;
 
   return (
-    <main className="min-h-screen bg-[#0a0f1e]">
-      {/* Header */}
-      <div className="sticky top-0 z-30 bg-[#0a0f1e]/90 backdrop-blur border-b border-white/5 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center">
-            <span className="text-white text-xs font-bold">K</span>
-          </div>
-          <span className="text-white font-semibold text-sm">kuvaka Clinical AI</span>
-        </div>
-        <div className="flex items-center gap-3">
-          {authUser && <span className="text-xs text-slate-400 hidden sm:block">{authUser.name}</span>}
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-white/10 rounded-full px-3 py-1.5 transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Sign out
-          </button>
-        </div>
-      </div>
+    <main className="min-h-screen bg-gray-50">
+      {/* ── Header ── */}
+      <header className="sticky top-0 z-30 bg-white border-b border-gray-100 px-6 py-0">
+        <div className="max-w-5xl mx-auto flex items-center justify-between h-14">
+          {/* Logo */}
+          <img src="/kuvaka_logo.png" alt="Kuvaka" className="h-7 w-auto" />
 
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Page title */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-indigo-400" />
-            <h1 className="text-xl font-bold text-white">Your Patients</h1>
-            {patients.length > 0 && (
-              <span className="text-xs bg-white/10 text-slate-300 rounded-full px-2 py-0.5">
-                {patients.length}
-              </span>
+          {/* Right */}
+          <div className="flex items-center gap-4">
+            {authUser && (
+              <span className="hidden sm:block text-sm text-gray-500 font-medium">{authUser.name}</span>
             )}
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Sign out</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Content ── */}
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        {/* Title row */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 leading-tight">
+              Patients
+              {patients.length > 0 && (
+                <span className="ml-2.5 text-base font-semibold text-gray-400">{patients.length}</span>
+              )}
+            </h1>
+            <p className="text-gray-500 text-sm mt-0.5">Manage and view your patient records</p>
           </div>
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
+            className="btn-primary flex items-center gap-2 px-4 py-2.5 text-sm"
           >
             <UserPlus className="w-4 h-4" />
             New Patient
@@ -148,111 +148,139 @@ export default function PatientsPage() {
 
         {/* Search */}
         {patients.length > 0 && (
-          <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <div className="relative mb-6 max-w-sm">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search patients…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 text-white placeholder-slate-500 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-indigo-400 transition-colors"
+              className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400
+                         focus:outline-none focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all"
             />
           </div>
         )}
 
-        {/* Patient grid */}
-        {filtered.length === 0 && !showCreate ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mx-auto mb-4">
-              <User className="w-8 h-8 text-slate-600" />
+        {/* Empty state */}
+        {filtered.length === 0 ? (
+          <div className="text-center py-24">
+            <div className="w-14 h-14 rounded-2xl bg-brand-light flex items-center justify-center mx-auto mb-4">
+              <User className="w-7 h-7 text-brand" />
             </div>
-            <p className="text-slate-400 text-sm mb-1">
-              {search ? "No patients match your search." : "No patients yet."}
+            <p className="text-gray-800 font-semibold text-base mb-1">
+              {search ? "No patients found" : "No patients yet"}
+            </p>
+            <p className="text-gray-400 text-sm">
+              {search ? `No results for "${search}"` : "Create your first patient to get started."}
             </p>
             {!search && (
-              <p className="text-slate-600 text-xs">Create your first patient to begin a consultation.</p>
+              <button
+                onClick={() => setShowCreate(true)}
+                className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-sm mt-5"
+              >
+                <UserPlus className="w-4 h-4" />
+                Add first patient
+              </button>
             )}
           </div>
         ) : (
+          /* Patient grid */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((p) => (
               <button
                 key={p.patient_id}
                 onClick={() => router.push(`/patients/${p.patient_id}`)}
-                className="group text-left bg-white/5 hover:bg-white/10 border border-white/10 hover:border-indigo-400/40 rounded-2xl p-5 transition-all duration-200"
+                className="group text-left bg-white border border-gray-100 hover:border-brand/30 rounded-2xl p-5 transition-all duration-150 hover:shadow-md hover:shadow-brand/5"
               >
-                <div className="flex items-start gap-3 mb-3">
-                  <div
-                    className={`w-11 h-11 rounded-xl bg-gradient-to-br ${avatarColor(p.name)} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}
-                  >
+                <div className="flex items-start gap-3 mb-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${avatarPalette(p.name)}`}>
                     {initials(p.name)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-white font-semibold text-sm truncate group-hover:text-indigo-300 transition-colors">
+                    <p className="text-gray-900 font-semibold text-sm truncate group-hover:text-brand transition-colors">
                       {p.name}
                     </p>
-                    <p className="text-slate-400 text-xs mt-0.5">
-                      {p.age} yrs
-                      {p.gender && ` · ${p.gender}`}
+                    <p className="text-gray-400 text-xs mt-0.5">
+                      {p.age} yrs{p.gender ? ` · ${p.gender}` : ""}
                     </p>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-indigo-400 transition-colors mt-0.5 flex-shrink-0" />
+                  <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-brand transition-colors mt-0.5 flex-shrink-0" />
                 </div>
-                {p.gender && (
-                  <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${GENDER_COLORS[p.gender] ?? "bg-slate-100 text-slate-600"}`}>
-                    {p.gender}
-                  </span>
-                )}
-                <p className="text-slate-600 text-xs mt-2">
-                  Registered {formatDate(p.created_at)}
-                </p>
+
+                <div className="flex items-center justify-between">
+                  {p.gender ? (
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${GENDER_BADGE[p.gender] ?? "bg-gray-100 text-gray-600 border border-gray-200"}`}>
+                      {p.gender}
+                    </span>
+                  ) : <span />}
+                  <span className="text-xs text-gray-400">{formatDate(p.created_at)}</span>
+                </div>
               </button>
             ))}
           </div>
         )}
       </div>
 
-      {/* Create patient modal */}
+      {/* ── New Patient Modal ── */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-[#0f1629] border border-white/10 rounded-2xl p-6 shadow-2xl">
-            <h2 className="text-white font-bold text-lg mb-5">New Patient</h2>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1.5">Full name <span className="text-red-400">*</span></label>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
+        >
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900">New Patient</h2>
+              <button
+                onClick={closeModal}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <form onSubmit={handleCreate} className="px-6 py-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-sm font-semibold text-gray-800">
+                  Full name <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
-                  className="w-full bg-white/5 border border-white/10 text-white placeholder-slate-500 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 transition-colors"
+                  className="input-field"
                   placeholder="e.g. Rahul Verma"
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
                   autoFocus
                 />
               </div>
+
               <div className="flex gap-3">
-                <div className="w-28 flex-shrink-0">
-                  <label className="text-xs font-semibold text-slate-400 block mb-1.5">Age <span className="text-red-400">*</span></label>
+                <div className="w-28 flex-shrink-0 space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-800">
+                    Age <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="number"
-                    className="w-full bg-white/5 border border-white/10 text-white placeholder-slate-500 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:border-indigo-400 transition-colors"
+                    className="input-field text-center"
                     placeholder="—"
                     min={1} max={120}
                     value={createAge}
                     onChange={(e) => setCreateAge(e.target.value)}
                   />
                 </div>
-                <div className="flex-1">
-                  <label className="text-xs font-semibold text-slate-400 block mb-1.5">Gender</label>
-                  <div className="flex gap-1.5">
+                <div className="flex-1 space-y-1.5">
+                  <label className="block text-sm font-semibold text-gray-800">Gender</label>
+                  <div className="flex gap-1.5 h-[46px]">
                     {["Male", "Female", "Other"].map((g) => (
                       <button
                         key={g}
                         type="button"
                         onClick={() => setCreateGender(createGender === g ? "" : g)}
-                        className={`flex-1 py-2 rounded-lg border text-xs font-semibold transition-all ${
+                        className={`flex-1 rounded-xl border text-xs font-semibold transition-all ${
                           createGender === g
-                            ? "border-indigo-400 bg-indigo-400/10 text-indigo-300"
-                            : "border-white/10 text-slate-400 hover:border-white/20"
+                            ? "border-brand bg-brand-light text-brand"
+                            : "border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300"
                         }`}
                       >
                         {g}
@@ -261,11 +289,14 @@ export default function PatientsPage() {
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1.5">Phone (optional)</label>
+
+              <div className="space-y-1.5">
+                <label className="block text-sm font-semibold text-gray-800">
+                  Phone <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
                 <input
                   type="tel"
-                  className="w-full bg-white/5 border border-white/10 text-white placeholder-slate-500 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400 transition-colors"
+                  className="input-field"
                   placeholder="+91 98765 43210"
                   value={createPhone}
                   onChange={(e) => setCreatePhone(e.target.value)}
@@ -273,21 +304,21 @@ export default function PatientsPage() {
               </div>
 
               {createError && (
-                <p className="text-red-400 text-xs">{createError}</p>
+                <p className="text-red-600 text-sm font-medium">{createError}</p>
               )}
 
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={() => { setShowCreate(false); setCreateError(""); }}
-                  className="flex-1 py-2.5 rounded-xl border border-white/10 text-slate-400 hover:text-white text-sm font-semibold transition-colors"
+                  onClick={closeModal}
+                  className="btn-secondary flex-1 py-2.5 text-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={creating}
-                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors disabled:opacity-60"
+                  className="btn-primary flex-1 py-2.5 text-sm"
                 >
                   {creating ? "Creating…" : "Create"}
                 </button>

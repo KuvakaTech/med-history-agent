@@ -18,9 +18,9 @@ import clsx from "clsx";
 const SCREEN_STEPS: ConsultationScreen[] = ["questionnaire", "review", "processing", "results"];
 const STEP_LABELS: Record<ConsultationScreen, string> = {
   questionnaire: "History Taking",
-  review: "Review",
-  processing: "Analysis",
-  results: "Results",
+  review:        "Review",
+  processing:    "Analysis",
+  results:       "Results",
 };
 
 export default function ConsultationPage() {
@@ -52,12 +52,8 @@ export default function ConsultationPage() {
 
   const handleStreamedAnswer = (resp: AnswerResponse) => { applyAnswer(resp); };
   const handleVoiceAnswer = (resp: AnswerResponse & { transcript: string }) => { applyAnswer(resp); };
-
   const handleProceed = () => setScreen("processing");
-  const handlePipelineComplete = (
-    noteData: Record<string, unknown>,
-    dxData: DiagnosisResult
-  ) => {
+  const handlePipelineComplete = (noteData: Record<string, unknown>, dxData: DiagnosisResult) => {
     setNote(noteData);
     setDiagnosis(dxData);
     setScreen("results");
@@ -66,15 +62,12 @@ export default function ConsultationPage() {
   const currentStep = SCREEN_STEPS.indexOf(screen);
 
   return (
-    <main className="min-h-screen flex flex-col bg-[#f5f4ff]">
-      {/* Header */}
-      <header className="bg-[#0a0f1e] text-white px-5 py-3.5 flex items-center justify-between shadow-xl sticky top-0 z-50">
+    <main className="min-h-screen flex flex-col bg-gray-50">
+      {/* ── Header ── */}
+      <header className="bg-white border-b border-gray-100 px-5 py-0 flex items-center justify-between sticky top-0 z-50 h-14">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl shimmer-bg flex items-center justify-center text-sm shadow-lg">⚕️</div>
-          <div>
-            <div className="font-bold text-sm leading-tight">kuvaka Clinical AI</div>
-            <div className="text-slate-400 text-xs">{STEP_LABELS[screen]}</div>
-          </div>
+          <img src="/kuvaka_logo.png" alt="Kuvaka" className="h-6 w-auto" />
+          <div className="text-gray-400 text-xs">{STEP_LABELS[screen]}</div>
         </div>
 
         {/* Step progress */}
@@ -82,26 +75,28 @@ export default function ConsultationPage() {
           {SCREEN_STEPS.map((s, i) => (
             <div key={s} className="flex items-center gap-1.5">
               <div className={clsx(
-                "w-2 h-2 rounded-full transition-all duration-300",
-                i < currentStep ? "bg-indigo-400" :
-                i === currentStep ? "bg-white w-3 h-3" : "bg-slate-700"
+                "rounded-full transition-all duration-300",
+                i < currentStep  ? "w-2 h-2 bg-brand" :
+                i === currentStep ? "w-3 h-3 bg-brand" :
+                                    "w-2 h-2 bg-gray-200"
               )} />
               {i < SCREEN_STEPS.length - 1 && (
-                <div className={clsx("w-8 h-px", i < currentStep ? "bg-indigo-400" : "bg-slate-700")} />
+                <div className={clsx("w-8 h-px", i < currentStep ? "bg-brand" : "bg-gray-200")} />
               )}
             </div>
           ))}
         </div>
 
-        <div className="text-xs text-slate-500 font-mono">
+        <div className="text-xs text-gray-300 font-mono">
           {sessionId.slice(0, 8)}
         </div>
       </header>
 
-      {/* Critical flags banner — only shown to doctor on review/results, not during patient Q&A */}
+      {/* Critical flags banner */}
       {screen !== "questionnaire" && flags.some(f => f.flag_type === "CRITICAL_RED_FLAG") && (
-        <div className="bg-red-600 text-white text-xs font-semibold text-center py-2 px-4 flex items-center justify-center gap-2">
-          🚨 Critical clinical alert detected — physician review required immediately
+        <div className="bg-red-600 text-white text-xs font-semibold text-center py-2.5 px-4 flex items-center justify-center gap-2">
+          <span>⚠</span>
+          Critical clinical alert detected — physician review required immediately
         </div>
       )}
 

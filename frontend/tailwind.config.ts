@@ -9,17 +9,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Primary brand color — update DEFAULT here to retheme the entire app.
+        // Tailwind auto-generates bg-brand, text-brand, border-brand, ring-brand, etc.
         brand: {
-          50: "#eef2ff",
-          100: "#e0e7ff",
-          200: "#c7d2fe",
-          300: "#a5b4fc",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
-          800: "#3730a3",
-          900: "#312e81",
+          DEFAULT: "#33049f",
+          dark: "#28037d",    // hover / pressed states
+          light: "#f0eaff",   // very light tint for backgrounds
+          muted: "#ede9fe",   // subtle accent backgrounds
         },
+      },
+      fontFamily: {
+        sans: ["var(--font-jakarta)", "system-ui", "sans-serif"],
+        display: ["Noto Serif JP", "Noto Serif JP Fallback", "Georgia", "serif"],
       },
       animation: {
         "pulse-ring": "pulse-ring 1.2s ease-in-out infinite",
