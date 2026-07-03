@@ -39,13 +39,7 @@ export default function RegisterPage() {
   return (
     <main className="min-h-screen flex">
       {/* ── Left: Brand panel ── */}
-      <div className="hidden lg:flex lg:w-[420px] xl:w-[480px] bg-brand flex-col justify-between p-12 relative overflow-hidden flex-shrink-0">
-        {/* Decorative geometry */}
-        <div className="absolute -top-32 -left-32 w-80 h-80 rounded-full border border-white/10 pointer-events-none" />
-        <div className="absolute top-1/2 -right-20 w-56 h-56 rounded-full border border-white/10 pointer-events-none" />
-        <div className="absolute -bottom-40 left-1/2 -translate-x-1/2 w-[480px] h-[480px] rounded-full border border-white/5 pointer-events-none" />
-        <div className="absolute bottom-24 -left-8 w-32 h-32 rounded-full bg-white/5 pointer-events-none" />
-
+      <div className="hidden lg:flex lg:w-[420px] xl:w-[480px] bg-brand flex-col p-12 relative overflow-hidden flex-shrink-0">
         {/* Logo */}
         <div className="relative z-10">
           <img
@@ -56,7 +50,7 @@ export default function RegisterPage() {
         </div>
 
         {/* Value proposition */}
-        <div className="relative z-10 space-y-8">
+        <div className="relative z-10 space-y-8 lg:mt-14 xl:mt-20 2xl:mt-24">
           <div className="space-y-4">
             <p className="text-white/50 text-xs font-semibold tracking-widest uppercase">
               Clinical AI platform by Kuvaka
@@ -67,7 +61,7 @@ export default function RegisterPage() {
               in minutes.
             </h2>
             <p className="text-white/65 text-[0.9375rem] leading-relaxed">
-              Join clinicians using Kuvaka to cut documentation time and improve
+              Join clinicians using Kuvaka's Clinical AI to cut documentation time and improve
               diagnostic accuracy.
             </p>
           </div>
