@@ -202,13 +202,13 @@ export default function QuestionnaireScreen({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setMuted((m) => { if (!m) tts.stopAll(); return !m; })}
-            className="p-2 rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-brand hover:border-brand/30 transition-all shadow-sm"
+            className="p-2 rounded-lg bg-white border border-gray-200 text-gray-400 hover:text-brand hover:border-brand/30 transition-all shadow-sm"
           >
             {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
           </button>
           <button
             onClick={() => tts.replay(question)}
-            className="p-2 rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-brand hover:border-brand/30 transition-all shadow-sm"
+            className="p-2 rounded-lg bg-white border border-gray-200 text-gray-400 hover:text-brand hover:border-brand/30 transition-all shadow-sm"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
@@ -253,7 +253,7 @@ export default function QuestionnaireScreen({
       </div>
 
       {/* Voice answer */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-5 space-y-3">
+      <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-3">
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
           <span className="w-7 h-7 rounded-lg bg-brand-light text-brand flex items-center justify-center text-base">🎤</span>
           <span>Speak your answer</span>
@@ -288,7 +288,7 @@ export default function QuestionnaireScreen({
         />
         <button
           className={clsx(
-            "self-end px-4 py-3 rounded-xl font-semibold transition-all duration-150 shadow-sm",
+            "self-end px-4 py-3 rounded-lg font-semibold transition-all duration-150 shadow-sm",
             textAnswer.trim() && !submitting
               ? "bg-brand hover:bg-brand-dark text-white active:scale-95"
               : "bg-gray-100 text-gray-300 cursor-not-allowed"
@@ -319,7 +319,7 @@ export default function QuestionnaireScreen({
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm font-medium">
           {error}
         </div>
       )}

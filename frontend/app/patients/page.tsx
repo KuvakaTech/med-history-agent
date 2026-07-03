@@ -155,7 +155,7 @@ export default function PatientsPage() {
               placeholder="Search patients…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400
+              className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-900 placeholder-gray-400
                          focus:outline-none focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all"
             />
           </div>
@@ -164,7 +164,7 @@ export default function PatientsPage() {
         {/* Empty state */}
         {filtered.length === 0 ? (
           <div className="text-center py-24">
-            <div className="w-14 h-14 rounded-2xl bg-brand-light flex items-center justify-center mx-auto mb-4">
+            <div className="w-14 h-14 rounded-xl bg-brand-light flex items-center justify-center mx-auto mb-4">
               <User className="w-7 h-7 text-brand" />
             </div>
             <p className="text-gray-800 font-semibold text-base mb-1">
@@ -190,10 +190,10 @@ export default function PatientsPage() {
               <button
                 key={p.patient_id}
                 onClick={() => router.push(`/patients/${p.patient_id}`)}
-                className="group text-left bg-white border border-gray-100 hover:border-brand/30 rounded-2xl p-5 transition-all duration-150 hover:shadow-md hover:shadow-brand/5"
+                className="group text-left bg-white border border-gray-100 hover:border-brand/30 rounded-xl p-5 transition-all duration-150 hover:shadow-md hover:shadow-brand/5"
               >
                 <div className="flex items-start gap-3 mb-4">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${avatarPalette(p.name)}`}>
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${avatarPalette(p.name)}`}>
                     {initials(p.name)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -227,7 +227,7 @@ export default function PatientsPage() {
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
           onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+          <div className="w-full max-w-sm bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden">
             {/* Modal header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <h2 className="text-base font-bold text-gray-900">New Patient</h2>
@@ -277,7 +277,7 @@ export default function PatientsPage() {
                         key={g}
                         type="button"
                         onClick={() => setCreateGender(createGender === g ? "" : g)}
-                        className={`flex-1 rounded-xl border text-xs font-semibold transition-all ${
+                        className={`flex-1 rounded-lg border text-xs font-semibold transition-all ${
                           createGender === g
                             ? "border-brand bg-brand-light text-brand"
                             : "border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300"

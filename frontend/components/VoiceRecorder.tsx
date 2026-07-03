@@ -351,7 +351,7 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
             onClick={start}
             disabled={disabled}
             className={clsx(
-              "flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm",
+              "flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm",
               "bg-brand hover:bg-brand-dark text-white shadow-sm active:scale-95 transition-all",
               disabled && "opacity-40 cursor-not-allowed"
             )}
@@ -360,22 +360,22 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
             Speak your answer
           </button>
         ) : stage === "connecting" ? (
-          <button disabled className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-gray-100 text-gray-500 cursor-wait">
+          <button disabled className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm bg-gray-100 text-gray-500 cursor-wait">
             <Loader2 className="w-4 h-4 animate-spin" /> Connecting…
           </button>
         ) : stage === "recording" ? (
-          <button onClick={stop} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-red-500 hover:bg-red-600 text-white shadow-sm active:scale-95 transition-all">
+          <button onClick={stop} className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm bg-red-500 hover:bg-red-600 text-white shadow-sm active:scale-95 transition-all">
             <Square className="w-4 h-4 fill-white" /> Stop recording
           </button>
         ) : (
-          <button disabled className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-gray-100 text-gray-500 cursor-wait">
+          <button disabled className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm bg-gray-100 text-gray-500 cursor-wait">
             <Loader2 className="w-4 h-4 animate-spin" />
             {stage === "transcribing" ? "Transcribing…" : "AI thinking…"}
           </button>
         )}
 
         {stage === "recording" && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-mono font-medium">
+          <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm font-mono font-medium">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
             {fmt(elapsed)}
           </div>
@@ -384,7 +384,7 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
 
       {/* Live mic waveform during recording */}
       {stage === "recording" && (
-        <div className="px-4 py-3 bg-white border border-slate-200 rounded-xl shadow-sm space-y-2">
+        <div className="px-4 py-3 bg-white border border-slate-200 rounded-lg shadow-sm space-y-2">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
             <span className="text-xs text-slate-500 font-medium tracking-wide">Recording</span>
@@ -396,7 +396,7 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
       {/* Transcribing / thinking / streamed response */}
       {(isProcessing || streamedQuestion) && (
         <div className={clsx(
-          "rounded-xl border-2 p-3 text-sm min-h-[56px] transition-all",
+          "rounded-lg border-2 p-3 text-sm min-h-[56px] transition-all",
           stage === "transcribing" && "border-amber-200 bg-amber-50/50",
           (stage === "thinking" || streamedQuestion) && "border-brand/20 bg-brand-light/40",
         )}>

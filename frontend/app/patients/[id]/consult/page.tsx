@@ -99,8 +99,8 @@ export default function NewConsultPage() {
       <div className="max-w-xl mx-auto px-6 py-8 space-y-5">
         {/* Patient badge */}
         {patient && (
-          <div className="bg-white border border-gray-100 rounded-2xl px-5 py-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-brand-light text-brand flex items-center justify-center font-bold text-sm flex-shrink-0">
+          <div className="bg-white border border-gray-100 rounded-xl px-5 py-4 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-lg bg-brand-light text-brand flex items-center justify-center font-bold text-sm flex-shrink-0">
               {patient.name.charAt(0).toUpperCase()}
             </div>
             <div>
@@ -113,7 +113,7 @@ export default function NewConsultPage() {
         )}
 
         {/* Specialty */}
-        <div className="bg-white border border-gray-100 rounded-2xl p-5">
+        <div className="bg-white border border-gray-100 rounded-xl p-5">
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">
             Type of consultation
           </h2>
@@ -123,13 +123,13 @@ export default function NewConsultPage() {
                 key={s.value}
                 onClick={() => setSpecialty(s.value)}
                 className={clsx(
-                  "w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all duration-150",
+                  "w-full flex items-center gap-4 p-4 rounded-lg border-2 text-left transition-all duration-150",
                   specialty === s.value
                     ? "border-brand bg-brand-light"
                     : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50"
                 )}
               >
-                <span className={clsx("w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0", s.iconCls)}>
+                <span className={clsx("w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0", s.iconCls)}>
                   {s.icon}
                 </span>
                 <div className="flex-1 min-w-0">
@@ -154,7 +154,7 @@ export default function NewConsultPage() {
         </div>
 
         {/* Chief complaint */}
-        <div className="bg-white border border-gray-100 rounded-2xl p-5">
+        <div className="bg-white border border-gray-100 rounded-xl p-5">
           <label className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-3">
             Chief complaint <span className="text-gray-400 font-normal normal-case">(optional)</span>
           </label>
@@ -168,7 +168,7 @@ export default function NewConsultPage() {
         </div>
 
         {/* Language */}
-        <div className="bg-white border border-gray-100 rounded-2xl p-5">
+        <div className="bg-white border border-gray-100 rounded-xl p-5">
           <label className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-3">
             Language preference
           </label>
@@ -183,7 +183,7 @@ export default function NewConsultPage() {
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm font-medium">
             {error}
           </div>
         )}

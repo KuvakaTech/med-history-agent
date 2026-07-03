@@ -61,7 +61,7 @@ function DxSection({ dx }: { dx: DiagnosisResult | null }) {
             {dx.differential_diagnoses.map((d, i) => {
               const style = LIKELIHOOD_STYLE[d.likelihood] ?? LIKELIHOOD_STYLE.Low;
               return (
-                <div key={i} className={clsx("border-l-4 rounded-xl p-4", style.card)}>
+                <div key={i} className={clsx("border-l-4 rounded-lg p-4", style.card)}>
                   <div className="flex items-center gap-2 mb-1">
                     <span className={clsx("text-xs font-bold px-2 py-0.5 rounded-full", style.badge)}>
                       {d.likelihood}
@@ -110,7 +110,7 @@ function DxSection({ dx }: { dx: DiagnosisResult | null }) {
       )}
 
       {dx.physician_note && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
           <div className="flex items-start gap-2">
             <ClipboardList className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-gray-700">{dx.physician_note}</p>
@@ -123,7 +123,7 @@ function DxSection({ dx }: { dx: DiagnosisResult | null }) {
 
 function MedCard({ med }: { med: Medication }) {
   return (
-    <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+    <div className="border border-gray-100 rounded-lg p-4 space-y-3">
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 bg-brand-light rounded-lg flex items-center justify-center text-brand text-sm">💊</div>
         <h4 className="font-bold text-gray-800 text-sm">{med.drug_name}</h4>
@@ -214,7 +214,7 @@ function RxSection({ sessionId }: { sessionId: string }) {
           {rx.referrals.map((r, i) => (
             <p key={i} className="text-sm text-gray-600">👨‍⚕️ {r}</p>
           ))}
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700 font-medium">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700 font-medium">
             ⚠️ Requires physician review and approval before dispensing.
           </div>
         </div>
@@ -251,8 +251,8 @@ export default function ResultsScreen({ sessionId, note, diagnosis }: Props) {
   return (
     <div className="space-y-5 fade-up">
       {/* Banner */}
-      <div className="bg-brand rounded-2xl p-6 text-center">
-        <div className="w-12 h-12 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-3">
+      <div className="bg-brand rounded-xl p-6 text-center">
+        <div className="w-12 h-12 bg-white/15 rounded-xl flex items-center justify-center mx-auto mb-3">
           <svg viewBox="0 0 24 24" className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
           </svg>
@@ -262,7 +262,7 @@ export default function ResultsScreen({ sessionId, note, diagnosis }: Props) {
       </div>
 
       {/* Tabs */}
-      <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+      <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -280,7 +280,7 @@ export default function ResultsScreen({ sessionId, note, diagnosis }: Props) {
       </div>
 
       {/* Tab content */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 min-h-[300px]">
+      <div className="bg-white border border-gray-100 rounded-xl p-6 min-h-[300px]">
         {tab === "note"         && <NoteSection data={note} />}
         {tab === "diagnosis"    && <DxSection dx={diagnosis} />}
         {tab === "prescription" && <RxSection sessionId={sessionId} />}

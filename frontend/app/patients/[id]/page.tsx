@@ -50,7 +50,7 @@ function DiagnosisSummary({ diagnosis }: { diagnosis: DiagnosisResult }) {
       {diagnosis.urgent_concerns.length > 0 && (
         <div className="space-y-2">
           {diagnosis.urgent_concerns.map((concern, i) => (
-            <div key={i} className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+            <div key={i} className="flex items-start gap-2.5 bg-red-50 border border-red-100 rounded-lg px-3 py-2.5">
               <AlertTriangle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
               <p className="text-red-700 text-xs leading-relaxed">{concern}</p>
             </div>
@@ -169,7 +169,7 @@ function SessionCard({ session }: { session: ConsultationSummary }) {
   const stage = STAGE_META[session.current_stage] ?? { label: session.current_stage, cls: "bg-gray-100 text-gray-600 border-gray-200" };
 
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
       <button
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
@@ -313,10 +313,10 @@ export default function PatientDetailPage() {
 
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
         {/* ── Patient profile card ── */}
-        <div className="bg-white border border-gray-100 rounded-2xl p-6">
+        <div className="bg-white border border-gray-100 rounded-xl p-6">
           <div className="flex items-start gap-5">
             {/* Avatar */}
-            <div className="w-16 h-16 rounded-2xl bg-brand-light text-brand flex items-center justify-center text-xl font-bold flex-shrink-0">
+            <div className="w-16 h-16 rounded-xl bg-brand-light text-brand flex items-center justify-center text-xl font-bold flex-shrink-0">
               {initials(patient.name)}
             </div>
 
@@ -366,8 +366,8 @@ export default function PatientDetailPage() {
           </div>
 
           {sessions.length === 0 ? (
-            <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-2xl">
-              <div className="w-12 h-12 rounded-xl bg-brand-light flex items-center justify-center mx-auto mb-3">
+            <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
+              <div className="w-12 h-12 rounded-lg bg-brand-light flex items-center justify-center mx-auto mb-3">
                 <Stethoscope className="w-5 h-5 text-brand" />
               </div>
               <p className="text-gray-700 font-semibold text-sm mb-1">No consultations yet</p>

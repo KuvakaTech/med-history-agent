@@ -89,7 +89,7 @@ export default function ProcessingScreen({ sessionId, onComplete }: Props) {
           <div
             key={step.id}
             className={clsx(
-              "flex items-center gap-4 p-4 rounded-2xl border transition-all duration-300",
+              "flex items-center gap-4 p-4 rounded-xl border transition-all duration-300",
               step.state === "done"    && "bg-emerald-50 border-emerald-200",
               step.state === "running" && "bg-brand-light border-brand/30 shadow-sm",
               step.state === "pending" && "bg-white border-gray-100 opacity-50",
@@ -97,7 +97,7 @@ export default function ProcessingScreen({ sessionId, onComplete }: Props) {
             )}
           >
             <div className={clsx(
-              "w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0",
+              "w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0",
               step.state === "done"    && "bg-emerald-500 text-white",
               step.state === "running" && "bg-brand text-white",
               step.state === "pending" && "bg-gray-100 text-gray-400",
@@ -124,7 +124,7 @@ export default function ProcessingScreen({ sessionId, onComplete }: Props) {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium w-full max-w-sm">
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm font-medium w-full max-w-sm">
           {error}
         </div>
       )}
