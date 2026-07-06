@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, HTTPException, Request, Response, status
+from fastapi import APIRouter, Body, Cookie, HTTPException, Request, Response, status
 from jose import jwt
 from pydantic import BaseModel, EmailStr, field_validator
 
@@ -36,6 +36,14 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
+
 class UserInfo(BaseModel):
     id: str
     email: str
@@ -46,6 +54,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    refresh_token: str
     user: UserInfo
 
 
@@ -63,10 +72,11 @@ def _make_access_token(user: dict) -> str:
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def _token_response(user: dict) -> TokenResponse:
+def _token_response(user: dict, raw_refresh: str) -> TokenResponse:
     return TokenResponse(
         access_token=_make_access_token(user),
         expires_in=settings.JWT_EXPIRE_MINUTES * 60,
+        refresh_token=raw_refresh,
         user=UserInfo(id=str(user["_id"]), email=user["email"], name=user["name"]),
     )
 
@@ -98,7 +108,7 @@ async def register(request: Request, body: RegisterRequest, response: Response) 
     raw_refresh = refresh_store.generate()
     await refresh_store.store(raw_refresh, settings.REFRESH_TOKEN_EXPIRE_DAYS, user_id=str(user["_id"]))
     _set_refresh_cookie(response, raw_refresh)
-    return _token_response(user)
+    return _token_response(user, raw_refresh)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -115,15 +125,18 @@ async def login(request: Request, body: LoginRequest, response: Response) -> Tok
     raw_refresh = refresh_store.generate()
     await refresh_store.store(raw_refresh, settings.REFRESH_TOKEN_EXPIRE_DAYS, user_id=str(user["_id"]))
     _set_refresh_cookie(response, raw_refresh)
-    return _token_response(user)
+    return _token_response(user, raw_refresh)
 
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(
     response: Response,
-    refresh_token: Optional[str] = Cookie(default=None, alias=_COOKIE),
+    body: Optional[RefreshRequest] = Body(default=None),
+    cookie_token: Optional[str] = Cookie(default=None, alias=_COOKIE),
 ) -> TokenResponse:
-    """Rotate the refresh token and issue a new access token."""
+    """Rotate the refresh token and issue a new access token.
+    Accepts the token from the request body (cross-origin clients) or httpOnly cookie."""
+    refresh_token = (body.refresh_token if body else None) or cookie_token
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token.")
 
@@ -142,15 +155,18 @@ async def refresh(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
 
     _set_refresh_cookie(response, new_raw)
-    return _token_response(user)
+    return _token_response(user, new_raw)
 
 
 @router.post("/logout")
 async def logout(
     response: Response,
-    refresh_token: Optional[str] = Cookie(default=None, alias=_COOKIE),
+    body: Optional[LogoutRequest] = Body(default=None),
+    cookie_token: Optional[str] = Cookie(default=None, alias=_COOKIE),
 ) -> dict:
-    """Revoke the refresh token and clear the cookie."""
+    """Revoke the refresh token and clear the cookie.
+    Accepts the token from the request body (cross-origin clients) or httpOnly cookie."""
+    refresh_token = (body.refresh_token if body else None) or cookie_token
     if refresh_token:
         await refresh_store.revoke(refresh_token)
     response.delete_cookie(_COOKIE, path=_COOKIE_PATH)

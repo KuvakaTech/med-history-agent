@@ -7,10 +7,15 @@ import type {
   Specialty,
   StartResponse,
 } from "./types";
-import { setUser, clearAuth, type User } from "./auth";
+import { setUser, clearAuth, saveRefreshToken, loadRefreshToken, type User } from "./auth";
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8001";
+// Use relative URLs so Next.js rewrite proxies requests to the backend (same-origin
+// cookies, no CORS friction). When NEXT_PUBLIC_API_BASE_URL is set (e.g. in
+// production) absolute URLs are used and the server must allow credentials via CORS.
+const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const API = `${BASE}/api/v1`;
+// WebSocket can't go through the Next.js rewrite, so point directly at the backend.
+const WS_BACKEND = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001").replace(/^http/, "ws");
 
 // ── Token management ──────────────────────────────────────────────────────────
 // Access token: in-memory only (15 min). Refresh token: httpOnly cookie (7 days).
@@ -18,9 +23,11 @@ const API = `${BASE}/api/v1`;
 
 let _token: string | null = null;
 let _tokenExpiry: number = 0;
+let _refreshPromise: Promise<string> | null = null;
 
 interface TokenPayload {
   access_token: string;
+  refresh_token: string;
   expires_in: number;
   user: User;
 }
@@ -29,16 +36,27 @@ function _cache(data: TokenPayload): string {
   _token = data.access_token;
   _tokenExpiry = Date.now() + (data.expires_in - 30) * 1000;
   setUser(data.user);
+  saveRefreshToken(data.refresh_token);
   return _token;
 }
 
 async function _refresh(): Promise<string> {
-  const res = await fetch(`${API}/auth/refresh`, {
+  // Deduplicate concurrent refresh calls — token rotation means only one can succeed.
+  if (_refreshPromise) return _refreshPromise;
+  const rt = loadRefreshToken();
+  if (!rt) throw new Error("refresh_failed");
+  _refreshPromise = fetch(`${API}/auth/refresh`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     credentials: "include",
-  });
-  if (!res.ok) throw new Error("refresh_failed");
-  return _cache(await res.json());
+    body: JSON.stringify({ refresh_token: rt }),
+  })
+    .then(async (res) => {
+      if (!res.ok) throw new Error("refresh_failed");
+      return _cache(await res.json());
+    })
+    .finally(() => { _refreshPromise = null; });
+  return _refreshPromise;
 }
 
 export async function getToken(): Promise<string> {
@@ -122,12 +140,15 @@ export const api = {
   },
 
   logout: async (): Promise<void> => {
+    const rt = loadRefreshToken(); // capture before clearAuth wipes it
     _token = null;
     _tokenExpiry = 0;
     clearAuth();
     await fetch(`${API}/auth/logout`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       credentials: "include",
+      body: JSON.stringify({ refresh_token: rt }),
     }).catch(() => {});
   },
 
@@ -267,7 +288,6 @@ export const api = {
 
   voiceStreamUrl: async (sessionId: string): Promise<string> => {
     const token = await getToken();
-    const wsBase = BASE.replace(/^http/, "ws");
-    return `${wsBase}/api/v1/consultation/${sessionId}/voice-stream?token=${token}`;
+    return `${WS_BACKEND}/api/v1/consultation/${sessionId}/voice-stream?token=${token}`;
   },
 };
