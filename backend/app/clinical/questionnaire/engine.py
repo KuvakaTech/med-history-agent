@@ -26,35 +26,40 @@ ROLE
 ──────────────────────────────────────
 You are NOT replacing the doctor. Your job: gather complete essential baseline history so the physician can make the most of their consultation time.
 
-GOAL: Cover ALL six required areas as efficiently as possible — ideally in 5–7 questions — by combining related topics. The screening ends when you decide is_complete = true, not after a fixed number of questions.
+GOAL: Cover ALL six required areas by asking ONE focused question at a time. Each question should address a single topic only. The screening typically takes 7–12 questions. The screening ends when you decide is_complete = true, not after a fixed number of questions.
 
 ──────────────────────────────────────
 6 REQUIRED AREAS — all must be covered before you mark is_complete = true
 ──────────────────────────────────────
-1. Chief complaint — what brings them in today (opening question only — ask this alone)
-2. Timeline + character — onset, duration, severity (1–10 scale), location, quality
-3. Modifying factors + associated symptoms — what makes it better or worse; what comes with it
-4. Relevant past medical/surgical history — prior conditions, operations, hospitalisations
-5. Current medications + known allergies
-6. Key social or family context — ONLY if directly relevant to the chief complaint
+1. Chief complaint — what brings them in today
+2. Timeline — when it started, how long it has been going on
+3. Severity — how bad it is (1–10 scale)
+4. Character + location — what it feels like, where exactly
+5. Modifying factors — what makes it better or worse
+6. Associated symptoms — anything else they have noticed alongside it
+7. Relevant past medical/surgical history — prior conditions, operations, hospitalisations
+8. Current medications — what they are currently taking
+9. Known allergies
+10. Key social or family context — ONLY if directly relevant to the chief complaint
 
 ──────────────────────────────────────
-COMBINING STRATEGY
+QUESTIONING RULES — CRITICAL
 ──────────────────────────────────────
-• Q1 (opening): chief complaint only — warm, open-ended.
-• Q2: combine areas 2 + 3 → e.g. "How long have you had this, how severe is it on a 1–10 scale, and does anything make it better or worse?"
-• Q3: combine areas 4 + 5 → e.g. "Do you have any relevant past medical history or previous surgeries, and are you currently taking any medications or have known allergies?"
-• Q4+: follow up on red flags, missing gaps, or area 6 if relevant. Continue until all areas are covered.
-• Mark is_complete = true as soon as all required areas are sufficiently covered — do not keep asking once you have what the physician needs.
+• Ask ONE question per turn. ONE topic only. Never bundle multiple questions into one.
+• WRONG: "How long have you had this, how severe is it on a 1–10 scale, and does anything make it better or worse?"
+• RIGHT: "How long have you been experiencing this?"  → wait for answer → "On a scale of 1–10, how would you rate the severity?" → wait → "Is there anything that makes it better or worse?"
+• Each question must be short, clear, and focused on a single piece of information.
+• Do NOT ask about domains clearly irrelevant to the chief complaint.
+• Never diagnose. Never suggest treatments or tests.
+• The physician will conduct the detailed examination — you open the door.
 
 ──────────────────────────────────────
 BEHAVIOUR RULES
 ──────────────────────────────────────
 • Warm, calm, professional tone. Plain accessible language.
-• ALWAYS combine closely-related topics — never waste a question on a single narrow item.
-• Do NOT ask about domains clearly irrelevant to the chief complaint.
-• Never diagnose. Never suggest treatments or tests.
-• The physician will conduct the detailed examination — you open the door.
+• One question. One topic. Every single time.
+• Follow up naturally based on what the patient just said before moving to the next area.
+• Mark is_complete = true only after all required areas are sufficiently covered.
 
 ──────────────────────────────────────
 RED FLAG DETECTION — check EVERY answer
@@ -117,10 +122,11 @@ PATIENT'S LATEST ANSWER:
 
 {urgency_note}
 
-AREAS STILL TO COVER:
+NEXT AREA TO COVER:
 {uncovered_areas}
 
-Generate the NEXT clinical question. Combine as many uncovered areas as naturally possible into ONE question — do not ask one item per question.
+Generate the NEXT clinical question. Ask about ONE topic only — the first item listed above.
+Do NOT combine multiple topics. Do NOT ask two things in one question.
 Output ONLY the question text — no JSON, no labels, no prefix."""
 
 META_PROMPT = """CONSULTATION HISTORY ({turn_count} exchanges completed):
@@ -152,10 +158,12 @@ PATIENT'S LATEST ANSWER:
 
 {urgency_note}
 
-AREAS STILL TO COVER:
+NEXT AREA TO COVER:
 {uncovered_areas}
 
-Generate the next follow-up question combining any uncovered areas, or mark is_complete = true if all required areas are covered.
+Generate the next follow-up question. Ask about ONE topic only — the first item listed above.
+Do NOT combine multiple topics into a single question.
+Mark is_complete = true only if all required areas are covered.
 Evaluate the latest answer for red flags and include in new_flags."""
 
 
@@ -332,15 +340,15 @@ class LLMHistoryEngine:
 
 
 def _urgency_note(turn_count: int) -> str:
-    if turn_count >= 7:
+    if turn_count >= 12:
         return (
             f"NOTE: {turn_count} exchanges completed. All essential areas should be covered by now. "
             "Set is_complete = true unless a genuinely critical clinical gap remains."
         )
-    if turn_count >= 5:
+    if turn_count >= 9:
         return (
-            f"NOTE: {turn_count} exchanges completed. If all required areas are covered, "
-            "mark is_complete = true now. Only continue if a key gap remains."
+            f"NOTE: {turn_count} exchanges completed. Check whether all required areas are covered. "
+            "If they are, mark is_complete = true. Only continue if a key gap remains."
         )
     return ""
 
@@ -390,33 +398,57 @@ def _language_instruction(language: str | None) -> str:
 
 
 def _uncovered_areas(history: str) -> str:
-    """Keyword heuristic — tells the question generator what's still missing."""
+    """Keyword heuristic — returns the FIRST uncovered area so the LLM asks one question at a time."""
     h = history.lower()
     missing: list[str] = []
 
     if not any(k in h for k in [
         "how long", "since when", "started", "duration", "days ago", "weeks ago",
-        "months ago", "onset", "sever", "scale", "out of 10", "1 to 10", "rate",
-        "pain level", "constant", "comes and goes",
+        "months ago", "onset",
     ]):
-        missing.append("- Duration, onset, severity (1–10 scale), character, location")
+        missing.append("- Timeline: when did it start and how long has it been going on?")
 
     if not any(k in h for k in [
-        "better", "worse", "aggravat", "reliev", "associat", "accompan",
-        "other symptom", "also experienc", "spread", "radiat", "trigger",
+        "sever", "scale", "out of 10", "1 to 10", "rate", "pain level",
     ]):
-        missing.append("- Modifying factors (better/worse) and associated symptoms")
+        missing.append("- Severity: how bad is it on a scale of 1–10?")
+
+    if not any(k in h for k in [
+        "feel like", "character", "quality", "describ", "sharp", "dull", "burning",
+        "throbbing", "aching", "constant", "comes and goes", "location", "where",
+    ]):
+        missing.append("- Character and location: what does it feel like and where exactly?")
+
+    if not any(k in h for k in [
+        "better", "worse", "aggravat", "reliev", "trigger", "makes it",
+    ]):
+        missing.append("- Modifying factors: what makes it better or worse?")
+
+    if not any(k in h for k in [
+        "associat", "accompan", "other symptom", "also experienc", "along with",
+        "spread", "radiat", "anything else",
+    ]):
+        missing.append("- Associated symptoms: anything else noticed alongside it?")
 
     if not any(k in h for k in [
         "past", "history", "previous", "before", "condition", "surgery",
         "operation", "diagnos", "chronic", "medical histor", "hospitaliz", "hospital",
     ]):
-        missing.append("- Past medical history and previous surgeries")
+        missing.append("- Past medical and surgical history: any prior conditions or operations?")
 
     if not any(k in h for k in [
-        "medication", "medicine", "drug", "tablet", "pill", "allerg",
+        "medication", "medicine", "drug", "tablet", "pill",
         "taking", "prescribed", "supplement", "inject", "inhaler", "no medication",
     ]):
-        missing.append("- Current medications and known allergies")
+        missing.append("- Current medications: what medications are they currently taking?")
 
-    return "\n".join(missing) if missing else "All essential areas appear covered."
+    if not any(k in h for k in [
+        "allerg", "reaction", "intoleran", "no allerg",
+    ]):
+        missing.append("- Known allergies: any known drug or other allergies?")
+
+    if not missing:
+        return "All essential areas appear covered."
+
+    # Return only the FIRST missing item so the LLM asks one question at a time
+    return missing[0]
