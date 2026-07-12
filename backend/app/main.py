@@ -80,12 +80,21 @@ else:
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    # Starlette's ServerErrorMiddleware sits outside CORSMiddleware, so an exception left
-    # to bubble there produces a response with no CORS headers — browsers then report it
-    # as a CORS failure instead of the real 500. Registering a handler routes it through
-    # ExceptionMiddleware (inside CORSMiddleware) instead, so the headers still get added.
+    # A catch-all Exception handler runs inside Starlette's ServerErrorMiddleware, which
+    # sits OUTSIDE CORSMiddleware — its response never passes through CORS processing, so
+    # browsers report the 500 as a CORS failure. Attach the CORS headers manually here,
+    # honouring the same origin policy as the middleware config.
     log.exception("Unhandled exception on %s %s", request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+    headers = {}
+    origin = request.headers.get("origin")
+    allowed = settings.BACKEND_CORS_ORIGINS or ["http://localhost:3000"]
+    if origin and (settings.BACKEND_CORS_ALLOW_ALL or origin in allowed):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+    return JSONResponse(
+        status_code=500, content={"detail": "Internal server error."}, headers=headers
+    )
 
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
