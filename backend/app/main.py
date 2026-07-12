@@ -55,13 +55,15 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# "allow_credentials=True" is incompatible with allow_origins=["*"] per the CORS spec;
-# use explicit origin list whenever possible, fall back to wildcard without credentials.
+# "allow_credentials=True" is incompatible with a literal allow_origins=["*"] per the
+# CORS spec, and the frontend relies on credentialed requests (cookie fallback on
+# login/refresh/logout). allow_origin_regex reflects the exact request origin instead,
+# so "allow all" still works with credentials.
 if settings.BACKEND_CORS_ALLOW_ALL:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
+        allow_origin_regex=r".*",
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -19,7 +19,7 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     environment:
-      BACKEND_CORS_ALLOW_ALL: "false"
+      BACKEND_CORS_ALLOW_ALL: "true"
 
   frontend:
     build:

@@ -56,3 +56,5 @@ desktop.ini
 # ── Misc ──
 *.tmp
 *.bak
+
+docs/
