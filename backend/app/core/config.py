@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     DEEPGRAM_API_KEY: str = ""
     DEEPGRAM_STT_MODEL: str = "nova-3"
     DEEPGRAM_TTS_MODEL: str = "aura-luna-en"
+    # ElevenLabs — cloned custom voice, speaks both English and Hindi.
+    # When key + voice id are set it becomes the primary TTS; Deepgram is the fallback.
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_VOICE_ID: str = ""
+    ELEVENLABS_MODEL: str = "eleven_multilingual_v2"
 
     HOST: str = "0.0.0.0"
     PORT: int = 8001
