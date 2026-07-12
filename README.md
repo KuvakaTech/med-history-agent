@@ -1,4 +1,4 @@
-# Clinical AI — Pre-Consultation History Taking Assistant
+ # Clinical AI — Pre-Consultation History Taking Assistant
 
 An AI-powered clinical screener that conducts a brief patient history interview before the physician consultation. Handles voice and text input, streams responses in real time, detects clinical red flags, and generates a structured SOAP note with differential diagnoses.
 
