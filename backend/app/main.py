@@ -2,8 +2,9 @@ from contextlib import asynccontextmanager
 
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -75,6 +76,17 @@ else:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Starlette's ServerErrorMiddleware sits outside CORSMiddleware, so an exception left
+    # to bubble there produces a response with no CORS headers — browsers then report it
+    # as a CORS failure instead of the real 500. Registering a handler routes it through
+    # ExceptionMiddleware (inside CORSMiddleware) instead, so the headers still get added.
+    log.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
