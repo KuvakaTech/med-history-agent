@@ -1,4 +1,4 @@
-"""Async LLM client — Groq preferred, Anthropic fallback. No LlamaIndex overhead."""
+"""Async LLM client — Anthropic preferred, Groq fallback. No LlamaIndex overhead."""
 from __future__ import annotations
 
 import json
@@ -32,15 +32,15 @@ def _extract_json(text: str, schema: Type[BaseModel]) -> BaseModel:
 
 
 async def complete(prompt: str, system: str = "", temperature: float = 0.3, fast: bool = False) -> str:
-    """Plain text completion. Groq primary, Anthropic fallback."""
-    if settings.GROQ_API_KEY:
+    """Plain text completion. Anthropic primary, Groq fallback."""
+    if settings.ANTHROPIC_API_KEY:
         try:
-            return await _groq_complete(prompt, system, temperature)
+            return await _anthropic_complete(prompt, system, temperature, fast=fast)
         except Exception as exc:
-            log.warning("Groq complete failed (%s), falling back to Anthropic", exc)
-    if settings.GOOGLE_API_KEY:
-        return await _gemini_complete(prompt, temperature, fast=fast)
-    return await _anthropic_complete(prompt, system, temperature, fast=fast)
+            log.warning("Anthropic complete failed (%s), falling back to Groq", exc)
+    if settings.GROQ_API_KEY:
+        return await _groq_complete(prompt, system, temperature)
+    return await _gemini_complete(prompt, temperature, fast=fast)
 
 
 async def complete_structured(
@@ -51,15 +51,15 @@ async def complete_structured(
     fast: bool = False,
     max_tokens: int = 512,
 ) -> BaseModel:
-    """Structured completion returning a validated Pydantic model. Groq primary, Anthropic fallback."""
-    if settings.GROQ_API_KEY:
+    """Structured completion returning a validated Pydantic model. Anthropic primary, Groq fallback."""
+    if settings.ANTHROPIC_API_KEY:
         try:
-            return await _groq_structured(prompt, schema, system, temperature, max_tokens=max_tokens)
+            return await _anthropic_structured(prompt, schema, system, temperature, fast=fast, max_tokens=max_tokens)
         except Exception as exc:
-            log.warning("Groq structured failed (%s), falling back to Anthropic", exc)
-    if settings.GOOGLE_API_KEY:
-        return await _gemini_structured(prompt, schema, temperature, fast=fast)
-    return await _anthropic_structured(prompt, schema, system, temperature, fast=fast, max_tokens=max_tokens)
+            log.warning("Anthropic structured failed (%s), falling back to Groq", exc)
+    if settings.GROQ_API_KEY:
+        return await _groq_structured(prompt, schema, system, temperature, max_tokens=max_tokens)
+    return await _gemini_structured(prompt, schema, temperature, fast=fast)
 
 
 async def stream_complete(
