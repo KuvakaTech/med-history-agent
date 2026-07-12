@@ -1,4 +1,4 @@
-"""Async LLM client — Gemini preferred, Anthropic fallback. No LlamaIndex overhead."""
+"""Async LLM client — Groq preferred, Anthropic fallback. No LlamaIndex overhead."""
 from __future__ import annotations
 
 import json
@@ -32,7 +32,12 @@ def _extract_json(text: str, schema: Type[BaseModel]) -> BaseModel:
 
 
 async def complete(prompt: str, system: str = "", temperature: float = 0.3, fast: bool = False) -> str:
-    """Plain text completion."""
+    """Plain text completion. Groq primary, Anthropic fallback."""
+    if settings.GROQ_API_KEY:
+        try:
+            return await _groq_complete(prompt, system, temperature)
+        except Exception as exc:
+            log.warning("Groq complete failed (%s), falling back to Anthropic", exc)
     if settings.GOOGLE_API_KEY:
         return await _gemini_complete(prompt, temperature, fast=fast)
     return await _anthropic_complete(prompt, system, temperature, fast=fast)
@@ -46,7 +51,12 @@ async def complete_structured(
     fast: bool = False,
     max_tokens: int = 512,
 ) -> BaseModel:
-    """Structured completion returning a validated Pydantic model."""
+    """Structured completion returning a validated Pydantic model. Groq primary, Anthropic fallback."""
+    if settings.GROQ_API_KEY:
+        try:
+            return await _groq_structured(prompt, schema, system, temperature, max_tokens=max_tokens)
+        except Exception as exc:
+            log.warning("Groq structured failed (%s), falling back to Anthropic", exc)
     if settings.GOOGLE_API_KEY:
         return await _gemini_structured(prompt, schema, temperature, fast=fast)
     return await _anthropic_structured(prompt, schema, system, temperature, fast=fast, max_tokens=max_tokens)
@@ -68,8 +78,70 @@ async def stream_complete(
 
 
 # ─────────────────────────────────────────────
-# Groq  (OpenAI-compatible, used for streaming)
+# Groq  (OpenAI-compatible)
 # ─────────────────────────────────────────────
+
+async def _groq_complete(prompt: str, system: str, temperature: float, max_tokens: int = 1024) -> str:
+    import httpx
+
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.GROQ_MODEL,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+
+
+async def _groq_structured(
+    prompt: str, schema: Type[BaseModel], system: str, temperature: float, max_tokens: int = 512
+) -> BaseModel:
+    import httpx
+
+    # json_object mode requires the word "JSON" in the conversation and works across
+    # Groq-hosted models, unlike tool calling; the schema goes in the system prompt.
+    schema_instruction = (
+        f"Respond ONLY with a JSON object matching this JSON schema:\n"
+        f"{json.dumps(schema.model_json_schema())}"
+    )
+    full_system = f"{system}\n\n{schema_instruction}" if system else schema_instruction
+    messages = [
+        {"role": "system", "content": full_system},
+        {"role": "user", "content": prompt},
+    ]
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.GROQ_MODEL,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        response.raise_for_status()
+        return _extract_json(response.json()["choices"][0]["message"]["content"], schema)
+
 
 async def _groq_stream(prompt: str, system: str) -> AsyncGenerator[str, None]:
     import httpx
