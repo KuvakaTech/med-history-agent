@@ -24,7 +24,7 @@ interface Props {
 
 // Deepgram TTS has no Hindi voices, so Hindi sessions use the browser's built-in
 // speech synthesis (hi-IN voice) instead of the backend /speak endpoint.
-function useSentenceTTS(muted: boolean, useBrowserHindi: boolean) {
+function useSentenceTTS(muted: boolean, useBrowserHindi: boolean = false) {
   const [speaking, setSpeaking] = useState(false);
   const queueRef = useRef<Promise<string | null>[]>([]);
   const playIdxRef = useRef(0);
@@ -146,8 +146,7 @@ export default function QuestionnaireScreen({
   const [muted, setMuted] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
 
-  const isHindi = /^(hi|hindi|हिन्दी|हिंदी)$/i.test((language ?? "").trim());
-  const tts = useSentenceTTS(muted, isHindi);
+  const tts = useSentenceTTS(muted);
   const skipNextTTSRef = useRef(false);
 
   useEffect(() => {
