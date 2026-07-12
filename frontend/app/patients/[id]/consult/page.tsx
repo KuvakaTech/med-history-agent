@@ -67,7 +67,10 @@ export default function NewConsultPage() {
         chiefComplaint.trim() || undefined,
         patientId,
       );
-      router.push(`/consultation/${data.session_id}?q=${encodeURIComponent(data.opening_question)}`);
+      router.push(
+        `/consultation/${data.session_id}?q=${encodeURIComponent(data.opening_question)}` +
+        (language.trim() ? `&lang=${encodeURIComponent(language.trim())}` : "")
+      );
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to start consultation.");
     } finally {
@@ -172,14 +175,27 @@ export default function NewConsultPage() {
           <label className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-3">
             Language preference
           </label>
-          <input
-            type="text"
-            className="input-field"
-            placeholder="e.g. Hindi, Arabic, French — leave blank for English"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-          />
-          <p className="text-xs text-gray-400 mt-2">The AI will speak and understand your preferred language.</p>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: "English", value: "" },
+              { label: "हिन्दी (Hindi)", value: "Hindi" },
+            ].map((opt) => (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => setLanguage(opt.value)}
+                className={clsx(
+                  "border rounded-lg px-4 py-3 text-sm font-medium transition-colors",
+                  language === opt.value
+                    ? "border-brand bg-brand/5 text-brand"
+                    : "border-gray-200 text-gray-600 hover:border-gray-300"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">The AI will speak and understand the selected language.</p>
         </div>
 
         {error && (

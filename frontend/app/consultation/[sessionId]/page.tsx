@@ -28,6 +28,7 @@ export default function ConsultationPage() {
   const searchParams = useSearchParams();
   const sessionId = params.sessionId as string;
   const initialQuestion = searchParams.get("q") || "";
+  const language = searchParams.get("lang") || "";
 
   const [screen, setScreen] = useState<ConsultationScreen>("questionnaire");
   const [currentQuestion, setCurrentQuestion] = useState(initialQuestion);
@@ -109,6 +110,7 @@ export default function ConsultationPage() {
               question={currentQuestion}
               turnNumber={turnNumber}
               flags={flags}
+              language={language}
               onStreamedAnswer={handleStreamedAnswer}
               onVoiceAnswer={handleVoiceAnswer}
             />

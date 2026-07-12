@@ -305,7 +305,7 @@ async def submit_answer_audio(
 
     # Transcribe
     mimetype = audio_file.content_type or "audio/wav"
-    answer_text = await transcribe_bytes(audio_data, mimetype)
+    answer_text = await transcribe_bytes(audio_data, mimetype, language=ctx.patient_language)
 
     # Translate if needed
     if ctx.patient_language and ctx.patient_language != ctx.clinical_language:
@@ -546,7 +546,7 @@ async def voice_stream(
 
     # Parallel: upload to R2 AND transcribe — audio already in memory, no wait
     r2_task = asyncio.create_task(r2.upload_audio(full_audio, session_id, suffix=".webm"))
-    stt_task = asyncio.create_task(transcribe_bytes(full_audio, mime_type))
+    stt_task = asyncio.create_task(transcribe_bytes(full_audio, mime_type, language=ctx.patient_language))
 
     results = await asyncio.gather(r2_task, stt_task, return_exceptions=True)
     r2_key, transcript = results

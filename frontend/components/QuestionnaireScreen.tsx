@@ -13,6 +13,7 @@ interface Props {
   question: string;
   turnNumber: number;
   flags: ClinicalFlag[];
+  language?: string;
   onStreamedAnswer: (resp: AnswerResponse) => void;
   onVoiceAnswer: (resp: AnswerResponse & { transcript: string }) => void;
 }
@@ -21,7 +22,9 @@ interface Props {
 // Sentence-level streaming TTS
 // ─────────────────────────────────────────────
 
-function useSentenceTTS(muted: boolean) {
+// Deepgram TTS has no Hindi voices, so Hindi sessions use the browser's built-in
+// speech synthesis (hi-IN voice) instead of the backend /speak endpoint.
+function useSentenceTTS(muted: boolean, useBrowserHindi: boolean) {
   const [speaking, setSpeaking] = useState(false);
   const queueRef = useRef<Promise<string | null>[]>([]);
   const playIdxRef = useRef(0);
@@ -33,8 +36,26 @@ function useSentenceTTS(muted: boolean) {
   const stopAll = useCallback(() => {
     genRef.current++;
     audioRef.current?.pause();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     setSpeaking(false);
     playingRef.current = false;
+  }, []);
+
+  const speakBrowser = useCallback((text: string) => {
+    return new Promise<void>((resolve) => {
+      if (!("speechSynthesis" in window)) return resolve();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "hi-IN";
+      const hiVoice = window.speechSynthesis
+        .getVoices()
+        .find((v) => v.lang.toLowerCase().startsWith("hi"));
+      if (hiVoice) utterance.voice = hiVoice;
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    });
   }, []);
 
   const reset = useCallback(() => {
@@ -49,33 +70,39 @@ function useSentenceTTS(muted: boolean) {
     const gen = genRef.current;
     playingRef.current = true;
     while (playIdxRef.current < queueRef.current.length) {
-      const url = await queueRef.current[playIdxRef.current];
+      // Hindi queue items resolve to the sentence text itself; English items to an audio URL.
+      const item = await queueRef.current[playIdxRef.current];
       playIdxRef.current++;
       if (genRef.current !== gen) break;
-      if (!url || muted) continue;
+      if (!item || muted) continue;
       setSpeaking(true);
-      await new Promise<void>((resolve) => {
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onended = () => { setSpeaking(false); resolve(); };
-        audio.onerror = () => { setSpeaking(false); resolve(); };
-        audio.play().catch(resolve);
-      });
+      if (useBrowserHindi) {
+        await speakBrowser(item);
+        setSpeaking(false);
+      } else {
+        await new Promise<void>((resolve) => {
+          const audio = new Audio(item);
+          audioRef.current = audio;
+          audio.onended = () => { setSpeaking(false); resolve(); };
+          audio.onerror = () => { setSpeaking(false); resolve(); };
+          audio.play().catch(resolve);
+        });
+      }
       if (genRef.current !== gen) { setSpeaking(false); break; }
     }
     if (genRef.current === gen) playingRef.current = false;
-  }, [muted]);
+  }, [muted, useBrowserHindi, speakBrowser]);
 
   const flushSentence = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed || muted) return;
-    queueRef.current.push(api.speak(trimmed));
+    queueRef.current.push(useBrowserHindi ? Promise.resolve(trimmed) : api.speak(trimmed));
     playQueue();
-  }, [muted, playQueue]);
+  }, [muted, useBrowserHindi, playQueue]);
 
   const onToken = useCallback((token: string) => {
     sentBufRef.current += token;
-    const match = sentBufRef.current.match(/^([\s\S]*?[.!?])(\s+|$)/);
+    const match = sentBufRef.current.match(/^([\s\S]*?[.!?।])(\s+|$)/);
     if (match) {
       const sentence = match[1];
       sentBufRef.current = sentBufRef.current.slice(match[0].length);
@@ -92,9 +119,9 @@ function useSentenceTTS(muted: boolean) {
   const playFull = useCallback((text: string) => {
     if (!text || muted) return;
     reset();
-    queueRef.current.push(api.speak(text));
+    queueRef.current.push(useBrowserHindi ? Promise.resolve(text) : api.speak(text));
     playQueue();
-  }, [muted, reset, playQueue]);
+  }, [muted, useBrowserHindi, reset, playQueue]);
 
   const replay = useCallback((text: string) => {
     reset();
@@ -109,7 +136,7 @@ function useSentenceTTS(muted: boolean) {
 // ─────────────────────────────────────────────
 
 export default function QuestionnaireScreen({
-  sessionId, question, turnNumber, flags,
+  sessionId, question, turnNumber, flags, language,
   onStreamedAnswer, onVoiceAnswer,
 }: Props) {
   const [textAnswer, setTextAnswer] = useState("");
@@ -119,7 +146,8 @@ export default function QuestionnaireScreen({
   const [muted, setMuted] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
 
-  const tts = useSentenceTTS(muted);
+  const isHindi = /^(hi|hindi|हिन्दी|हिंदी)$/i.test((language ?? "").trim());
+  const tts = useSentenceTTS(muted, isHindi);
   const skipNextTTSRef = useRef(false);
 
   useEffect(() => {
