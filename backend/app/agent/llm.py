@@ -65,16 +65,33 @@ async def complete_structured(
 async def stream_complete(
     prompt: str, system: str = "", fast: bool = True
 ) -> AsyncGenerator[str, None]:
-    """Stream text tokens. Groq active; Gemini/Anthropic paths kept for reference."""
-    async for token in _groq_stream(prompt, system):
+    """Stream text tokens. Anthropic primary, Groq fallback — matches complete()/complete_structured().
+
+    If Anthropic errors before any token was yielded, we transparently retry on Groq so the
+    caller — and the patient — never sees the raw provider error. Once tokens have started
+    streaming from one provider we can no longer switch, since the caller has already
+    displayed a partial answer.
+    """
+    started = False
+    if settings.ANTHROPIC_API_KEY:
+        try:
+            async for token in _anthropic_stream(prompt, system, fast=fast):
+                started = True
+                yield token
+            return
+        except Exception as exc:
+            if started:
+                raise
+            log.warning("Anthropic stream failed (%s), falling back to Groq", exc)
+
+    if settings.GROQ_API_KEY:
+        async for token in _groq_stream(prompt, system):
+            started = True
+            yield token
+        return
+
+    async for token in _gemini_stream(prompt, system, fast=fast):
         yield token
-    # ── old paths (commented out, not removed) ──────────────────────────────
-    # if settings.GOOGLE_API_KEY:
-    #     async for token in _gemini_stream(prompt, system, fast=fast):
-    #         yield token
-    # else:
-    #     async for token in _anthropic_stream(prompt, system, fast=fast):
-    #         yield token
 
 
 # ─────────────────────────────────────────────

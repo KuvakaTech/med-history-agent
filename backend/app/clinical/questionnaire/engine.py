@@ -13,6 +13,28 @@ from app.clinical.questionnaire.models import ClinicalFlagPayload, NextTurn
 
 log = logging.getLogger(__name__)
 
+# Screening length. turn_count == len(qa_log) == number of questions already asked and
+# answered, so it equals the total question count once the screening ends. MIN forces
+# continuation (unless nothing relevant remains to ask) so screenings aren't too short;
+# MAX is a hard stop so the patient is never asked an 11th question.
+MIN_TURNS = 7
+MAX_TURNS = 10
+
+# Canonical topic keys the LLM classifies coverage against each turn — language-agnostic,
+# since the LLM (not a keyword match) judges whether the topic was addressed.
+AREA_DESCRIPTIONS: dict[str, str] = {
+    "timeline": "- Timeline: when did it start and how long has it been going on?",
+    "severity": "- Severity: how bad is it on a scale of 1–10?",
+    "character_location": "- Character and location: what does it feel like and where exactly?",
+    "modifying_factors": "- Modifying factors: what makes it better or worse?",
+    "associated_symptoms": "- Associated symptoms: anything else noticed alongside it?",
+    "past_history": "- Past medical and surgical history: any prior conditions or operations?",
+    "medications": "- Current medications: what medications are they currently taking?",
+    "allergies": "- Known allergies: any known drug or other allergies?",
+}
+_ALL_COVERED = "All essential areas appear covered."
+_AREA_KEYS = ", ".join(AREA_DESCRIPTIONS.keys())
+
 # ─────────────────────────────────────────────
 # Prompts
 # ─────────────────────────────────────────────
@@ -26,7 +48,9 @@ ROLE
 ──────────────────────────────────────
 You are NOT replacing the doctor. Your job: gather complete essential baseline history so the physician can make the most of their consultation time.
 
-GOAL: Cover ALL six required areas by asking ONE focused question at a time. Each question should address a single topic only. The screening typically takes 7–12 questions. The screening ends when you decide is_complete = true, not after a fixed number of questions.
+GOAL: Cover ALL six required areas by asking ONE focused question at a time. Each question should address a single topic only. The screening takes 7–10 questions and must NEVER exceed 10. The screening ends when you decide is_complete = true.
+
+• NEVER repeat a question you have already asked — check the CONSULTATION HISTORY below before every question. This applies even if the patient answered in a different language or you would phrase it differently; if the underlying topic was already asked, move to a different, uncovered topic instead.
 
 ──────────────────────────────────────
 6 REQUIRED AREAS — all must be covered before you mark is_complete = true
@@ -127,6 +151,8 @@ NEXT AREA TO COVER:
 
 Generate the NEXT clinical question. Ask about ONE topic only — the first item listed above.
 Do NOT combine multiple topics. Do NOT ask two things in one question.
+Do NOT repeat a question already asked in CONSULTATION HISTORY above — check it carefully,
+even if the patient's answers are in a different language than this instruction.
 Output ONLY the question text — no JSON, no labels, no prefix."""
 
 META_PROMPT = """CONSULTATION HISTORY ({turn_count} exchanges completed):
@@ -137,7 +163,7 @@ PATIENT'S LATEST ANSWER:
 
 {urgency_note}
 
-Assess two things:
+Assess three things:
 1. is_complete — Set TRUE when ALL of the following are sufficiently covered:
    ✓ Chief complaint identified
    ✓ Duration, severity, and symptom character
@@ -146,6 +172,9 @@ Assess two things:
    Set TRUE even if some details are imperfect — the physician will probe further in consultation.
    Set FALSE only if a critical clinical gap remains that the physician genuinely cannot work without.
 2. new_flags — Any NEW clinical red flags raised by the latest answer?
+3. covered_areas — Which of these topic keys are now sufficiently answered, considering the
+   FULL conversation so far (in whatever language the patient used)? Choose only from exactly
+   these keys: {area_keys}. Return every key that applies, not just ones from this turn.
 
 Return JSON only — no other text."""
 
@@ -163,8 +192,13 @@ NEXT AREA TO COVER:
 
 Generate the next follow-up question. Ask about ONE topic only — the first item listed above.
 Do NOT combine multiple topics into a single question.
+Do NOT repeat a question already asked in CONSULTATION HISTORY above — check it carefully,
+even if the patient's answers are in a different language than this instruction.
 Mark is_complete = true only if all required areas are covered.
-Evaluate the latest answer for red flags and include in new_flags."""
+Evaluate the latest answer for red flags and include in new_flags.
+covered_areas — Which of these topic keys are now sufficiently answered, considering the FULL
+conversation so far? Choose only from exactly these keys: {area_keys}. Return every key that
+applies, not just ones from this turn."""
 
 
 # ─────────────────────────────────────────────
@@ -174,6 +208,7 @@ Evaluate the latest answer for red flags and include in new_flags."""
 class NextTurnMeta(BaseModel):
     is_complete: bool
     new_flags: list[ClinicalFlagPayload] = []
+    covered_areas: list[str] = []
 
 
 # ─────────────────────────────────────────────
@@ -236,12 +271,20 @@ class LLMHistoryEngine:
         """Non-streaming turn."""
         history = self._build_history(context)
         turn_count = len(context.qa_log)
+
+        if turn_count >= MAX_TURNS:
+            turn = NextTurn(question_text="", is_complete=True, new_flags=[])
+            turn._resolved_flags = []  # type: ignore[attr-defined]
+            return context, turn
+
+        uncovered = _uncovered_areas(context.covered_areas)
         prompt = TURN_PROMPT.format(
             history=history or "(no prior exchanges)",
             latest_answer=latest_answer,
             turn_count=turn_count,
             urgency_note=_urgency_note(turn_count),
-            uncovered_areas=_uncovered_areas(history),
+            uncovered_areas=uncovered,
+            area_keys=_AREA_KEYS,
         )
         turn: NextTurn = await llm.complete_structured(  # type: ignore[assignment]
             prompt=prompt,
@@ -249,6 +292,13 @@ class LLMHistoryEngine:
             system=self._system,
             fast=True,
         )
+
+        context.covered_areas = sorted(
+            set(context.covered_areas) | {a for a in turn.covered_areas if a in AREA_DESCRIPTIONS}
+        )
+
+        if turn_count < MIN_TURNS and uncovered != _ALL_COVERED and turn.question_text:
+            turn.is_complete = False
 
         new_flags: list[ClinicalFlag] = []
         for fp in turn.new_flags:
@@ -272,20 +322,27 @@ class LLMHistoryEngine:
         """
         history = self._build_history(context)
         turn_count = len(context.qa_log)
+
+        if turn_count >= MAX_TURNS:
+            yield {"__done__": True, "is_complete": True, "question_text": "", "new_flags": []}
+            return
+
         urgency_note = _urgency_note(turn_count)
+        uncovered = _uncovered_areas(context.covered_areas)
 
         q_prompt = QUESTION_STREAM_PROMPT.format(
             history=history or "(no prior exchanges)",
             latest_answer=latest_answer,
             turn_count=turn_count,
             urgency_note=urgency_note,
-            uncovered_areas=_uncovered_areas(history),
+            uncovered_areas=uncovered,
         )
         m_prompt = META_PROMPT.format(
             history=history or "(no prior exchanges)",
             latest_answer=latest_answer,
             turn_count=turn_count,
             urgency_note=urgency_note,
+            area_keys=_AREA_KEYS,
         )
 
         meta_task: asyncio.Task[NextTurnMeta] = asyncio.create_task(
@@ -307,6 +364,14 @@ class LLMHistoryEngine:
         except Exception as exc:
             log.error("Meta call failed: %s", exc)
             meta = NextTurnMeta(is_complete=False, new_flags=[])
+
+        context.covered_areas = sorted(
+            set(context.covered_areas) | {a for a in meta.covered_areas if a in AREA_DESCRIPTIONS}
+        )
+
+        stripped_question = question_text.strip()
+        if turn_count < MIN_TURNS and uncovered != _ALL_COVERED and stripped_question:
+            meta.is_complete = False
 
         new_flags: list[ClinicalFlag] = []
         for fp in meta.new_flags:
@@ -340,12 +405,13 @@ class LLMHistoryEngine:
 
 
 def _urgency_note(turn_count: int) -> str:
-    if turn_count >= 12:
+    if turn_count >= MAX_TURNS - 1:
         return (
-            f"NOTE: {turn_count} exchanges completed. All essential areas should be covered by now. "
-            "Set is_complete = true unless a genuinely critical clinical gap remains."
+            f"NOTE: {turn_count} exchanges completed. This is the LAST question allowed — "
+            "the screening ends automatically right after the patient answers it. "
+            "Ask about the single most important remaining gap, and set is_complete = true."
         )
-    if turn_count >= 9:
+    if turn_count >= MIN_TURNS:
         return (
             f"NOTE: {turn_count} exchanges completed. Check whether all required areas are covered. "
             "If they are, mark is_complete = true. Only continue if a key gap remains."
@@ -397,58 +463,15 @@ def _language_instruction(language: str | None) -> str:
     )
 
 
-def _uncovered_areas(history: str) -> str:
-    """Keyword heuristic — returns the FIRST uncovered area so the LLM asks one question at a time."""
-    h = history.lower()
-    missing: list[str] = []
+def _uncovered_areas(covered: list[str]) -> str:
+    """Returns the FIRST uncovered area so the LLM asks one question at a time.
 
-    if not any(k in h for k in [
-        "how long", "since when", "started", "duration", "days ago", "weeks ago",
-        "months ago", "onset",
-    ]):
-        missing.append("- Timeline: when did it start and how long has it been going on?")
-
-    if not any(k in h for k in [
-        "sever", "scale", "out of 10", "1 to 10", "rate", "pain level",
-    ]):
-        missing.append("- Severity: how bad is it on a scale of 1–10?")
-
-    if not any(k in h for k in [
-        "feel like", "character", "quality", "describ", "sharp", "dull", "burning",
-        "throbbing", "aching", "constant", "comes and goes", "location", "where",
-    ]):
-        missing.append("- Character and location: what does it feel like and where exactly?")
-
-    if not any(k in h for k in [
-        "better", "worse", "aggravat", "reliev", "trigger", "makes it",
-    ]):
-        missing.append("- Modifying factors: what makes it better or worse?")
-
-    if not any(k in h for k in [
-        "associat", "accompan", "other symptom", "also experienc", "along with",
-        "spread", "radiat", "anything else",
-    ]):
-        missing.append("- Associated symptoms: anything else noticed alongside it?")
-
-    if not any(k in h for k in [
-        "past", "history", "previous", "before", "condition", "surgery",
-        "operation", "diagnos", "chronic", "medical histor", "hospitaliz", "hospital",
-    ]):
-        missing.append("- Past medical and surgical history: any prior conditions or operations?")
-
-    if not any(k in h for k in [
-        "medication", "medicine", "drug", "tablet", "pill",
-        "taking", "prescribed", "supplement", "inject", "inhaler", "no medication",
-    ]):
-        missing.append("- Current medications: what medications are they currently taking?")
-
-    if not any(k in h for k in [
-        "allerg", "reaction", "intoleran", "no allerg",
-    ]):
-        missing.append("- Known allergies: any known drug or other allergies?")
-
+    `covered` is judged by the LLM itself each turn (see NextTurnMeta.covered_areas /
+    NextTurn.covered_areas) rather than by keyword-matching the transcript — a keyword
+    heuristic only recognises English words and silently breaks for any other patient
+    language, repeatedly flagging areas as "uncovered" that were already answered.
+    """
+    missing = [desc for key, desc in AREA_DESCRIPTIONS.items() if key not in covered]
     if not missing:
-        return "All essential areas appear covered."
-
-    # Return only the FIRST missing item so the LLM asks one question at a time
+        return _ALL_COVERED
     return missing[0]

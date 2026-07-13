@@ -6,6 +6,8 @@ import json
 import uuid
 from typing import Any, AsyncGenerator, Optional
 
+import logging
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -33,6 +35,11 @@ from app.clinical.session_store import session_store
 from app.storage import r2
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+# Generic message shown to patients when an LLM/provider call fails — never leak raw
+# provider errors (rate limits, auth, etc.) into the UI.
+GENERIC_LLM_ERROR = "Something went wrong generating the next question. Please try again."
 
 # ─────────────────────────────────────────────
 # Request / Response models
@@ -182,7 +189,8 @@ async def _stream_answer_generator(
                 new_flags = chunk["new_flags"]
                 question_text = chunk.get("question_text") or question_text.strip()
     except Exception as exc:
-        yield _sse("error", {"message": str(exc)})
+        log.error("answer-stream failed for session %s: %s", ctx.session_id, exc, exc_info=True)
+        yield _sse("error", {"message": GENERIC_LLM_ERROR})
         return
 
     is_complete, next_q = _resolve_completion(ctx, is_complete, question_text)
@@ -426,7 +434,8 @@ async def _pipeline_generator(session_id: str, user_id: str) -> AsyncGenerator[s
         })
 
     except Exception as exc:
-        yield _sse("error", {"message": str(exc)})
+        log.error("pipeline failed for session %s: %s", session_id, exc, exc_info=True)
+        yield _sse("error", {"message": "Something went wrong processing this consultation. Please try again."})
 
 
 @router.get("/{session_id}/pipeline")
@@ -534,7 +543,8 @@ async def voice_stream(
     except (asyncio.TimeoutError, WebSocketDisconnect):
         pass
     except Exception as exc:
-        await websocket.send_json({"type": "error", "message": str(exc)})
+        log.error("voice-stream recording failed for session %s: %s", session_id, exc, exc_info=True)
+        await websocket.send_json({"type": "error", "message": GENERIC_LLM_ERROR})
         return
 
     if not audio_chunks:
@@ -552,7 +562,8 @@ async def voice_stream(
     r2_key, transcript = results
 
     if isinstance(transcript, Exception):
-        await websocket.send_json({"type": "error", "message": f"Transcription failed: {transcript}"})
+        log.error("voice-stream transcription failed for session %s: %s", session_id, transcript, exc_info=transcript)
+        await websocket.send_json({"type": "error", "message": "Could not transcribe your answer. Please try again."})
         return
 
     if isinstance(r2_key, str):
@@ -579,14 +590,20 @@ async def voice_stream(
     new_flags: list[ClinicalFlag] = []
     is_complete = False
 
-    async for chunk in engine.next_turn_stream(ctx, answer_text):
-        if isinstance(chunk, str):
-            question_text += chunk
-            await websocket.send_json({"type": "token", "text": chunk})
-        elif isinstance(chunk, dict) and chunk.get("__done__"):
-            is_complete = chunk["is_complete"]
-            new_flags = chunk["new_flags"]
-            question_text = chunk.get("question_text") or question_text.strip()
+    try:
+        async for chunk in engine.next_turn_stream(ctx, answer_text):
+            if isinstance(chunk, str):
+                question_text += chunk
+                await websocket.send_json({"type": "token", "text": chunk})
+            elif isinstance(chunk, dict) and chunk.get("__done__"):
+                is_complete = chunk["is_complete"]
+                new_flags = chunk["new_flags"]
+                question_text = chunk.get("question_text") or question_text.strip()
+    except Exception as exc:
+        log.error("voice-stream question generation failed for session %s: %s", session_id, exc, exc_info=True)
+        await websocket.send_json({"type": "error", "message": GENERIC_LLM_ERROR})
+        await websocket.close()
+        return
 
     is_complete, next_q = _resolve_completion(ctx, is_complete, question_text)
     await session_store.update(ctx)

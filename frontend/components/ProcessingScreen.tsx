@@ -57,7 +57,8 @@ export default function ProcessingScreen({ sessionId, onComplete }: Props) {
             (event.diagnosis as DiagnosisResult) ?? { differential_diagnoses: [], urgent_concerns: [], suggested_workup: [] }
           );
         } else if (event.event === "error") {
-          setError(event.message || "Pipeline failed");
+          if (event.message) console.error("pipeline error:", event.message);
+          setError("Something went wrong processing this consultation. Please try again.");
           setSteps((prev) => prev.map((s) => s.state === "running" ? { ...s, state: "error" } : s));
           es.close();
         }

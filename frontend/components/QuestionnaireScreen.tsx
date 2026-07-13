@@ -192,7 +192,8 @@ export default function QuestionnaireScreen({
         });
       },
       (msg) => {
-        setError(msg);
+        console.error("submitAnswerStream failed:", msg);
+        setError("Something went wrong. Please try again.");
         setSubmitting(false);
         setStreamingQuestion(null);
       },

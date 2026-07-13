@@ -313,7 +313,8 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
           new_flags: (msg.new_flags as AnswerResponse["new_flags"]) ?? [],
         });
       } else if (msg.type === "error") {
-        setErrorMsg(msg.message || "Voice processing failed.");
+        if (msg.message) console.error("voice-stream error:", msg.message);
+        setErrorMsg("Voice processing failed. Please try again.");
         setStage("error");
         cleanup();
       }

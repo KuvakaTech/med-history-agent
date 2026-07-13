@@ -10,3 +10,4 @@ class NextTurn(BaseModel):
     question_text: str
     is_complete: bool
     new_flags: list[ClinicalFlagPayload] = []
+    covered_areas: list[str] = []

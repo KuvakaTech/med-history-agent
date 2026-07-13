@@ -102,6 +102,7 @@ class ConsultationContext(BaseModel):
 
     qa_log: list[QAEntry] = []
     current_question: Optional[str] = None
+    covered_areas: list[str] = []
 
     raw_transcript: str = ""
     translated_transcript: str = ""
