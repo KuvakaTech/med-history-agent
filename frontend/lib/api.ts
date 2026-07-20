@@ -195,8 +195,18 @@ export const api = {
 
   submitAudioAnswer: async (sessionId: string, blob: Blob): Promise<AnswerResponse> => {
     const token = await getToken();
+    const extByMime: Record<string, string> = {
+      "audio/webm": "webm",
+      "audio/ogg": "ogg",
+      "audio/mp4": "m4a",
+      "audio/aac": "aac",
+      "audio/mpeg": "mp3",
+      "audio/wav": "wav",
+      "audio/flac": "flac",
+    };
+    const ext = extByMime[blob.type.split(";")[0].toLowerCase()] ?? "webm";
     const form = new FormData();
-    form.append("audio_file", blob, "answer.wav");
+    form.append("audio_file", blob, `answer.${ext}`);
     const res = await fetch(`${API}/consultation/${sessionId}/answer-audio`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },

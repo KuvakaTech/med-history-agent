@@ -19,8 +19,13 @@ function detectMime(): string {
   for (const m of [
     "audio/webm;codecs=opus",
     "audio/ogg;codecs=opus",
+    "audio/mp4;codecs=mp4a.40.2", // Safari — AAC
     "audio/mp4",
+    "audio/aac",
+    "audio/mpeg",
     "audio/webm",
+    "audio/ogg",
+    "audio/wav",
   ]) {
     if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) return m;
   }
@@ -264,12 +269,26 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
     setupAnalyser(stream);
 
     const mime = detectMime();
+    let mr: MediaRecorder;
+    try {
+      mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 });
+    } catch {
+      mr = new MediaRecorder(stream); // browser default format
+    }
+    recorderRef.current = mr;
+    // The browser may pick a different format than requested — report the real one
+    const actualMime = mr.mimeType || mime;
+
     const wsUrl = await api.voiceStreamUrl(sessionId);
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
 
-    ws.onopen = () => ws.send(JSON.stringify({ type: "start", mime_type: mime }));
+    mr.ondataavailable = (e) => {
+      if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+    };
+
+    ws.onopen = () => ws.send(JSON.stringify({ type: "start", mime_type: actualMime }));
 
     ws.onmessage = (ev) => {
       if (typeof ev.data !== "string") return;
@@ -278,11 +297,6 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
       if (msg.type === "ready") {
         setStage("recording");
         timerRef.current = setInterval(() => setElapsed((n) => n + 1), 1000);
-        const mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 32000 });
-        recorderRef.current = mr;
-        mr.ondataavailable = (e) => {
-          if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data);
-        };
         mr.start(250);
       } else if (msg.type === "transcript") {
         setTranscript(msg.text || "");

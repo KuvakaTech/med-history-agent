@@ -35,6 +35,7 @@ out/
 .turbo/
 .vercel/
 npm-debug.log*
+*.tsbuildinfo
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*

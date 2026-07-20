@@ -306,13 +306,13 @@ async def submit_answer_audio(
         raise HTTPException(400, "No active question.")
 
     audio_data = await audio_file.read()
+    mimetype = audio_file.content_type or "audio/webm"
 
     # Store audio in R2
-    audio_key = await r2.upload_audio(audio_data, session_id, suffix=".wav")
+    audio_key = await r2.upload_audio(audio_data, session_id, mime_type=mimetype)
     ctx.audio_keys.append(audio_key)
 
     # Transcribe
-    mimetype = audio_file.content_type or "audio/wav"
     answer_text = await transcribe_bytes(audio_data, mimetype, language=ctx.patient_language)
 
     # Translate if needed
@@ -519,7 +519,9 @@ async def voice_stream(
         msg = await asyncio.wait_for(websocket.receive(), timeout=10.0)
         if msg.get("text"):
             data = json.loads(msg["text"])
-            mime_type = data.get("mime_type", mime_type)
+            client_mime = data.get("mime_type", "")
+            if isinstance(client_mime, str) and client_mime.lower().startswith("audio/"):
+                mime_type = client_mime
         await websocket.send_json({"type": "ready"})
 
         # Stream audio chunks until browser sends {type:"stop"}
@@ -555,7 +557,7 @@ async def voice_stream(
     await websocket.send_json({"type": "processing", "stage": "transcribing"})
 
     # Parallel: upload to R2 AND transcribe — audio already in memory, no wait
-    r2_task = asyncio.create_task(r2.upload_audio(full_audio, session_id, suffix=".webm"))
+    r2_task = asyncio.create_task(r2.upload_audio(full_audio, session_id, mime_type=mime_type))
     stt_task = asyncio.create_task(transcribe_bytes(full_audio, mime_type, language=ctx.patient_language))
 
     results = await asyncio.gather(r2_task, stt_task, return_exceptions=True)
@@ -618,8 +620,13 @@ async def voice_stream(
     await websocket.close()
 
 
-@router.delete("/{session_id}", dependencies=[Depends(verify_token)])
-async def end_session(session_id: str):
-    await _get_session(session_id)
+@router.delete("/{session_id}")
+async def end_session(session_id: str, user: dict = Depends(verify_token)):
+    ctx = await _get_session(session_id, user["sub"])
+    for audio_key in ctx.audio_keys:
+        try:
+            await r2.delete_audio(audio_key)
+        except Exception as exc:
+            log.warning("Failed to delete audio %s for session %s: %s", audio_key, session_id, exc)
     await session_store.delete(session_id)
     return {"deleted": session_id}

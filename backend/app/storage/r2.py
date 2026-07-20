@@ -13,6 +13,32 @@ from app.core.config import settings
 
 _s3_client = None
 
+# Audio formats we accept from browsers/uploads. Deepgram auto-detects all of these.
+_MIME_EXT = {
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+    "audio/mp4": ".m4a",
+    "audio/x-m4a": ".m4a",
+    "audio/aac": ".aac",
+    "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/wave": ".wav",
+    "audio/flac": ".flac",
+    "audio/x-flac": ".flac",
+}
+
+
+def _normalize_mime(mime_type: str) -> str:
+    """Strip codec params, e.g. 'audio/webm;codecs=opus' -> 'audio/webm'."""
+    return mime_type.split(";")[0].strip().lower()
+
+
+def audio_suffix(mime_type: str) -> str:
+    """File extension for a given audio mime type (default .webm)."""
+    return _MIME_EXT.get(_normalize_mime(mime_type), ".webm")
+
 
 def _get_s3():
     global _s3_client
@@ -27,9 +53,9 @@ def _get_s3():
     return _s3_client
 
 
-async def upload_audio(data: bytes, session_id: str, suffix: str = ".wav") -> str:
+async def upload_audio(data: bytes, session_id: str, mime_type: str = "audio/webm") -> str:
     """Upload audio bytes to R2. Returns a key (R2) or local path (fallback)."""
-    key = f"audio/{session_id}/{uuid.uuid4().hex}{suffix}"
+    key = f"audio/{session_id}/{uuid.uuid4().hex}{audio_suffix(mime_type)}"
     s3 = _get_s3()
     if s3 is None:
         # Fallback: write to temp dir
@@ -48,7 +74,7 @@ async def upload_audio(data: bytes, session_id: str, suffix: str = ".wav") -> st
                 Bucket=settings.R2_BUCKET_NAME,
                 Key=key,
                 Body=data,
-                ContentType="audio/wav",
+                ContentType=_normalize_mime(mime_type) or "application/octet-stream",
             ),
         )
     except (BotoCoreError, ClientError) as exc:
