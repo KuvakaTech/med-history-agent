@@ -108,6 +108,7 @@ class SessionStore:
             "_id": 0, "session_id": 1, "specialty": 1, "created_at": 1,
             "current_stage": 1, "chief_complaint": 1, "patient_name": 1,
             "summary": 1, "diagnosis": 1, "prescription": 1,
+            "latitude": 1, "longitude": 1,
         }
         try:
             cursor = _col().find(

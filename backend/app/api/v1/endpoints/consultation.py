@@ -10,7 +10,7 @@ import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
 from app.auth.deps import verify_token, verify_ws_token
 
@@ -54,6 +54,8 @@ class StartRequest(BaseModel):
     patient_gender: Optional[str] = None
     chief_complaint: Optional[str] = None
     patient_id: Optional[str] = None
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
 class StartResponse(BaseModel):
@@ -61,6 +63,8 @@ class StartResponse(BaseModel):
     specialty: str
     stage: str
     opening_question: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class AnswerRequest(BaseModel):
@@ -83,6 +87,8 @@ class SessionStateResponse(BaseModel):
     has_summary: bool
     has_diagnosis: bool
     has_prescription: bool
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class QALogResponse(BaseModel):
@@ -232,6 +238,8 @@ async def start_consultation(body: StartRequest, user: dict = Depends(verify_tok
         patient_gender=patient_gender,
         chief_complaint=body.chief_complaint,
         patient_id=body.patient_id,
+        latitude=body.latitude,
+        longitude=body.longitude,
     )
     engine = LLMHistoryEngine(body.specialty, language=body.patient_language)
     opening = await engine.opening_question(
@@ -248,6 +256,8 @@ async def start_consultation(body: StartRequest, user: dict = Depends(verify_tok
         specialty=ctx.specialty.value,
         stage=ctx.current_stage.value,
         opening_question=opening,
+        latitude=ctx.latitude,
+        longitude=ctx.longitude,
     )
 
 
@@ -264,6 +274,8 @@ async def get_session(session_id: str, user: dict = Depends(verify_token)) -> Se
         has_summary=ctx.summary is not None,
         has_diagnosis=ctx.diagnosis is not None,
         has_prescription=ctx.prescription is not None,
+        latitude=ctx.latitude,
+        longitude=ctx.longitude,
     )
 
 
@@ -482,7 +494,10 @@ async def doctor_override(session_id: str, body: OverrideRequest, user: dict = D
         )
     )
     if hasattr(ctx, body.field):
-        setattr(ctx, body.field, body.value)
+        try:
+            setattr(ctx, body.field, body.value)
+        except ValidationError as exc:
+            raise HTTPException(422, f"Invalid value for '{body.field}': {exc.errors()[0]['msg']}")
     await session_store.update(ctx)
     return {"overridden": body.field, "new_value": body.value}
 

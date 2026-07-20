@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Specialty(str, Enum):
@@ -83,6 +83,11 @@ class CompletenessReport(BaseModel):
 
 
 class ConsultationContext(BaseModel):
+    # Validate on attribute assignment too (not just construction) — the doctor-override
+    # endpoint does setattr(ctx, field, value) with caller-supplied values, and an invalid
+    # value written unvalidated would fail to load on every future read (session bricked).
+    model_config = ConfigDict(validate_assignment=True)
+
     session_id: str
     specialty: Specialty
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -120,3 +125,7 @@ class ConsultationContext(BaseModel):
 
     # Patient record reference (set when consultation is linked to a patient)
     patient_id: Optional[str] = None
+
+    # Where the session was created (optional — client may not grant location access)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
