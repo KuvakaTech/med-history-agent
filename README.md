@@ -33,7 +33,8 @@ docker-compose.yml Orchestrates MongoDB + backend + frontend
 |---------|---------|
 | Anthropic Claude | Conversational history taking (Haiku) + diagnosis/summary (Sonnet) |
 | Google Gemini | Alternative LLM provider (Gemini Flash) |
-| Deepgram | Speech-to-text (Nova 3) + text-to-speech (Luna) |
+| Deepgram | Speech-to-text (Nova 3); text-to-speech fallback (Luna) |
+| ElevenLabs | Primary text-to-speech — cloned voice, English + Hindi |
 | MongoDB Atlas | Session and consultation storage |
 | Cloudflare R2 | Audio recording storage (S3-compatible) |
 
@@ -54,8 +55,8 @@ docker-compose.yml Orchestrates MongoDB + backend + frontend
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/your-org/clinical-ai.git
-cd clinical-ai
+git clone https://github.com/KuvakaTech/med-history-agent.git
+cd med-history-agent
 
 # Backend
 cp backend/.env.example backend/.env
@@ -111,7 +112,10 @@ Open [http://localhost:3000](http://localhost:3000).
 | `GEMINI_MODEL` | No | Gemini model (default: `gemini-2.0-flash`) |
 | `DEEPGRAM_API_KEY` | Yes | Deepgram API key |
 | `DEEPGRAM_STT_MODEL` | No | STT model (default: `nova-3`) |
-| `DEEPGRAM_TTS_MODEL` | No | TTS voice (default: `aura-luna-en`) |
+| `DEEPGRAM_TTS_MODEL` | No | TTS fallback voice (default: `aura-luna-en`) |
+| `ELEVENLABS_API_KEY` | No | ElevenLabs API key — enables primary (cloned-voice) TTS |
+| `ELEVENLABS_VOICE_ID` | No | ElevenLabs cloned voice ID |
+| `ELEVENLABS_MODEL` | No | ElevenLabs model (default: `eleven_multilingual_v2`) |
 | `R2_ENDPOINT_URL` | No | Cloudflare R2 endpoint URL |
 | `R2_ACCESS_KEY_ID` | No | R2 access key |
 | `R2_SECRET_ACCESS_KEY` | No | R2 secret key |
@@ -130,14 +134,21 @@ Open [http://localhost:3000](http://localhost:3000).
 ## API Overview
 
 ```
-POST /api/v1/consultation/start              Start a new session
-POST /api/v1/consultation/{id}/answer        Submit a text answer (sync)
-POST /api/v1/consultation/{id}/answer-stream Submit a text answer (SSE streaming)
-WS   /api/v1/consultation/{id}/voice-stream  Stream voice audio (WebSocket)
-GET  /api/v1/consultation/{id}/qa-log        Fetch Q&A history
-POST /api/v1/consultation/{id}/pipeline      Run diagnosis pipeline (SSE)
-POST /api/v1/consultation/{id}/prescribe     Generate prescription
-GET  /health                                 Health check
+POST   /api/v1/consultation/start                    Start a new session
+GET    /api/v1/consultation/{id}                      Fetch session state
+POST   /api/v1/consultation/{id}/answer               Submit a text answer (sync)
+POST   /api/v1/consultation/{id}/answer-stream        Submit a text answer (SSE streaming)
+POST   /api/v1/consultation/{id}/answer-audio         Submit a voice answer (multipart upload)
+WS     /api/v1/consultation/{id}/voice-stream         Stream voice audio (WebSocket)
+GET    /api/v1/consultation/{id}/qa-log               Fetch Q&A history
+PATCH  /api/v1/consultation/{id}/answer/{question_id} Edit a previously submitted answer
+GET    /api/v1/consultation/{id}/pipeline             Run diagnosis pipeline (SSE)
+POST   /api/v1/consultation/{id}/prescribe            Generate prescription
+POST   /api/v1/consultation/{id}/finalize             Finalize the consultation
+POST   /api/v1/consultation/{id}/override             Clinician override of AI output
+DELETE /api/v1/consultation/{id}                      End session, delete session + stored audio
+POST   /api/v1/note/speak                             Text-to-speech (ElevenLabs, Deepgram fallback)
+GET    /health                                        Health check
 ```
 
 ---

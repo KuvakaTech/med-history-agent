@@ -8,7 +8,7 @@ Only the latest release on `main` receives security fixes.
 
 **Please do not report security vulnerabilities through public GitHub Issues.**
 
-Email **opensource@kuvaka.io** with:
+Email **connect@kuvaka.io** with:
 
 - Description of the vulnerability
 - Steps to reproduce
