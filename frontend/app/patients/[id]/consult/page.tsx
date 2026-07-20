@@ -36,6 +36,22 @@ const SPECIALTIES: {
   },
 ];
 
+// Best-effort location capture — never blocks or fails consultation start.
+// Resolves null on denied permission, timeout, or unsupported browser.
+function getLocation(): Promise<{ latitude: number; longitude: number } | null> {
+  return new Promise((resolve) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+    );
+  });
+}
+
 export default function NewConsultPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -60,12 +76,15 @@ export default function NewConsultPage() {
     setError("");
     setLoading(true);
     try {
+      const location = await getLocation();
       const data = await api.startConsultation(
         specialty,
         language.trim() || undefined,
         undefined, undefined, undefined,
         chiefComplaint.trim() || undefined,
         patientId,
+        location?.latitude,
+        location?.longitude,
       );
       router.push(
         `/consultation/${data.session_id}?q=${encodeURIComponent(data.opening_question)}` +

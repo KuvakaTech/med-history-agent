@@ -49,6 +49,8 @@ export interface StartResponse {
   specialty: string;
   stage: string;
   opening_question: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface AnswerResponse {

@@ -179,6 +179,8 @@ export const api = {
     patientGender?: string,
     chiefComplaint?: string,
     patientId?: string,
+    latitude?: number,
+    longitude?: number,
   ) =>
     req<StartResponse>("POST", "/consultation/start", {
       specialty,
@@ -187,6 +189,8 @@ export const api = {
       patient_age: patientAge || undefined,
       patient_gender: patientGender || undefined,
       chief_complaint: chiefComplaint || undefined,
+      latitude: latitude ?? undefined,
+      longitude: longitude ?? undefined,
       patient_id: patientId || undefined,
     }),
 
