@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cabin Dev Harness — Patients & Profile</title>
+<link rel="stylesheet" href="dev.css">
+</head>
+<body>
+
+<h2>Step 2 — Patient and clinical profile</h2>
+<p class="hint">
+  <b>This is the page that makes gap alerts testable.</b> A consultation only produces a
+  <code>gap_alert</code> when the patient has a recorded history to check against — a
+  walk-in with an empty profile deliberately costs nothing and produces nothing.
+  So: create a patient, give them a condition like <i>Type 2 diabetes</i>, then select
+  them before starting a consult in step 3.
+</p>
+
+<div class="cols">
+  <div>
+    <div class="card">
+      <h3>Create a patient</h3>
+      <div class="row">
+        <input id="pname" placeholder="name" size="18">
+        <input id="page" placeholder="age" size="4" type="number">
+        <select id="pgender">
+          <option value="">gender…</option>
+          <option value="female">female</option>
+          <option value="male">male</option>
+          <option value="other">other</option>
+        </select>
+        <button id="createBtn">Create</button>
+      </div>
+      <div class="status" id="createStatus"></div>
+    </div>
+
+    <div class="card">
+      <h3>Patients <button id="refreshBtn" style="float:right">Refresh</button></h3>
+      <table id="ptable">
+        <thead><tr><th>Name</th><th>Age</th><th>Profile</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="status" id="listStatus"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>Clinical profile <span id="selName" class="muted"></span></h3>
+      <p class="hint" style="margin:4px 0 10px">
+        Everything set here is <code>source: "doctor"</code> — asserted, not inferred.
+        Conditions the system derives from previous consultations show up as
+        <span class="pill derived">derived</span> and never overwrite a doctor entry.
+      </p>
+
+      <div class="row">
+        <input id="cond" placeholder="condition, e.g. Type 2 diabetes" size="26">
+        <input id="condDetail" placeholder="detail, e.g. on metformin" size="20">
+        <button id="addCond">Add condition</button>
+      </div>
+      <ul id="condList"></ul>
+
+      <div class="row">
+        <input id="allergy" placeholder="allergy, e.g. penicillin" size="22">
+        <button id="addAllergy">Add allergy</button>
+      </div>
+      <ul id="allergyList"></ul>
+
+      <div class="row">
+        <input id="med" placeholder="current medication, e.g. metformin 500mg" size="26">
+        <button id="addMed">Add medication</button>
+      </div>
+      <ul id="medList"></ul>
+
+      <div class="row">
+        <button id="saveBtn">Save profile</button>
+        <button id="useBtn">Use this patient for the consult →</button>
+      </div>
+      <div class="status" id="profStatus"></div>
+    </div>
+
+    <div class="card">
+      <h3>Raw patient document</h3>
+      <pre id="raw">select a patient</pre>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { $, api, esc, store, mountChrome, renderWho, requireToken } from "./dev.js";
+
+mountChrome("patients.html");
+
+let selected = null;          // the full patient document
+let draft = { conditions: [], allergies: [], current_medications: [] };
+
+function renderDraft() {
+  $("condList").innerHTML = draft.conditions.map((c, i) =>
+    `<li>${esc(c.name)}${c.detail ? ` — <span class="muted">${esc(c.detail)}</span>` : ""}
+      <span class="pill ${c.source === "derived" ? "derived" : "doctor"}">${esc(c.source || "doctor")}</span>
+      <a href="#" data-kind="conditions" data-i="${i}">remove</a></li>`).join("")
+    || `<li class="muted">none</li>`;
+  $("allergyList").innerHTML = draft.allergies.map((a, i) =>
+    `<li>${esc(a)} <a href="#" data-kind="allergies" data-i="${i}">remove</a></li>`).join("")
+    || `<li class="muted">none</li>`;
+  $("medList").innerHTML = draft.current_medications.map((m, i) =>
+    `<li>${esc(m)} <a href="#" data-kind="current_medications" data-i="${i}">remove</a></li>`).join("")
+    || `<li class="muted">none</li>`;
+}
+
+document.body.addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-kind]");
+  if (!a) return;
+  e.preventDefault();
+  draft[a.dataset.kind].splice(Number(a.dataset.i), 1);
+  renderDraft();
+});
+
+function select(p) {
+  selected = p;
+  draft = {
+    conditions: (p.conditions || []).map((c) => ({ ...c })),
+    allergies: [...(p.allergies || [])],
+    current_medications: [...(p.current_medications || [])],
+  };
+  $("selName").textContent = `— ${p.name}`;
+  $("raw").textContent = JSON.stringify(p, null, 2);
+  renderDraft();
+}
+
+async function refresh() {
+  if (!requireToken($("listStatus"))) return;
+  try {
+    const data = await api("/patients");
+    const rows = data.patients || data;
+    $("ptable").querySelector("tbody").innerHTML = rows.map((p) => {
+      const n = (p.conditions || []).length + (p.allergies || []).length +
+                (p.current_medications || []).length;
+      return `<tr>
+        <td>${esc(p.name)}${store.patientId === p.patient_id ? ' <span class="ok">(selected)</span>' : ""}</td>
+        <td>${esc(p.age)}</td>
+        <td>${n ? `${n} item(s)` : '<span class="muted">empty — no gap alerts</span>'}</td>
+        <td><button data-pid="${esc(p.patient_id)}">Edit</button></td></tr>`;
+    }).join("") || `<tr><td colspan="4" class="muted">no patients yet</td></tr>`;
+
+    $("ptable").querySelectorAll("button[data-pid]").forEach((b) => {
+      b.onclick = () => select(rows.find((p) => p.patient_id === b.dataset.pid));
+    });
+    $("listStatus").innerHTML = "";
+  } catch (e) {
+    $("listStatus").innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+  }
+}
+
+$("createBtn").onclick = async () => {
+  if (!requireToken($("createStatus"))) return;
+  try {
+    const p = await api("/patients", {
+      method: "POST",
+      body: JSON.stringify({
+        name: $("pname").value.trim(),
+        age: Number($("page").value || 0),
+        gender: $("pgender").value || null,
+      }),
+    });
+    $("createStatus").innerHTML = `<span class="ok">created ${esc(p.name)}</span>`;
+    await refresh();
+    select(p);
+  } catch (e) {
+    $("createStatus").innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+  }
+};
+
+$("addCond").onclick = () => {
+  const name = $("cond").value.trim();
+  if (!name) return;
+  draft.conditions.push({ name, detail: $("condDetail").value.trim() || null, source: "doctor" });
+  $("cond").value = ""; $("condDetail").value = "";
+  renderDraft();
+};
+$("addAllergy").onclick = () => {
+  const v = $("allergy").value.trim();
+  if (v) { draft.allergies.push(v); $("allergy").value = ""; renderDraft(); }
+};
+$("addMed").onclick = () => {
+  const v = $("med").value.trim();
+  if (v) { draft.current_medications.push(v); $("med").value = ""; renderDraft(); }
+};
+
+$("saveBtn").onclick = async () => {
+  if (!selected) { $("profStatus").innerHTML = `<span class="bad">select a patient first</span>`; return; }
+  try {
+    const p = await api(`/patients/${selected.patient_id}`, {
+      method: "PATCH",
+      body: JSON.stringify(draft),
+    });
+    select(p);
+    $("profStatus").innerHTML = `<span class="ok">saved — this profile is what gap alerts check against</span>`;
+    await refresh();
+  } catch (e) {
+    $("profStatus").innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+  }
+};
+
+$("useBtn").onclick = () => {
+  if (!selected) { $("profStatus").innerHTML = `<span class="bad">select a patient first</span>`; return; }
+  store.patientId = selected.patient_id;
+  store.patientName = selected.name;
+  renderWho();
+  $("profStatus").innerHTML = `<span class="ok">selected — go to step 3 and start a consult</span>`;
+  refresh();
+};
+
+$("refreshBtn").onclick = refresh;
+refresh();
+</script>
+</body>
+</html>

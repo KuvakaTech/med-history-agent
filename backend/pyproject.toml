@@ -21,6 +21,7 @@ httpx = "^0.28.1"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 bcrypt = "^5.0.0"
 slowapi = "^0.1.9"
+websockets = "^13.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.1"
@@ -31,3 +32,8 @@ ruff = "^0.4.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]

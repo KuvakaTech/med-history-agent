@@ -3,15 +3,21 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import uuid
 from functools import partial
 
 import boto3
+from boto3.s3.transfer import TransferConfig
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import settings
 
 _s3_client = None
+
+# S3 requires every part except the last to be at least 5MiB, and R2 requires them all
+# to be the same size.
+_PART_BYTES = 8 * 1024 * 1024
 
 # Audio formats we accept from browsers/uploads. Deepgram auto-detects all of these.
 _MIME_EXT = {
@@ -77,6 +83,47 @@ async def upload_audio(data: bytes, session_id: str, mime_type: str = "audio/web
                 ContentType=_normalize_mime(mime_type) or "application/octet-stream",
             ),
         )
+    except (BotoCoreError, ClientError) as exc:
+        raise RuntimeError(f"R2 upload failed: {exc}") from exc
+
+    return key
+
+
+async def upload_audio_file(
+    path: str, session_id: str, mime_type: str = "audio/webm"
+) -> str:
+    """Upload audio from a local file. Streams the body instead of holding it in memory,
+    and boto3 splits it into a multipart upload above its threshold. Returns a key (R2)
+    or a local path (fallback), same as upload_audio."""
+    key = f"audio/{session_id}/{uuid.uuid4().hex}{audio_suffix(mime_type)}"
+    s3 = _get_s3()
+    loop = asyncio.get_event_loop()
+
+    if s3 is None:
+        # Fallback: move it under /tmp, where download_audio and delete_audio treat the
+        # returned path as a local file.
+        dest = f"/tmp/{key.replace('/', '_')}"
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        await loop.run_in_executor(None, partial(shutil.copyfile, path, dest))
+        return dest
+
+    def _upload() -> None:
+        with open(path, "rb") as fh:
+            s3.upload_fileobj(
+                fh,
+                settings.R2_BUCKET_NAME,
+                key,
+                ExtraArgs={
+                    "ContentType": _normalize_mime(mime_type)
+                    or "application/octet-stream"
+                },
+                # R2 requires every non-final part to be the same size; a single
+                # explicit chunk size keeps the transfer manager uniform.
+                Config=TransferConfig(multipart_chunksize=_PART_BYTES),
+            )
+
+    try:
+        await loop.run_in_executor(None, _upload)
     except (BotoCoreError, ClientError) as exc:
         raise RuntimeError(f"R2 upload failed: {exc}") from exc
 

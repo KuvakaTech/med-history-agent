@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.auth.deps import verify_token
+from app.cabin.store import cabin_session_store
 from app.clinical import patient_store
+from app.clinical.patient import KnownCondition
 from app.clinical.session_store import session_store
 
 router = APIRouter(prefix="/patients", tags=["patients"])
@@ -24,6 +26,10 @@ class UpdatePatientRequest(BaseModel):
     age: Optional[int] = None
     gender: Optional[str] = None
     phone: Optional[str] = None
+    # Clinical profile — what live gap alerts check the consultation against.
+    conditions: Optional[list[KnownCondition]] = None
+    allergies: Optional[list[str]] = None
+    current_medications: Optional[list[str]] = None
 
 
 @router.post("", status_code=201)
@@ -62,7 +68,14 @@ async def get_patient_history(patient_id: str, user: dict = Depends(verify_token
     sessions = await session_store.list_for_patient(
         patient_id=patient_id, doctor_id=user["sub"]
     )
-    return {"patient": patient.model_dump(mode="json"), "sessions": sessions}
+    cabin_sessions = await cabin_session_store.list_for_patient(
+        patient_id=patient_id, doctor_id=user["sub"]
+    )
+    return {
+        "patient": patient.model_dump(mode="json"),
+        "sessions": sessions,
+        "cabin_sessions": cabin_sessions,
+    }
 
 
 @router.patch("/{patient_id}")

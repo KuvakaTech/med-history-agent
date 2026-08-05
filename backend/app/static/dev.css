@@ -1,0 +1,39 @@
+/* Shared styling for the dev harnesses. Matches cabin_test.html's dark monospace look. */
+body { font-family: monospace; margin: 0; padding: 12px; background: #111; color: #ddd; }
+input, select, button, textarea { font-family: monospace; padding: 4px 6px; background: #1b1b1b; color: #ddd; border: 1px solid #444; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { background: #2a2a2a; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+a { color: #6cf; }
+
+#nav { display: flex; gap: 4px; align-items: center; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #333; flex-wrap: wrap; }
+.navitem { padding: 4px 10px; border: 1px solid #444; text-decoration: none; color: #9ad; }
+.navitem.current { background: #2a3a4a; color: #cef; border-color: #68a; }
+.spacer { flex: 1; }
+#who { color: #888; font-size: 12px; }
+
+h2 { margin: 0 0 4px; font-size: 15px; color: #cef; }
+h3 { margin: 10px 0 4px; border-bottom: 1px solid #444; font-size: 13px; }
+.hint { color: #777; font-size: 12px; margin: 0 0 12px; line-height: 1.5; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.card { border: 1px solid #444; padding: 10px; margin-bottom: 12px; }
+.cols { display: flex; gap: 16px; align-items: flex-start; }
+.cols > * { flex: 1; min-width: 0; }
+
+.ok { color: #8f8; }
+.bad { color: #f66; }
+.warn { color: #fc6; }
+.muted { color: #888; }
+.pill { display: inline-block; padding: 1px 6px; border: 1px solid #555; font-size: 11px; margin-left: 6px; }
+.pill.doctor { border-color: #6a6; color: #8f8; }
+.pill.derived { border-color: #a86; color: #fc6; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { border: 1px solid #333; padding: 4px 6px; text-align: left; vertical-align: top; }
+th { background: #1b1b1b; color: #9ad; }
+tr:hover td { background: #191919; }
+
+pre { background: #0b0b0b; border: 1px solid #333; padding: 8px; overflow-x: auto; font-size: 12px; max-height: 320px; }
+ul { margin: 4px 0; padding-left: 18px; }
+li { margin: 2px 0; }
+.status { min-height: 18px; margin: 6px 0; font-size: 12px; }

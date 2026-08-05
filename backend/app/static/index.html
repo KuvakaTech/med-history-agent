@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cabin Dev Harness — Login</title>
+<link rel="stylesheet" href="dev.css">
+</head>
+<body>
+
+<h2>Step 1 — Authenticate</h2>
+<p class="hint">
+  Every route except <code>/health</code> needs a doctor JWT. The token is kept in
+  <code>localStorage</code> and shared by all five pages, so log in once here.
+  Access tokens last 15 minutes — if calls start returning 401, log in again.
+</p>
+
+<div class="card">
+  <div class="row">
+    <input id="email" placeholder="email" size="26" autocomplete="username">
+    <input id="password" placeholder="password" type="password" size="20" autocomplete="current-password">
+    <input id="name" placeholder="name (register only)" size="18">
+  </div>
+  <div class="row">
+    <button id="loginBtn">Login</button>
+    <button id="registerBtn">Register</button>
+    <button id="logoutBtn">Clear token</button>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<div class="card">
+  <h3>The flow these pages walk</h3>
+  <p class="hint" style="margin:0">
+    <b>1 Login</b> → <b>2</b> create a patient and give them a clinical profile (this is what
+    gap alerts check against) → <b>3</b> run a live consult and watch <code>gap_alert</code>
+    arrive → <b>4</b> find the finished session → <b>5</b> read the full record and correct it.
+    <br><br>
+    Steps 2–5 exercise Phase 2 Stage 0 (the read surface) and Stage 1 (2a, gap alerts).
+    Coding, prescription and claims are not built yet, so there is nothing to test for
+    those.
+  </p>
+</div>
+
+<div class="card">
+  <h3>Current token</h3>
+  <pre id="tok">—</pre>
+</div>
+
+<script type="module">
+import { $, api, login, register, store, mountChrome, renderWho, esc } from "./dev.js";
+
+mountChrome("index.html");
+
+function showToken() {
+  $("tok").textContent = store.token
+    ? store.token.slice(0, 48) + "…\n\n(claims: " +
+      JSON.stringify(JSON.parse(atob(store.token.split(".")[1]))) + ")"
+    : "—";
+}
+
+async function run(fn) {
+  $("status").innerHTML = "working…";
+  try {
+    await fn();
+    $("status").innerHTML = `<span class="ok">OK — token stored. Go to step 2.</span>`;
+  } catch (e) {
+    $("status").innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+  }
+  showToken();
+  renderWho();
+}
+
+$("loginBtn").onclick = () => run(() => login($("email").value.trim(), $("password").value));
+$("registerBtn").onclick = () => run(() =>
+  register($("email").value.trim(), $("password").value, $("name").value.trim() || "Dev Doctor"));
+$("logoutBtn").onclick = () => {
+  store.token = ""; store.patientId = ""; store.patientName = ""; store.sessionId = "";
+  $("status").innerHTML = "cleared."; showToken(); renderWho();
+};
+
+showToken();
+</script>
+</body>
+</html>

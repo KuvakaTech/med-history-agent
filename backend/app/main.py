@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -38,6 +39,17 @@ async def lifespan(app: FastAPI):
         # Patients
         await db["patients"].create_index("patient_id", unique=True)
         await db["patients"].create_index([("doctor_id", 1), ("created_at", -1)])
+        # Cabin consultations
+        await db["cabin_sessions"].create_index([("session_id", 1)], unique=True)
+        await db["cabin_sessions"].create_index([("doctor_id", 1), ("created_at", -1)])
+        await db["cabin_sessions"].create_index([("patient_id", 1), ("doctor_id", 1)])
+        # Cabin leases. session_id is the document _id, so the uniqueness that decides
+        # the acquire race is already enforced by the primary key. The TTL index is
+        # hygiene for leases orphaned by a hard worker crash — Mongo's TTL monitor only
+        # runs about once a minute, so acquire() compares expires_at itself rather than
+        # relying on it.
+        await db["cabin_leases"].create_index("expires_at", expireAfterSeconds=0)
+        await db["cabin_leases"].create_index([("doctor_id", 1)])
         log.info("MongoDB connected and indexes ensured")
     except Exception as exc:
         log.warning("MongoDB index setup failed (will retry on first request): %s", exc)
@@ -98,6 +110,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Dev-only harness for exercising the cabin WebSocket (getUserMedia needs a secure
+# context, which file:// is not — this must be same-origin with the API). Never
+# mount this in production: it's an unauthenticated static file server.
+if settings.DEBUG or settings.CABIN_TEST_HARNESS:
+    app.mount("/dev", StaticFiles(directory="app/static"), name="dev")
 
 
 @app.get("/health")
