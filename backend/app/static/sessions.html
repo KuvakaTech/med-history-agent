@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cabin Dev Harness — Sessions</title>
+<link rel="stylesheet" href="dev.css">
+</head>
+<body>
+
+<h2>Step 4 — Finished consultations</h2>
+<p class="hint">
+  <code>GET /api/v1/cabin/</code> — the list view added in Phase 2 Stage 0. Rows are a
+  <b>summary projection</b>: they carry the panel, but deliberately omit
+  <code>utterances</code> and <code>suggestions</code>, so a list never ships a
+  90-minute transcript per row. Use <code>?patient_id=</code> to get one patient's
+  timeline. <code>cost</code> is never returned — it is unit economics, not clinical data.
+</p>
+
+<div class="card">
+  <div class="row">
+    <label><input type="checkbox" id="byPatient"> only the selected patient</label>
+    <span id="selPatient" class="muted"></span>
+    <input id="limit" type="number" value="50" size="4" title="limit (1–200)">
+    <button id="refreshBtn">Refresh</button>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<div class="card">
+  <table id="stable">
+    <thead><tr>
+      <th>Started</th><th>Patient</th><th>Specialty</th>
+      <th>Status</th><th>Workflow</th><th>Panel</th><th></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>Raw response</h3>
+  <pre id="raw">—</pre>
+</div>
+
+<script type="module">
+import { $, api, esc, store, mountChrome, renderWho, requireToken } from "./dev.js";
+
+mountChrome("sessions.html");
+$("selPatient").textContent = store.patientName ? `(${store.patientName})` : "(none selected)";
+
+function counts(panel) {
+  if (!panel) return '<span class="muted">—</span>';
+  const bits = [
+    [panel.symptoms, "sym"], [panel.diagnoses, "dx"],
+    [panel.tests, "tests"], [panel.medications, "meds"],
+  ].filter(([a]) => a && a.length).map(([a, l]) => `${a.length} ${l}`);
+  return bits.length ? bits.join(", ") : '<span class="muted">empty</span>';
+}
+
+async function refresh() {
+  if (!requireToken($("status"))) return;
+  const qs = new URLSearchParams();
+  if ($("byPatient").checked && store.patientId) qs.set("patient_id", store.patientId);
+  qs.set("limit", $("limit").value || "50");
+  try {
+    const data = await api(`/cabin/?${qs}`);
+    const rows = data.sessions || [];
+    $("raw").textContent = JSON.stringify(data, null, 2);
+    $("stable").querySelector("tbody").innerHTML = rows.map((s) => `<tr>
+      <td>${esc((s.created_at || "").replace("T", " ").slice(0, 19))}</td>
+      <td>${esc(s.patient_name || s.patient_id || "—")}</td>
+      <td>${esc(s.specialty || "")}</td>
+      <td>${s.status === "ended" ? '<span class="ok">ended</span>'
+            : s.status === "active" ? '<span class="warn">active</span>'
+            : `<span class="muted">${esc(s.status)}</span>`}</td>
+      <td>${esc(s.workflow || "draft")}</td>
+      <td>${counts(s.panel)}</td>
+      <td><button data-sid="${esc(s.session_id)}">Open record →</button></td>
+    </tr>`).join("") || `<tr><td colspan="7" class="muted">no consultations yet — run one in step 3</td></tr>`;
+
+    $("stable").querySelectorAll("button[data-sid]").forEach((b) => {
+      b.onclick = () => { store.sessionId = b.dataset.sid; location.href = "record.html"; };
+    });
+
+    const hasTranscript = rows.some((r) => "utterances" in r || "suggestions" in r);
+    $("status").innerHTML = hasTranscript
+      ? `<span class="bad">list returned transcript fields — the projection regressed</span>`
+      : `<span class="ok">${rows.length} row(s); transcript correctly omitted</span>`;
+  } catch (e) {
+    $("status").innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+  }
+}
+
+$("refreshBtn").onclick = refresh;
+$("byPatient").onchange = refresh;
+refresh();
+</script>
+</body>
+</html>

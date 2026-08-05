@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, Type
 
 from pydantic import BaseModel
 
+from app.agent import usage
 from app.core.config import settings
 
 log = logging.getLogger(__name__)
@@ -98,6 +99,28 @@ async def stream_complete(
 # Groq  (OpenAI-compatible)
 # ─────────────────────────────────────────────
 
+def _record_groq(data: dict) -> None:
+    u = (data or {}).get("usage") or {}
+    usage.record(
+        "groq",
+        settings.GROQ_MODEL,
+        u.get("prompt_tokens", 0) or 0,
+        u.get("completion_tokens", 0) or 0,
+    )
+
+
+def _record_gemini(model: str, resp: Any) -> None:
+    u = getattr(resp, "usage_metadata", None)
+    if u is None:
+        return
+    usage.record(
+        "gemini",
+        model,
+        getattr(u, "prompt_token_count", 0) or 0,
+        getattr(u, "candidates_token_count", 0) or 0,
+    )
+
+
 async def _groq_complete(prompt: str, system: str, temperature: float, max_tokens: int = 1024) -> str:
     import httpx
 
@@ -121,7 +144,9 @@ async def _groq_complete(prompt: str, system: str, temperature: float, max_token
             },
         )
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        _record_groq(data)
+        return data["choices"][0]["message"]["content"]
 
 
 async def _groq_structured(
@@ -157,7 +182,9 @@ async def _groq_structured(
             },
         )
         response.raise_for_status()
-        return _extract_json(response.json()["choices"][0]["message"]["content"], schema)
+        data = response.json()
+        _record_groq(data)
+        return _extract_json(data["choices"][0]["message"]["content"], schema)
 
 
 async def _groq_stream(prompt: str, system: str) -> AsyncGenerator[str, None]:
@@ -212,6 +239,7 @@ async def _gemini_complete(prompt: str, temperature: float, fast: bool = False) 
         contents=prompt,
         config=types.GenerateContentConfig(temperature=temperature),
     )
+    _record_gemini(_gemini_model(fast), resp)
     return resp.text
 
 
@@ -232,6 +260,7 @@ async def _gemini_structured(
                 temperature=temperature,
             ),
         )
+        _record_gemini(_gemini_model(fast), resp)
         return _extract_json(resp.text, schema)
     except Exception as exc:
         log.warning("Gemini structured failed (%s), falling back to plain", exc)
@@ -243,6 +272,7 @@ async def _gemini_structured(
                 temperature=temperature,
             ),
         )
+        _record_gemini(_gemini_model(fast), resp)
         return _extract_json(resp.text, schema)
 
 
@@ -269,6 +299,20 @@ def _anthropic_model(fast: bool) -> str:
     return settings.ANTHROPIC_FAST_MODEL if fast else settings.ANTHROPIC_MODEL
 
 
+def _record_anthropic(model: str, resp: Any) -> None:
+    """Read token usage off a response. Every field is read defensively — a telemetry
+    gap must never raise into a clinical path."""
+    u = getattr(resp, "usage", None)
+    if u is None:
+        return
+    usage.record(
+        "anthropic",
+        model,
+        getattr(u, "input_tokens", 0) or 0,
+        getattr(u, "output_tokens", 0) or 0,
+    )
+
+
 async def _anthropic_complete(
     prompt: str, system: str, temperature: float, fast: bool = False
 ) -> str:
@@ -284,6 +328,7 @@ async def _anthropic_complete(
     if system:
         kwargs["system"] = system
     resp = await client.messages.create(**kwargs)
+    _record_anthropic(kwargs["model"], resp)
     return resp.content[0].text  # type: ignore[index]
 
 
@@ -313,6 +358,7 @@ async def _anthropic_structured(
 
     try:
         resp = await client.messages.create(**kwargs)
+        _record_anthropic(kwargs["model"], resp)
         tool_block = next(b for b in resp.content if b.type == "tool_use")
         return schema.model_validate(tool_block.input)
     except Exception as exc:
@@ -320,6 +366,8 @@ async def _anthropic_structured(
         kwargs.pop("tools")
         kwargs.pop("tool_choice")
         resp = await client.messages.create(**kwargs)
+        # The forced-tool attempt above may already have been billed; both are recorded.
+        _record_anthropic(kwargs["model"], resp)
         return _extract_json(resp.content[0].text, schema)  # type: ignore[index]
 
 

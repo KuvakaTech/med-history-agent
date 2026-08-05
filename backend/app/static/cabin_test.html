@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cabin Consultation — Dev Harness</title>
+<style>
+  body { font-family: monospace; margin: 0; padding: 12px; background: #111; color: #ddd; }
+  #bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  input, select, button { font-family: monospace; padding: 4px 6px; }
+  #status { color: #8f8; }
+  #layout { display: flex; gap: 16px; }
+  #left, #right { flex: 1; border: 1px solid #444; padding: 8px; min-height: 400px; }
+  #transcript { white-space: pre-wrap; margin-bottom: 12px; }
+  .partial { color: #888; }
+  .doctor { color: #6cf; }
+  .patient { color: #fc6; }
+  .attendee { color: #f9f; }
+  .unknown { color: #999; }
+  h3 { margin: 8px 0 4px; border-bottom: 1px solid #444; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  .warn { color: #f66; }
+  #nav { display: flex; gap: 4px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #333; }
+  #nav a, #nav span.current { padding: 3px 9px; border: 1px solid #444; text-decoration: none; color: #9ad; font-size: 12px; }
+  #nav span.current { background: #2a3a4a; color: #cef; border-color: #68a; }
+  #gaps { border: 1px solid #a86; padding: 8px; margin-bottom: 12px; background: #1c1710; }
+  #gaps h3 { border-bottom-color: #a86; color: #fc6; }
+  #gaps li { margin-bottom: 6px; }
+  .gapq { color: #fd8; }
+  .gapwhy { color: #997; font-size: 12px; }
+  #whoami { color: #888; font-size: 12px; margin-left: auto; }
+</style>
+</head>
+<body>
+
+<div id="nav">
+  <a href="index.html">1 · Login</a>
+  <a href="patients.html">2 · Patients &amp; profile</a>
+  <span class="current">3 · Live consult</span>
+  <a href="sessions.html">4 · Sessions</a>
+  <a href="record.html">5 · Record &amp; override</a>
+</div>
+
+<div id="bar">
+  <input id="email" placeholder="email" size="18">
+  <input id="password" placeholder="password" type="password" size="14">
+  <button id="loginBtn">Login</button>
+  <select id="specialty">
+    <option value="general_medicine">General Medicine</option>
+    <option value="psychotherapy">Psychotherapy</option>
+    <option value="gynecology">Gynecology</option>
+  </select>
+  <label><input type="checkbox" id="consent"> patient consent captured</label>
+  <button id="createBtn">Create Session</button>
+  <button id="startBtn" disabled>Start</button>
+  <button id="stopBtn" disabled>Stop</button>
+  <span id="status">idle</span>
+  <span id="whoami"></span>
+</div>
+
+<div id="layout">
+  <div id="left">
+    <div id="gaps" style="display:none">
+      <h3>Gap alerts — from this patient's history</h3>
+      <ul id="gapList"></ul>
+    </div>
+    <h3>Live transcript + suggestions</h3>
+    <div id="transcript"></div>
+    <div id="suggestions">
+      <h3>Questions to ask</h3><ul id="q_questions"></ul>
+      <h3>Differentials</h3><ul id="q_diff"></ul>
+      <h3>Tests to consider</h3><ul id="q_tests"></ul>
+      <h3>Red flags</h3><ul id="q_flags"></ul>
+    </div>
+  </div>
+  <div id="right">
+    <h3>Symptoms</h3><ul id="p_symptoms"></ul>
+    <h3>Diagnoses</h3><ul id="p_diagnoses"></ul>
+    <h3>Tests ordered</h3><ul id="p_tests"></ul>
+    <h3>Medications</h3><ul id="p_medications"></ul>
+    <h3>Questions asked</h3><ul id="p_questions"></ul>
+  </div>
+</div>
+
+<script>
+// Token and selected patient are shared with the other /dev pages via localStorage,
+// so you can log in once on index.html and pick a patient on patients.html.
+let token = localStorage.getItem("dev_token") || null;
+let sessionId = null;
+let ws = null;
+let audioCtx = null;
+let workletNode = null;
+let mediaStream = null;
+const utterances = new Map(); // utterance_id -> {text, role}
+
+const $ = (id) => document.getElementById(id);
+const setStatus = (s) => { $("status").textContent = s; };
+
+function renderWhoami() {
+  const name = localStorage.getItem("dev_patient_name");
+  $("whoami").textContent = name
+    ? `patient: ${name} (gap alerts enabled)`
+    : "no patient selected — gap alerts will not fire";
+}
+renderWhoami();
+
+$("loginBtn").onclick = async () => {
+  const res = await fetch("/api/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: $("email").value, password: $("password").value }),
+  });
+  if (!res.ok) { setStatus("login failed"); return; }
+  const data = await res.json();
+  token = data.access_token;
+  localStorage.setItem("dev_token", token);
+  setStatus("logged in");
+};
+
+$("createBtn").onclick = async () => {
+  if (!token) { setStatus("login first"); return; }
+  if (!$("consent").checked) { setStatus("consent checkbox required"); return; }
+  const res = await fetch("/api/v1/cabin/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      specialty: $("specialty").value,
+      consent: true,
+      // Linking a patient is what enables gap alerts — without one the server
+      // deliberately never runs the check.
+      patient_id: localStorage.getItem("dev_patient_id") || null,
+      patient_name: localStorage.getItem("dev_patient_name") || null,
+    }),
+  });
+  if (!res.ok) { setStatus("create session failed: " + (await res.text())); return; }
+  const data = await res.json();
+  sessionId = data.session_id;
+  localStorage.setItem("dev_session_id", sessionId);
+  setStatus(`session ${sessionId} ready`);
+  $("startBtn").disabled = false;
+};
+
+$("startBtn").onclick = async () => {
+  if (!sessionId) return;
+  $("startBtn").disabled = true;
+  $("stopBtn").disabled = false;
+
+  try {
+    audioCtx = new AudioContext({ sampleRate: 16000 });
+  } catch (e) {
+    setStatus("browser refused a 16kHz AudioContext — try Chrome");
+    return;
+  }
+  await audioCtx.audioWorklet.addModule("/dev/pcm-worklet.js");
+
+  mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  const source = audioCtx.createMediaStreamSource(mediaStream);
+  workletNode = new AudioWorkletNode(audioCtx, "pcm16");
+  source.connect(workletNode);
+
+  const wsProto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${wsProto}://${location.host}/api/v1/cabin/${sessionId}/stream?token=${token}`);
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      type: "start",
+      secondary_languages: ["hin", "eng", "mar", "guj"],
+      keyterms: [],
+    }));
+    workletNode.port.onmessage = (e) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(e.data);
+    };
+    setStatus("streaming");
+  };
+
+  ws.onmessage = (evt) => {
+    if (typeof evt.data !== "string") return;
+    const msg = JSON.parse(evt.data);
+    handleMessage(msg);
+  };
+
+  ws.onclose = (evt) => {
+    // 4029 is the per-doctor concurrency cap; 1008 covers "not found" and "duplicate
+    // connection". The preceding error frame carries the detail — this just makes the
+    // close itself distinguishable instead of a bare "disconnected".
+    if (evt.code === 4029) {
+      setStatus("disconnected — too many consultations open on this account (4029)");
+    } else if (evt.code === 1008) {
+      setStatus("disconnected — refused by server (1008)");
+    } else {
+      setStatus(`disconnected (${evt.code})`);
+    }
+  };
+};
+
+$("stopBtn").onclick = () => {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stop" }));
+  if (workletNode) workletNode.port.onmessage = null;
+  if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
+  if (audioCtx) audioCtx.close();
+  $("startBtn").disabled = false;
+  $("stopBtn").disabled = true;
+  setStatus("stopped");
+};
+
+function renderTranscript(partialText) {
+  const lines = [...utterances.values()].map(
+    (u) => `<span class="${u.role}">[${u.role}]</span> ${u.text}`
+  );
+  if (partialText) lines.push(`<span class="partial">${partialText}</span>`);
+  $("transcript").innerHTML = lines.join("<br>");
+}
+
+function renderList(id, items, formatter) {
+  $(id).innerHTML = items.map((i) => `<li>${formatter(i)}</li>`).join("");
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case "snapshot":
+      (msg.utterances || []).forEach((u) => utterances.set(u.utterance_id, u));
+      renderTranscript("");
+      if (msg.panel) renderPanel(msg.panel);
+      if (msg.suggestions) renderSuggestions(msg.suggestions);
+      break;
+    case "ready":
+      setStatus("ready — stt connected");
+      break;
+    case "partial":
+      renderTranscript(msg.text);
+      break;
+    case "utterance":
+      utterances.set(msg.utterance.utterance_id, msg.utterance);
+      renderTranscript("");
+      break;
+    case "utterance_role": {
+      const u = utterances.get(msg.utterance_id);
+      if (u) { u.role = msg.role; renderTranscript(""); }
+      break;
+    }
+    case "gap_alert":
+      // Never arrives with an empty list, and a given gap is sent at most once per
+      // consultation — the server de-duplicates, so just append.
+      msg.gaps.forEach((g) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="gapq">${g.question}</span><br>` +
+          `<span class="gapwhy">${g.condition} — ${g.rationale}</span>`;
+        $("gapList").appendChild(li);
+      });
+      $("gaps").style.display = "";
+      break;
+    case "panel":
+      renderPanel(msg.panel);
+      break;
+    case "suggestions":
+      renderSuggestions(msg.suggestions);
+      break;
+    case "stt_warning":
+      setStatus(`warning: ${msg.code}`);
+      break;
+    case "error":
+      // msg.code is the stable identifier (session_not_found, duplicate_connection,
+      // session_limit); msg.message is doctor-facing copy that will change.
+      setStatus(`error${msg.code ? ` [${msg.code}]` : ""}: ${msg.message}`);
+      break;
+    case "ended":
+      setStatus(`ended — ${msg.utterance_count} utterances`);
+      break;
+  }
+}
+
+function renderPanel(panel) {
+  renderList("p_symptoms", panel.symptoms, (s) => `${s.name}${s.detail ? " — " + s.detail : ""}`);
+  renderList("p_diagnoses", panel.diagnoses, (d) => `${d.condition} (${d.likelihood})`);
+  renderList("p_tests", panel.tests, (t) => `${t.name} [${t.status}]`);
+  renderList("p_medications", panel.medications, (m) => `${m.drug_name} — ${m.action}`);
+  renderList("p_questions", panel.questions_asked, (q) => q.text);
+}
+
+function renderSuggestions(s) {
+  renderList("q_questions", s.questions_to_ask, (q) => `${q.question} — ${q.rationale}`);
+  renderList("q_diff", s.differentials, (d) => `${d.condition} (${d.likelihood}) — ${d.reasoning}`);
+  renderList("q_tests", s.tests_to_consider, (t) => `${t.test} — ${t.rationale}`);
+  renderList("q_flags", s.red_flags, (f) => f);
+}
+</script>
+</body>
+</html>

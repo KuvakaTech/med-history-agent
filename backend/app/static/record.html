@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cabin Dev Harness — Record & Override</title>
+<link rel="stylesheet" href="dev.css">
+</head>
+<body>
+
+<h2>Step 5 — The finished record, and correcting it</h2>
+<p class="hint">
+  <code>GET /api/v1/cabin/{id}/record</code> returns the full clinical content — the read
+  every later Phase 2 step is built on. <code>POST …/override</code> applies a doctor
+  correction with an audit entry.
+  <br><br>
+  <b>Two behaviours worth deliberately provoking here:</b> overriding a session that is
+  still <code>active</code> returns <b>409</b> (the live flush loop would overwrite the
+  correction within 15s, so it is refused rather than silently lost), and a protected
+  field or a bad value returns <b>422</b> with the record left untouched.
+</p>
+
+<div class="card">
+  <div class="row">
+    <input id="sid" placeholder="session_id" size="40">
+    <button id="loadBtn">Load record</button>
+    <span id="wf"></span>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<div class="cols">
+  <div>
+    <div class="card">
+      <h3>Panel</h3>
+      <div id="panel"><span class="muted">—</span></div>
+    </div>
+    <div class="card">
+      <h3>Transcript <span class="muted" id="uttCount"></span></h3>
+      <div id="transcript"><span class="muted">—</span></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>Apply an override</h3>
+      <div class="row">
+        <select id="field">
+          <option value="patient_name">patient_name</option>
+          <option value="panel">panel (JSON)</option>
+          <option value="workflow">workflow</option>
+          <option value="status">status</option>
+          <option value="doctor_id">doctor_id (protected → 422)</option>
+          <option value="overrides">overrides (protected → 422)</option>
+          <option value="not_a_field">not_a_field (unknown → 422)</option>
+        </select>
+      </div>
+      <div class="row">
+        <textarea id="value" rows="4" cols="46" placeholder="value — plain text, or JSON for panel"></textarea>
+      </div>
+      <div class="row">
+        <input id="reason" placeholder="reason (optional)" size="30">
+        <button id="applyBtn">Apply override</button>
+      </div>
+      <div class="status" id="ovStatus"></div>
+    </div>
+
+    <div class="card">
+      <h3>Audit trail</h3>
+      <table id="ovtable">
+        <thead><tr><th>When</th><th>Field</th><th>Was</th><th>Now</th><th>Reason</th><th>By</th></tr></thead>
+        <tbody><tr><td colspan="6" class="muted">—</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Raw record</h3>
+      <pre id="raw">—</pre>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { $, api, esc, store, mountChrome, requireToken } from "./dev.js";
+
+mountChrome("record.html");
+$("sid").value = store.sessionId || "";
+
+let record = null;
+
+function short(v) {
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return s == null ? "—" : esc(s.length > 40 ? s.slice(0, 40) + "…" : s);
+}
+
+function renderPanel(p) {
+  if (!p) { $("panel").innerHTML = '<span class="muted">no panel</span>'; return; }
+  const sec = (title, items, fmt) =>
+    `<h3>${title}</h3><ul>${(items || []).map((i) => `<li>${fmt(i)}</li>`).join("")
+      || '<li class="muted">none</li>'}</ul>`;
+  $("panel").innerHTML =
+    sec("Symptoms", p.symptoms, (s) => esc(s.name) + (s.detail ? ` — <span class="muted">${esc(s.detail)}</span>` : "")) +
+    sec("Diagnoses", p.diagnoses, (d) => `${esc(d.condition)} <span class="muted">(${esc(d.likelihood)})</span>` +
+        (d.icd_code ? ` <span class="pill">${esc(d.icd_code)}</span>` : "")) +
+    sec("Tests", p.tests, (t) => `${esc(t.name)} <span class="muted">${esc(t.status)}</span>`) +
+    sec("Medications", p.medications, (m) => `${esc(m.drug_name)} <span class="muted">${esc(m.action)}</span>`) +
+    sec("Questions asked", p.questions_asked, (q) => esc(q.text));
+}
+
+function renderOverrides(list) {
+  $("ovtable").querySelector("tbody").innerHTML = (list || []).length
+    ? list.map((o) => `<tr>
+        <td>${esc((o.timestamp || "").replace("T", " ").slice(0, 19))}</td>
+        <td>${esc(o.field)}</td><td>${short(o.original_value)}</td>
+        <td>${short(o.overridden_value)}</td>
+        <td>${esc(o.reason || "—")}</td><td>${esc(o.doctor_id || "")}</td></tr>`).join("")
+    : `<tr><td colspan="6" class="muted">no corrections yet</td></tr>`;
+}
+
+async function load() {
+  if (!requireToken($("status"))) return;
+  const id = $("sid").value.trim();
+  if (!id) { $("status").innerHTML = `<span class="bad">need a session_id — pick one in step 4</span>`; return; }
+  try {
+    record = await api(`/cabin/${id}/record`);
+    store.sessionId = id;
+    $("raw").textContent = JSON.stringify(record, null, 2);
+    renderPanel(record.panel);
+    renderOverrides(record.overrides);
+    $("uttCount").textContent = `(${(record.utterances || []).length})`;
+    $("transcript").innerHTML = (record.utterances || []).map((u) =>
+      `<div><span class="muted">[${esc(u.role)}]</span> ${esc(u.text)}</div>`).join("")
+      || '<span class="muted">no utterances</span>';
+    $("wf").innerHTML = `status: <b>${esc(record.status)}</b> &nbsp; workflow: <b>${esc(record.workflow)}</b>`;
+
+    const leaked = ["cost", "audio_key"].filter((k) => k in record);
+    $("status").innerHTML = leaked.length
+      ? `<span class="bad">record exposed ${leaked.join(", ")} — that is a regression</span>`
+      : `<span class="ok">loaded; cost and audio_key correctly absent</span>` +
+        (record.status === "active"
+          ? ` <span class="warn">— session still live, overrides will 409</span>` : "");
+  } catch (e) {
+    $("status").innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+  }
+}
+
+$("loadBtn").onclick = load;
+
+$("applyBtn").onclick = async () => {
+  if (!requireToken($("ovStatus"))) return;
+  const field = $("field").value;
+  const raw = $("value").value;
+  let value = raw;
+  if (field === "panel" || raw.trim().startsWith("{") || raw.trim().startsWith("[")) {
+    try { value = JSON.parse(raw); }
+    catch { $("ovStatus").innerHTML = `<span class="bad">value is not valid JSON</span>`; return; }
+  }
+  try {
+    await api(`/cabin/${$("sid").value.trim()}/override`, {
+      method: "POST",
+      body: JSON.stringify({ field, value, reason: $("reason").value.trim() || null }),
+    });
+    $("ovStatus").innerHTML = `<span class="ok">applied — reloading</span>`;
+    await load();
+  } catch (e) {
+    const expected = e.status === 409 || e.status === 422;
+    $("ovStatus").innerHTML =
+      `<span class="${expected ? "warn" : "bad"}">${esc(e.message)}</span>` +
+      (e.status === 409 ? ` <span class="muted">— expected: the consultation is still live</span>` : "") +
+      (e.status === 422 ? ` <span class="muted">— expected: protected/unknown field or invalid value</span>` : "");
+    await load();  // prove the record was left untouched
+  }
+};
+
+if ($("sid").value) load();
+</script>
+</body>
+</html>
