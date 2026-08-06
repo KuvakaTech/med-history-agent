@@ -21,7 +21,7 @@ httpx = "^0.28.1"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 bcrypt = "^5.0.0"
 slowapi = "^0.1.9"
-websockets = "^13.0"
+websockets = ">=14.0,<17.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.1"
