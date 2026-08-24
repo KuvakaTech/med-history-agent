@@ -21,6 +21,7 @@ SESSION_PARTIAL = "session_partial"
 
 # Standard streaming events
 PARTIAL_TRANSCRIPT = "partial_transcript"
+SILENCE_NUDGE = "silence_nudge"
 AGENT_SPEAKING = "agent_speaking"
 AGENT_DONE_SPEAKING = "agent_done_speaking"
 TURN_COMPLETE = "turn_complete"
@@ -86,6 +87,10 @@ def error(message: str, fatal: bool = False) -> dict:
 
 def partial_transcript(text: str) -> dict:
     return {"type": PARTIAL_TRANSCRIPT, "text": text}
+
+
+def silence_nudge() -> dict:
+    return {"type": SILENCE_NUDGE}
 
 
 def agent_speaking(question: str, turn: int) -> dict:

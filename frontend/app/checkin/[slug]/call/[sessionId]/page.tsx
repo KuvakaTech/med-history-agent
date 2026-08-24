@@ -19,6 +19,7 @@ interface CallState {
   confirmedCategory: TicketCategory | null;
   errorMsg: string;
   turn: number;
+  stillThereNudge: boolean;
 }
 
 export default function CallPage() {
@@ -46,6 +47,7 @@ export default function CallPage() {
     confirmedCategory: null,
     errorMsg: "",
     turn: 0,
+    stillThereNudge: false,
   });
 
   const updateState = useCallback((patch: Partial<CallState>) => {
@@ -161,7 +163,11 @@ export default function CallPage() {
           break;
 
         case "partial_transcript":
-          updateState({ partialTranscript: event.text });
+          updateState({ partialTranscript: event.text, stillThereNudge: false });
+          break;
+
+        case "silence_nudge":
+          updateState({ stillThereNudge: true });
           break;
 
         case "ended":
@@ -181,10 +187,10 @@ export default function CallPage() {
     const ws = new TicketVoiceWS({
       onEvent: handleEvent,
       onAudio: enqueueAudio,
-      onMicOpen: () => updateState({ micOpen: true, partialTranscript: "" }),
+      onMicOpen: () => updateState({ micOpen: true, partialTranscript: "", stillThereNudge: false }),
     });
     wsRef.current = ws;
-    onMicOpenCallbackRef.current = () => updateState({ micOpen: true, partialTranscript: "" });
+    onMicOpenCallbackRef.current = () => updateState({ micOpen: true, partialTranscript: "", stillThereNudge: false });
 
     ws.connect(ticketApi.voiceWsUrl(slug, sessionId)).catch((err) => {
       updateState({ phase: "error", errorMsg: err.message || "Connection failed." });
@@ -306,6 +312,14 @@ export default function CallPage() {
                   />
                   <p className="text-base font-semibold text-gray-800 leading-relaxed">
                     {state.currentQuestion}
+                  </p>
+                </div>
+              )}
+
+              {state.stillThereNudge && state.micOpen && !state.agentSpeaking && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-center">
+                  <p className="text-sm text-amber-700 font-medium">
+                    Still there? We can&apos;t hear you — please speak, or check your microphone.
                   </p>
                 </div>
               )}

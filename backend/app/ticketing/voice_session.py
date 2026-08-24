@@ -59,6 +59,13 @@ log = logging.getLogger(__name__)
 _MAX_AUDIO_FRAME_BYTES = 64 * 1024
 _KEEPALIVE_INTERVAL = 10.0  # seconds between Deepgram keepalives
 _SEND_TIMEOUT = 8.0
+_SILENCE_NUDGE_SECS = 8.0  # no speech yet -> send a "still there?" nudge
+_SILENCE_TIMEOUT_SECS = 20.0  # no speech at all -> give up on this attempt
+_MAX_SILENCE_RETRIES = 2  # re-ask the same question this many times before erroring out
+
+# Sentinel distinguishing "patient never spoke" from a real answer (any str,
+# including "") or a dropped connection (None).
+_SILENCE_TIMEOUT = object()
 
 
 class TicketVoiceSession:
@@ -186,8 +193,8 @@ class TicketVoiceSession:
                 return
 
             # Open mic and collect patient answer
-            answer = await self._collect_patient_answer()
-            if answer is None:  # connection dropped or stop
+            answer = await self._collect_answer_with_silence_retry(current_question, turn_idx)
+            if answer is None:  # connection dropped, stop, or silence retries exhausted
                 return
 
             # Record Q&A
@@ -345,7 +352,7 @@ class TicketVoiceSession:
             if self._stopped.is_set():
                 return
 
-            answer = await self._collect_patient_answer()
+            answer = await self._collect_answer_with_silence_retry(current_question, self.session.turn_count)
             if answer is None:
                 return
 
@@ -530,15 +537,29 @@ class TicketVoiceSession:
         dg_task = asyncio.create_task(_dg_reader())
         client_task = asyncio.create_task(_client_reader())
 
-        try:
-            result = await answer_future
-        except Exception as exc:
-            log.error("Patient answer collection failed: %s", exc)
+        # asyncio.wait (not wait_for) so a timeout never cancels the shared
+        # future out from under the reader tasks still trying to set it.
+        done, _ = await asyncio.wait({answer_future}, timeout=_SILENCE_NUDGE_SECS)
+        if not done and not self._stopped.is_set():
+            await self._send(ev.silence_nudge())
+            done, _ = await asyncio.wait(
+                {answer_future}, timeout=_SILENCE_TIMEOUT_SECS - _SILENCE_NUDGE_SECS
+            )
+
+        if done:
+            if answer_future.exception() is not None:
+                log.error("Patient answer collection failed: %s", answer_future.exception())
+                result: Optional[str] = None
+            else:
+                result = answer_future.result()
+        elif self._stopped.is_set():
             result = None
-        finally:
-            dg_task.cancel()
-            client_task.cancel()
-            await asyncio.gather(dg_task, client_task, return_exceptions=True)
+        else:
+            result = _SILENCE_TIMEOUT  # type: ignore[assignment]
+
+        dg_task.cancel()
+        client_task.cancel()
+        await asyncio.gather(dg_task, client_task, return_exceptions=True)
 
         self._mic_open = False
         # Tell Deepgram we're done for this turn
@@ -546,6 +567,27 @@ class TicketVoiceSession:
             await self._dg.finalize()
 
         return result
+
+    async def _collect_answer_with_silence_retry(self, question: str, turn: int) -> Optional[str]:
+        """Collect an answer, re-asking `question` through silence timeouts.
+
+        Returns None both when the session ended (stop/disconnect) and when
+        silence retries are exhausted -- either way the caller should stop.
+        """
+        for attempt in range(_MAX_SILENCE_RETRIES + 1):
+            answer = await self._collect_patient_answer()
+            if answer is not _SILENCE_TIMEOUT:
+                return answer
+            if self._stopped.is_set():
+                return None
+            if attempt < _MAX_SILENCE_RETRIES:
+                await self._speak_and_wait(question, turn)
+            else:
+                await self._send(ev.error(
+                    "We're having trouble hearing you. Please check your microphone and try again.",
+                    fatal=True,
+                ))
+        return None
 
     async def _wait_for_category_selection(self) -> Optional[dict]:
         """Wait for a category_selected control frame from the client."""

@@ -17,7 +17,7 @@ import pytest
 
 from app.ticketing import session_store as ss
 from app.ticketing.models import TicketCategory, TicketSession
-from app.ticketing.voice_session import TicketVoiceSession
+from app.ticketing.voice_session import _SILENCE_TIMEOUT, TicketVoiceSession
 
 
 @pytest.fixture(autouse=True)
@@ -166,3 +166,36 @@ async def test_premature_is_complete_flag_is_ignored_when_nothing_resolved():
     # Must have kept asking through all 3 turns, not stopped after turn 1.
     assert vs._collect_patient_answer.call_count == 3
     vs._wait_for_category_selection.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_silence_retry_reasks_same_question_then_succeeds():
+    """A stall (patient never spoke) should re-ask the same question, not
+    give up immediately or move on to a different one."""
+    vs = _make_voice_session()
+    vs._collect_patient_answer = AsyncMock(side_effect=[_SILENCE_TIMEOUT, "Mera naam Rahul hai"])
+
+    answer = await vs._collect_answer_with_silence_retry("Aapka naam kya hai?", turn=0)
+
+    assert answer == "Mera naam Rahul hai"
+    assert vs._collect_patient_answer.call_count == 2
+    vs._speak_and_wait.assert_awaited_once_with("Aapka naam kya hai?", 0)
+    sent_types = [call.args[0]["type"] for call in vs._send.call_args_list]
+    assert "error" not in sent_types
+
+
+@pytest.mark.asyncio
+async def test_silence_retry_exhausted_sends_fatal_error_and_gives_up():
+    """Persistent silence should eventually stop retrying and surface a
+    fatal, actionable error instead of hanging or looping forever."""
+    vs = _make_voice_session()
+    vs._collect_patient_answer = AsyncMock(return_value=_SILENCE_TIMEOUT)
+
+    answer = await vs._collect_answer_with_silence_retry("Aapka naam kya hai?", turn=0)
+
+    assert answer is None
+    assert vs._collect_patient_answer.call_count == 3  # 1 initial + 2 retries
+    assert vs._speak_and_wait.await_count == 2  # re-asked twice, not a 3rd time
+    error_calls = [c.args[0] for c in vs._send.call_args_list if c.args[0]["type"] == "error"]
+    assert len(error_calls) == 1
+    assert error_calls[0]["fatal"] is True

@@ -74,6 +74,7 @@ export type TicketWSEvent =
   | { type: "result_ready"; summary: SOAPSummary | null; flags: TicketFlag[] }
   | { type: "session_partial"; session_id: string }
   | { type: "partial_transcript"; text: string }
+  | { type: "silence_nudge" }
   | { type: "agent_speaking"; question: string; turn: number; audio_b64: string | null; mime?: string }
   | { type: "agent_done_speaking"; turn: number }
   | { type: "turn_complete"; turn: number; next_question: string | null; phase: string; history_complete: boolean; new_flags: TicketFlag[] }
