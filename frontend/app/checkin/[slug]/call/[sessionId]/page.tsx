@@ -137,6 +137,26 @@ export default function CallPage() {
           updateState({ phase: "triage" });
           break;
 
+        case "agent_speaking":
+          updateState({ currentQuestion: event.question, agentSpeaking: true });
+          break;
+
+        case "agent_audio_chunk":
+          updateState({ agentSpeaking: true });
+          break;
+
+        case "agent_done_speaking":
+          updateState({ agentSpeaking: false, micOpen: true });
+          break;
+
+        case "interrupt":
+          updateState({ agentSpeaking: false });
+          break;
+
+        case "user_speech_started":
+          updateState({ micOpen: true, stillThereNudge: false });
+          break;
+
         case "category_identified":
           updateState({ confirmedCategory: event.category });
           break;
@@ -146,6 +166,7 @@ export default function CallPage() {
             phase: "category_select",
             availableCategories: event.categories,
             micOpen: false,
+            agentSpeaking: false,
             partialTranscript: "",
             stillThereNudge: false,
           });

@@ -126,6 +126,16 @@ class Settings(BaseSettings):
     CABIN_LEASE_TTL_SECS: int = 120
     CABIN_LEASE_RENEW_SECS: float = 20.0  # TTL/6 — renewal shares the analysis loop
 
+    # ── Ticketing voice V2 (Gemini Live) ────────────────────────
+    # Off by default: same WS URL as v1, orchestrator switches here.
+    TICKETING_USE_GEMINI_LIVE: bool = True
+    GEMINI_LIVE_MODEL: str = "gemini-3.1-flash-live-preview"
+    GEMINI_LIVE_VOICE: str = "Puck"
+    TICKETING_POST_CALL_MODEL: str = ""  # empty → ANTHROPIC_MODEL
+    TICKETING_MAX_SESSION_MINUTES: int = 15
+    TICKETING_MAX_CONCURRENT_LIVE_SESSIONS_PER_HOSPITAL: int = 5
+    TICKETING_PERSIST_INTERVAL_SECS: float = 15.0
+
     # Only used for the per-session cost log line. A setting rather than a constant so
     # ops can correct it without a new image as the rate moves.
     LLM_USD_TO_INR: float = 88.0

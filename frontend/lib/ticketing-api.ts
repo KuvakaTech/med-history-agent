@@ -186,12 +186,53 @@ export const adminApi = {
 
 // ── WebSocket voice helper ────────────────────────────────────
 
+const TARGET_CAPTURE_HZ = 16000;
+const AGENT_PCM_HZ = 24000;
+const DUCK_RMS = 0.02;
+
+function downsampleToPcm16(float32: Float32Array, fromRate: number, toRate: number): Int16Array {
+  if (fromRate === toRate) {
+    const out = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i++) {
+      out[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+    }
+    return out;
+  }
+  const ratio = fromRate / toRate;
+  const newLen = Math.floor(float32.length / ratio);
+  const out = new Int16Array(newLen);
+  for (let i = 0; i < newLen; i++) {
+    out[i] = Math.max(-32768, Math.min(32767, float32[Math.floor(i * ratio)] * 32768));
+  }
+  return out;
+}
+
+function floatRms(samples: Float32Array): number {
+  if (samples.length === 0) return 0;
+  let acc = 0;
+  for (let i = 0; i < samples.length; i++) acc += samples[i] * samples[i];
+  return Math.sqrt(acc / samples.length);
+}
+
+function decodeBase64Pcm16(b64: string): Int16Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+}
+
 export class TicketVoiceWS {
   private ws: WebSocket | null = null;
   private audioCtx: AudioContext | null = null;
   private micStream: MediaStream | null = null;
   private processor: ScriptProcessorNode | null = null;
+  private silentGain: GainNode | null = null;
+  private micSource: MediaStreamAudioSourceNode | null = null;
   private micOpen = false;
+  private voiceMode: "legacy" | "gemini_live" = "legacy";
+  private agentPlaying = false;
+  private pcmSources: AudioBufferSourceNode[] = [];
+  private pcmNextTime = 0;
   private onEvent: (e: TicketWSEvent) => void;
   private onAudio: (question: string, audioB64: string | null) => void;
   private onMicOpen: () => void;
@@ -234,50 +275,173 @@ export class TicketVoiceWS {
       return;
     }
 
+    if (msg.type === "ready") {
+      if (msg.voice_mode === "gemini_live") {
+        this.voiceMode = "gemini_live";
+        this.micOpen = true;
+        this.onMicOpen();
+        void this._openMic();
+      }
+      this.onEvent(msg);
+      return;
+    }
+
     if (msg.type === "agent_speaking") {
-      this.stopMic();
-      this.onAudio(msg.question, msg.audio_b64);
-    } else if (msg.type === "agent_done_speaking") {
+      if (this.voiceMode === "gemini_live") {
+        this.onEvent(msg);
+      } else {
+        this.stopMic();
+        this.onAudio(msg.question, msg.audio_b64);
+      }
+      return;
+    }
+
+    if (msg.type === "agent_done_speaking") {
+      if (this.voiceMode === "gemini_live") {
+        this.agentPlaying = false;
+        this.onEvent(msg);
+      } else {
+        this.micOpen = true;
+        this.onMicOpen();
+        void this._openMic();
+      }
+      return;
+    }
+
+    if (msg.type === "agent_audio_chunk") {
+      this.agentPlaying = true;
+      this._playPcmChunk(msg.audio_b64);
+      this.onEvent(msg);
+      return;
+    }
+
+    if (msg.type === "interrupt") {
+      this._interruptPcm();
+      this.agentPlaying = false;
+      this.onEvent(msg);
+      return;
+    }
+
+    if (msg.type === "category_manual_required") {
+      this.micOpen = false;
+      this._interruptPcm();
+      this.agentPlaying = false;
+      this.onEvent(msg);
+      return;
+    }
+
+    if (msg.type === "consultation_started" && this.voiceMode === "gemini_live") {
       this.micOpen = true;
       this.onMicOpen();
-      this._openMic();
-    } else {
       this.onEvent(msg);
+      return;
     }
+
+    this.onEvent(msg);
   }
 
   private async _openMic(): Promise<void> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     try {
       if (!this.micStream) {
+        const gemini = this.voiceMode === "gemini_live";
         this.micStream = await navigator.mediaDevices.getUserMedia({
-          audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
+          audio: gemini
+            ? {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                channelCount: 1,
+              }
+            : { sampleRate: 16000, channelCount: 1, echoCancellation: true },
         });
       }
       if (!this.audioCtx) {
-        this.audioCtx = new AudioContext({ sampleRate: 16000 });
+        this.audioCtx =
+          this.voiceMode === "gemini_live"
+            ? new AudioContext()
+            : new AudioContext({ sampleRate: 16000 });
       }
-      const source = this.audioCtx.createMediaStreamSource(this.micStream);
-      // Use ScriptProcessor for broad browser compat; 4096 frames ≈ 256ms at 16kHz
+      if (this.audioCtx.state === "suspended") {
+        await this.audioCtx.resume();
+      }
+      if (this.processor) return;
+
+      this.micSource = this.audioCtx.createMediaStreamSource(this.micStream);
+      // ScriptProcessor for broad browser compat; 4096 frames ≈ 256ms at 16kHz
       this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
       this.processor.onaudioprocess = (e) => {
         if (!this.micOpen || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
         const float32 = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(float32.length);
-        for (let i = 0; i < float32.length; i++) {
-          pcm16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+        if (
+          this.voiceMode === "gemini_live" &&
+          this.agentPlaying &&
+          floatRms(float32) < DUCK_RMS
+        ) {
+          return;
         }
+        const fromRate = this.audioCtx?.sampleRate ?? TARGET_CAPTURE_HZ;
+        const pcm16 = downsampleToPcm16(float32, fromRate, TARGET_CAPTURE_HZ);
         this.ws.send(pcm16.buffer);
       };
-      source.connect(this.processor);
-      this.processor.connect(this.audioCtx.destination);
+      this.micSource.connect(this.processor);
+      this.silentGain = this.audioCtx.createGain();
+      this.silentGain.gain.value = 0;
+      this.processor.connect(this.silentGain);
+      this.silentGain.connect(this.audioCtx.destination);
     } catch (err) {
       console.error("Mic access failed:", err);
     }
   }
 
+  private _playPcmChunk(b64: string): void {
+    if (!this.audioCtx || this.voiceMode !== "gemini_live") return;
+    const pcm16 = decodeBase64Pcm16(b64);
+    if (pcm16.length === 0) return;
+    const ctx = this.audioCtx;
+    const ratio = ctx.sampleRate / AGENT_PCM_HZ;
+    const outLen = Math.max(1, Math.floor(pcm16.length * ratio));
+    const buffer = ctx.createBuffer(1, outLen, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    const last = pcm16.length - 1;
+    for (let i = 0; i < outLen; i++) {
+      const src = i / ratio;
+      const i0 = Math.min(Math.floor(src), last);
+      const i1 = Math.min(i0 + 1, last);
+      const frac = src - i0;
+      data[i] = (pcm16[i0] / 32768) * (1 - frac) + (pcm16[i1] / 32768) * frac;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    const now = ctx.currentTime;
+    if (this.pcmNextTime < now) this.pcmNextTime = now;
+    src.start(this.pcmNextTime);
+    this.pcmNextTime += buffer.duration;
+    this.pcmSources.push(src);
+    src.onended = () => {
+      this.pcmSources = this.pcmSources.filter((s) => s !== src);
+    };
+  }
+
+  private _interruptPcm(): void {
+    for (const src of this.pcmSources) {
+      try {
+        src.stop();
+      } catch {
+        /* already stopped */
+      }
+    }
+    this.pcmSources = [];
+    if (this.audioCtx) this.pcmNextTime = this.audioCtx.currentTime;
+  }
+
   stopMic(): void {
     this.micOpen = false;
+    if (this.voiceMode === "gemini_live") {
+      // Keep the capture graph running so barge-in stays possible; just stop sending.
+      return;
+    }
     if (this.processor) {
       this.processor.disconnect();
       this.processor = null;
@@ -289,8 +453,21 @@ export class TicketVoiceWS {
   }
 
   stop(): void {
-    this.stopMic();
+    this.micOpen = false;
+    this._interruptPcm();
     this.ws?.send(JSON.stringify({ type: "stop" }));
+    if (this.processor) {
+      this.processor.disconnect();
+      this.processor = null;
+    }
+    if (this.micSource) {
+      this.micSource.disconnect();
+      this.micSource = null;
+    }
+    if (this.silentGain) {
+      this.silentGain.disconnect();
+      this.silentGain = null;
+    }
     if (this.micStream) {
       this.micStream.getTracks().forEach((t) => t.stop());
       this.micStream = null;

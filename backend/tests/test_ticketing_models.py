@@ -19,6 +19,7 @@ from app.ticketing.models import (
     TicketPatient,
     TicketQAEntry,
     TicketSession,
+    TicketTranscriptEntry,
     to_ist_str,
 )
 
@@ -73,6 +74,7 @@ def test_ticket_session_defaults():
     assert s.turn_count == 0
     assert s.qa_log == []
     assert s.flags == []
+    assert s.transcript == []
 
 
 def test_ticket_session_soft_delete_field():
@@ -94,6 +96,16 @@ def test_ticket_session_accumulates_flags():
     s.flags.append(TicketFlag(flag_type="CRITICAL_RED_FLAG", description="Chest pain"))
     assert len(s.flags) == 2
     assert s.flags[1].flag_type == "CRITICAL_RED_FLAG"
+
+
+def test_ticket_session_transcript_is_additive():
+    s = TicketSession(hospital_id="h1", patient_id="p1")
+    s.transcript.append(TicketTranscriptEntry(speaker="user", text="Bukhar hai"))
+    s.transcript.append(TicketTranscriptEntry(speaker="agent", text="Kab se?"))
+    dumped = s.model_dump()
+    assert dumped["transcript"][0]["speaker"] == "user"
+    restored = TicketSession.model_validate({k: v for k, v in dumped.items() if k != "transcript"})
+    assert restored.transcript == []
 
 
 def test_ticket_session_qa_log():

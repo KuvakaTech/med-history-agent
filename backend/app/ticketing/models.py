@@ -85,6 +85,12 @@ class TicketQAEntry(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
+class TicketTranscriptEntry(BaseModel):
+    speaker: Literal["user", "agent"]
+    text: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
 # ── Clinical flag (reuse shape from clinical) ─────────────────
 
 class TicketFlag(BaseModel):
@@ -124,6 +130,9 @@ class TicketSession(BaseModel):
     qa_log: list[TicketQAEntry] = []
     flags: list[TicketFlag] = []
     summary: Optional[Any] = None  # SOAP dict from SummarizationService
+    # Raw Gemini Live transcript. Additive default so existing documents still load.
+    # V2 post-call extraction uses this as its sole input.
+    transcript: list[TicketTranscriptEntry] = []
 
     turn_count: int = 0
     started_at: datetime = Field(default_factory=datetime.utcnow)

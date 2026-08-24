@@ -6,6 +6,7 @@ Routes:
   GET  /v2/t/{slug}/session/{id}/result  — fetch result (summary + flags + ticket_number)
   POST /v2/t/{slug}/session/{id}/discard — soft-delete
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,6 +16,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import BaseModel
 
+from app.core.config import settings
+from app.ticketing import events as ev
 from app.ticketing.hospital_store import hospital_store
 from app.ticketing.models import TicketSession, to_ist_str
 from app.ticketing.patient_store import ticket_patient_store
@@ -27,9 +30,10 @@ log = logging.getLogger(__name__)
 
 # ── Request / Response models ─────────────────────────────────
 
+
 class StartSessionRequest(BaseModel):
     phone: str
-    language: Optional[str] = None   # defaults to hospital.default_language
+    language: Optional[str] = None  # defaults to hospital.default_language
     gender: str = "unknown"
 
 
@@ -52,19 +56,20 @@ class PatientInfo(BaseModel):
 
 class SessionResultResponse(BaseModel):
     session_id: str
-    ticket_number: Optional[str] = None   # human-readable receipt ID, e.g. TKT-000042
+    ticket_number: Optional[str] = None  # human-readable receipt ID, e.g. TKT-000042
     phase: str
     status: str
     category: Optional[dict] = None
     flags: list[dict] = []
     summary: Optional[dict] = None
-    started_at: Optional[str] = None     # IST formatted
-    ended_at: Optional[str] = None       # IST formatted
+    started_at: Optional[str] = None  # IST formatted
+    ended_at: Optional[str] = None  # IST formatted
     patient: Optional[PatientInfo] = None
     hospital_name: Optional[str] = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────
+
 
 @router.post("/{slug}/session", response_model=StartSessionResponse, status_code=201)
 async def start_session(slug: str, body: StartSessionRequest) -> StartSessionResponse:
@@ -112,7 +117,9 @@ async def get_session_result(slug: str, session_id: str) -> SessionResultRespons
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found.")
 
-    session = await ticket_session_store.get(session_id, hospital_id=hospital.hospital_id)
+    session = await ticket_session_store.get(
+        session_id, hospital_id=hospital.hospital_id
+    )
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
     if session.deleted_at is not None:
@@ -162,33 +169,71 @@ async def voice_stream(ws: WebSocket, slug: str, session_id: str) -> None:
 
     hospital = await hospital_store.get_by_slug(slug)
     if not hospital:
-        await ws.send_json({"type": "error", "fatal": True, "message": "Hospital not found."})
+        await ws.send_json(
+            {"type": "error", "fatal": True, "message": "Hospital not found."}
+        )
         await ws.close(code=1008)
         return
 
-    session = await ticket_session_store.get(session_id, hospital_id=hospital.hospital_id)
+    session = await ticket_session_store.get(
+        session_id, hospital_id=hospital.hospital_id
+    )
     if not session:
-        await ws.send_json({"type": "error", "fatal": True, "message": "Session not found."})
+        await ws.send_json(
+            {"type": "error", "fatal": True, "message": "Session not found."}
+        )
         await ws.close(code=1008)
         return
 
     if session.deleted_at is not None:
-        await ws.send_json({"type": "error", "fatal": True, "message": "Session discarded."})
+        await ws.send_json(
+            {"type": "error", "fatal": True, "message": "Session discarded."}
+        )
         await ws.close(code=1008)
         return
 
     if session.status == "completed":
-        await ws.send_json({"type": "error", "fatal": True, "message": "Session already completed."})
+        await ws.send_json(
+            {"type": "error", "fatal": True, "message": "Session already completed."}
+        )
         await ws.close(code=1008)
         return
 
-    categories = await hospital_store.list_categories(hospital.hospital_id, active_only=True)
+    categories = await hospital_store.list_categories(
+        hospital.hospital_id, active_only=True
+    )
 
     try:
-        voice = TicketVoiceSession(session=session, ws=ws, categories=categories)
-        await voice.run()
+        if settings.TICKETING_USE_GEMINI_LIVE:
+            from app.ticketing.voice_session_v2 import (
+                TicketVoiceSessionV2,
+                acquire_live_slot,
+                release_live_slot,
+            )
+
+            if not await acquire_live_slot(hospital.hospital_id):
+                await ws.send_json(
+                    ev.error(
+                        "All consultation lines are busy. Please try again in a moment.",
+                        fatal=True,
+                    )
+                )
+                await ws.close(code=1013)
+                return
+            try:
+                voice = TicketVoiceSessionV2(
+                    session=session, ws=ws, categories=categories
+                )
+                await voice.run()
+            finally:
+                await release_live_slot(hospital.hospital_id)
+        else:
+            voice = TicketVoiceSession(session=session, ws=ws, categories=categories)
+            await voice.run()
     except Exception as exc:
-        log.error("voice_stream failed for session %s: %s", session_id, exc, exc_info=True)
+        log.error(
+            "voice_stream failed for session %s: %s", session_id, exc, exc_info=True
+        )
     finally:
         try:
             await ws.close()

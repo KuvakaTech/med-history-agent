@@ -63,7 +63,7 @@ export interface SOAPSummary {
 
 // WebSocket events from server → client
 export type TicketWSEvent =
-  | { type: "ready"; session_id: string; phase: string; language: string }
+  | { type: "ready"; session_id: string; phase: string; language: string; voice_mode?: "legacy" | "gemini_live" }
   | { type: "triage_started"; session_id: string; language: string }
   | { type: "category_identified"; category: TicketCategory; confidence: string }
   | { type: "category_manual_required"; categories: TicketCategory[] }
@@ -77,6 +77,9 @@ export type TicketWSEvent =
   | { type: "silence_nudge" }
   | { type: "agent_speaking"; question: string; turn: number; audio_b64: string | null; mime?: string }
   | { type: "agent_done_speaking"; turn: number }
+  | { type: "agent_audio_chunk"; audio_b64: string; mime?: string }
+  | { type: "interrupt" }
+  | { type: "user_speech_started" }
   | { type: "turn_complete"; turn: number; next_question: string | null; phase: string; history_complete: boolean; new_flags: TicketFlag[] }
   | { type: "ended"; session_id: string }
   | { type: "error"; message: string; fatal?: boolean }

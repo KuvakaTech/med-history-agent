@@ -101,6 +101,37 @@ def agent_done_speaking(turn: int) -> dict:
     return {"type": AGENT_DONE_SPEAKING, "turn": turn}
 
 
+def ready(
+    session_id: str,
+    phase: str,
+    language: str,
+    voice_mode: str = "legacy",
+) -> dict:
+    return {
+        "type": "ready",
+        "session_id": session_id,
+        "phase": phase,
+        "language": language,
+        "voice_mode": voice_mode,
+    }
+
+
+def agent_audio_chunk(audio_b64: str) -> dict:
+    return {
+        "type": "agent_audio_chunk",
+        "audio_b64": audio_b64,
+        "mime": "audio/pcm;rate=24000",
+    }
+
+
+def interrupt() -> dict:
+    return {"type": "interrupt"}
+
+
+def user_speech_started() -> dict:
+    return {"type": "user_speech_started"}
+
+
 def turn_complete(
     turn: int,
     next_question: Optional[str],
