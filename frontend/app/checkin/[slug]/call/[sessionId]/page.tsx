@@ -8,6 +8,24 @@ import clsx from "clsx";
 // ── State machine ─────────────────────────────────────────────
 type Phase = "connecting" | "triage" | "category_select" | "consultation" | "processing" | "done" | "error";
 
+const CATEGORY_LABELS_HI: Record<string, string> = {
+  general_medicine: "सामान्य चिकित्सा",
+  gynecology: "स्त्री रोग / प्रसूति",
+  pediatrics: "बाल रोग",
+  orthopedics: "अस्थि रोग",
+  cardiology: "हृदय रोग",
+  dermatology: "त्वचा रोग",
+  ent: "कान, नाक, गला",
+  ophthalmology: "नेत्र रोग",
+  psychiatry: "मनोरोग / मानसिक स्वास्थ्य",
+  gastroenterology: "पेट एवं आंत रोग",
+  neurology: "न्यूरोलॉजी (मस्तिष्क व तंत्रिका)",
+  urology: "मूत्र रोग",
+  oncology: "कैंसर रोग",
+  endocrinology: "अंतःस्रावी रोग / मधुमेह",
+  pulmonology: "फेफड़े एवं श्वास रोग",
+};
+
 interface CallState {
   phase: Phase;
   currentQuestion: string;
@@ -257,7 +275,9 @@ export default function CallPage() {
             <div className="text-center space-y-4 py-12">
               <OrbAnimation speaking={false} listening={false} />
               <p className="text-sm text-gray-500">
-                {state.phase === "processing" ? "Preparing your summary…" : "Connecting…"}
+                {state.phase === "processing"
+                  ? "आपका सारांश तैयार किया जा रहा है… (Preparing your summary…)"
+                  : "कनेक्ट किया जा रहा है… (Connecting…)"}
               </p>
             </div>
           )}
@@ -291,7 +311,11 @@ export default function CallPage() {
                       : "text-gray-400"
                   )}
                 >
-                  {state.agentSpeaking ? "Speaking…" : state.micOpen ? "Listening…" : "Please wait"}
+                  {state.agentSpeaking
+                    ? "Speaking…"
+                    : state.micOpen
+                    ? "Listening…"
+                    : "कृपया प्रतीक्षा करें (Please wait)"}
                 </p>
               </div>
 
@@ -323,8 +347,11 @@ export default function CallPage() {
               )}
 
               {state.stillThereNudge && state.micOpen && !state.agentSpeaking && (
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-center">
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-center space-y-0.5">
                   <p className="text-sm text-amber-700 font-medium">
+                    क्या आप वहाँ हैं? हमें आपकी आवाज़ सुनाई नहीं दे रही — कृपया बोलें या अपना माइक्रोफ़ोन जांचें।
+                  </p>
+                  <p className="text-xs text-amber-600">
                     Still there? We can&apos;t hear you — please speak, or check your microphone.
                   </p>
                 </div>
@@ -343,21 +370,27 @@ export default function CallPage() {
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
                   </span>
-                  <span className="text-xs font-semibold">Microphone active — speak now</span>
+                  <span className="text-xs font-semibold">माइक्रोफ़ोन सक्रिय है — अभी बोलें (Microphone active — speak now)</span>
                 </div>
               )}
 
               {state.phase === "category_select" && state.availableCategories.length > 0 && (
                 <div className="card space-y-3 border-brand/30 border">
-                  <p className="text-sm font-semibold text-gray-700">Please select your department:</p>
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-semibold text-gray-700">कृपया अपना विभाग चुनें:</p>
+                    <p className="text-xs text-gray-400">Please select your department:</p>
+                  </div>
                   <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
                     {state.availableCategories.map((cat) => (
                       <button
                         key={cat.key}
                         onClick={() => handleCategorySelect(cat)}
-                        className="text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-brand hover:bg-brand-light text-sm font-medium text-gray-700 hover:text-brand transition-all"
+                        className="text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-brand hover:bg-brand-light transition-all"
                       >
-                        {cat.label}
+                        <div className="text-sm font-medium text-gray-700 hover:text-brand">
+                          {CATEGORY_LABELS_HI[cat.key] ?? cat.label}
+                        </div>
+                        <div className="text-xs text-gray-400">{cat.label}</div>
                       </button>
                     ))}
                   </div>
