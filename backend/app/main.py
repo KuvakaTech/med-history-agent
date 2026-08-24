@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.v1.api import api_router
+from app.api.v2.api import api_v2_router
 from app.core.config import settings
 from app.core.database import close_db, get_db
 from app.core.ratelimit import limiter
@@ -50,6 +51,22 @@ async def lifespan(app: FastAPI):
         # relying on it.
         await db["cabin_leases"].create_index("expires_at", expireAfterSeconds=0)
         await db["cabin_leases"].create_index([("doctor_id", 1)])
+        # Ticketing v2
+        await db["ticket_hospitals"].create_index("hospital_id", unique=True)
+        await db["ticket_hospitals"].create_index("slug", unique=True)
+        await db["ticket_categories"].create_index("category_id", unique=True)
+        await db["ticket_categories"].create_index([("hospital_id", 1), ("active", 1)])
+        # phone is globally unique — one patient record regardless of hospital
+        await db["ticket_patients"].create_index("patient_id", unique=True)
+        await db["ticket_patients"].create_index("phone", unique=True)
+        await db["ticket_sessions"].create_index("session_id", unique=True)
+        await db["ticket_sessions"].create_index("ticket_number", unique=True, sparse=True)
+        await db["ticket_sessions"].create_index([("hospital_id", 1), ("started_at", -1)])
+        await db["ticket_sessions"].create_index([("patient_id", 1)])
+        await db["ticket_sessions"].create_index([("hospital_id", 1), ("status", 1)])
+        # ticket_number counter document — _id already has a built-in unique index
+        # in every MongoDB collection, so no explicit index creation needed here
+        # await db["ticket_counters"].create_index("_id", unique=True)
         log.info("MongoDB connected and indexes ensured")
     except Exception as exc:
         log.warning("MongoDB index setup failed (will retry on first request): %s", exc)
@@ -110,6 +127,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_v2_router, prefix="/api/v2")
 
 # Dev-only harness for exercising the cabin WebSocket (getUserMedia needs a secure
 # context, which file:// is not — this must be same-origin with the API). Never

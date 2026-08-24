@@ -31,3 +31,34 @@ async def verify_token(
 async def verify_ws_token(token: str = Query(..., description="JWT access token")) -> dict:
     """WebSocket dependency — validates JWT passed as ?token= query param."""
     return _decode(token)
+
+
+async def require_hospital_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+) -> dict:
+    """Requires role == hospital_admin OR super_admin.
+
+    super_admin is granted access to all hospitals. hospital_admin is scoped
+    to the hospital_id stored in their JWT claim.
+    """
+    payload = _decode(credentials.credentials)
+    role = payload.get("role", "doctor")
+    if role not in ("hospital_admin", "super_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hospital admin access required.",
+        )
+    return payload
+
+
+async def require_super_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+) -> dict:
+    """Requires role == super_admin."""
+    payload = _decode(credentials.credentials)
+    if payload.get("role") != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin access required.",
+        )
+    return payload
