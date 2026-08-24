@@ -110,6 +110,9 @@ class Settings(BaseSettings):
     CABIN_ARCHIVE_AUDIO: bool = True
     CABIN_REDIARIZE_ON_END: bool = True
     CABIN_TEST_HARNESS: bool = False  # dev-only /dev static mount
+    # Off by default regardless of DEBUG (which is separately mis-set to true in prod
+    # today) so the public bootstrap endpoint can't be enabled by accident.
+    ENABLE_SETUP_ENDPOINT: bool = False  # /api/v2/setup -- first-run hospital+admin bootstrap
     # SlowAPIMiddleware does not cover WebSocket routes, so RATE_LIMIT_VOICE cannot
     # reach the cabin socket and stays deliberately unused. A concurrent-session cap is
     # the right shape here anyway: the cost is a held ElevenLabs socket, not requests.
