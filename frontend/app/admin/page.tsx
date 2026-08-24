@@ -45,6 +45,13 @@ export default function AdminDashboard() {
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [editLabel, setEditLabel]       = useState("");
 
+  // New hospital form (super admin only)
+  const [showNewHospital, setShowNewHospital] = useState(false);
+  const [newHospitalSlug, setNewHospitalSlug] = useState("");
+  const [newHospitalName, setNewHospitalName] = useState("");
+  const [newHospitalLang, setNewHospitalLang] = useState("hi");
+  const [creatingHospital, setCreatingHospital] = useState(false);
+
   // ── Initial load ──────────────────────────────────────────
   useEffect(() => {
     getToken()
@@ -179,6 +186,30 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleCreateHospital = async () => {
+    const slug = newHospitalSlug.trim().toLowerCase().replace(/\s+/g, "-");
+    const name = newHospitalName.trim();
+    if (!slug || !name) return;
+    setCreatingHospital(true);
+    try {
+      const hospital = await adminApi.createHospital(token, {
+        slug,
+        name,
+        default_language: newHospitalLang,
+      });
+      setHospitals((prev) => [...prev, hospital]);
+      setSelectedHospital(hospital.hospital_id);
+      setNewHospitalSlug("");
+      setNewHospitalName("");
+      setNewHospitalLang("hi");
+      setShowNewHospital(false);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to create hospital");
+    } finally {
+      setCreatingHospital(false);
+    }
+  };
+
   const handleAddCategory = async () => {
     if (!newCatKey.trim() || !newCatLabel.trim()) return;
     setSavingCat(true);
@@ -213,23 +244,33 @@ export default function AdminDashboard() {
           )}
         </div>
         <div className="flex items-center gap-4">
-          {userRole === "super_admin" && hospitals.length > 0 && (
+          {userRole === "super_admin" && (
             <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Hospital:
-              </label>
-              <select
-                className="input-field text-sm py-1 px-2 min-w-0"
-                value={selectedHospital}
-                onChange={(e) => setSelectedHospital(e.target.value)}
+              {hospitals.length > 0 && (
+                <>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Hospital:
+                  </label>
+                  <select
+                    className="input-field text-sm py-1 px-2 min-w-0"
+                    value={selectedHospital}
+                    onChange={(e) => setSelectedHospital(e.target.value)}
+                  >
+                    <option value="">Select Hospital</option>
+                    {hospitals.map((h) => (
+                      <option key={h.hospital_id} value={h.hospital_id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              <button
+                onClick={() => setShowNewHospital((v) => !v)}
+                className="btn-secondary text-xs py-1.5 px-3"
               >
-                <option value="">Select Hospital</option>
-                {hospitals.map((h) => (
-                  <option key={h.hospital_id} value={h.hospital_id}>
-                    {h.name}
-                  </option>
-                ))}
-              </select>
+                + New Hospital
+              </button>
             </div>
           )}
           {stats && (
@@ -247,9 +288,55 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {userRole === "super_admin" && !selectedHospital && (
+        {userRole === "super_admin" && showNewHospital && (
+          <div className="card space-y-3">
+            <h3 className="text-sm font-bold text-gray-700">Create Hospital</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input
+                className="input-field text-sm py-2"
+                placeholder="Slug (e.g. aiims-delhi)"
+                value={newHospitalSlug}
+                onChange={(e) => setNewHospitalSlug(e.target.value)}
+              />
+              <input
+                className="input-field text-sm py-2"
+                placeholder="Name (e.g. AIIMS Delhi)"
+                value={newHospitalName}
+                onChange={(e) => setNewHospitalName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateHospital()}
+              />
+              <select
+                className="input-field text-sm py-2"
+                value={newHospitalLang}
+                onChange={(e) => setNewHospitalLang(e.target.value)}
+              >
+                <option value="hi">Hindi (default)</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCreateHospital}
+                disabled={creatingHospital || !newHospitalSlug.trim() || !newHospitalName.trim()}
+                className="btn-primary text-sm py-2 px-4"
+              >
+                {creatingHospital ? "…" : "Create"}
+              </button>
+              <button
+                onClick={() => setShowNewHospital(false)}
+                className="btn-secondary text-sm py-2 px-4"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {userRole === "super_admin" && !selectedHospital && !showNewHospital && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
-            Please select a hospital to view data.
+            {hospitals.length === 0
+              ? "No hospitals yet — click \"+ New Hospital\" above to create one."
+              : "Please select a hospital to view data."}
           </div>
         )}
 
