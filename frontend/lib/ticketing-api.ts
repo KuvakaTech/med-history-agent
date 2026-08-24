@@ -87,6 +87,12 @@ export const adminApi = {
   listHospitals: (token: string) =>
     adminReq<{ hospitals: Hospital[] }>("GET", "/hospitals", token),
 
+  /** The hospital scoped to the caller (hospital_admin via JWT, super_admin via hospital_id). */
+  getCurrentHospital: (token: string, hospital_id?: string | null) => {
+    const q = hospital_id ? `?hospital_id=${hospital_id}` : "";
+    return adminReq<Hospital>("GET", `/hospital${q}`, token);
+  },
+
   createHospital: (
     token: string,
     data: { slug: string; name: string; default_language?: string }

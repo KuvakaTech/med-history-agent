@@ -108,6 +108,21 @@ async def list_hospitals(user: dict = Depends(require_super_admin)):
     return {"hospitals": await hospital_store.list_all()}
 
 
+@router.get("/hospital")
+async def get_current_hospital(
+    hospital_id: Optional[str] = Query(None),
+    user: dict = Depends(require_hospital_admin),
+):
+    """The hospital scoped to the caller — from JWT for hospital_admin, from
+    ?hospital_id= for super_admin. Used by the frontend to resolve which
+    check-in slug to send an admin to after login."""
+    hid = _resolve_hid(user, hospital_id)
+    hospital = await hospital_store.get(hid)
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found.")
+    return hospital.model_dump(mode="json")
+
+
 @router.post("/hospitals", status_code=201)
 async def create_hospital(
     body: CreateHospitalRequest,
