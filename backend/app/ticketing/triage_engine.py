@@ -227,7 +227,7 @@ class TriageEngine:
         """Yields str tokens then a final __done__ dict with TriageMeta fields."""
         turn_count = len(session.qa_log)
         history = _build_history(session.qa_log)
-        is_last = turn_count >= MAX_TRIAGE_TURNS - 1
+        is_last = turn_count >= MAX_TRIAGE_TURNS
 
         if is_last:
             # Forced completion -- extract meta and end triage

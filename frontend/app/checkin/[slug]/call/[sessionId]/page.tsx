@@ -123,7 +123,13 @@ export default function CallPage() {
           break;
 
         case "category_manual_required":
-          updateState({ phase: "category_select", availableCategories: event.categories });
+          updateState({
+            phase: "category_select",
+            availableCategories: event.categories,
+            micOpen: false,
+            partialTranscript: "",
+            stillThereNudge: false,
+          });
           break;
 
         case "category_confirmed":

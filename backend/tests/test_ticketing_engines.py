@@ -99,10 +99,11 @@ async def test_triage_stream_yields_tokens_then_done():
 
 @pytest.mark.asyncio
 async def test_triage_forces_completion_at_max_turns():
-    """At turn 2 (MAX_TRIAGE_TURNS - 1), triage must force is_complete=True
-    regardless of what the meta says — patient can't be asked a 4th question."""
+    """Once MAX_TRIAGE_TURNS answers are already logged (the 3rd answer was
+    just given), triage must force is_complete=True regardless of what the
+    meta says — the patient can't be asked a 4th question."""
     engine = TriageEngine(categories=_make_categories(), language="hi")
-    session = _make_session(turns=MAX_TRIAGE_TURNS - 1)
+    session = _make_session(turns=MAX_TRIAGE_TURNS)
 
     fake_meta = TriageMeta(
         is_complete=False,  # LLM says not done — must be overridden
@@ -119,6 +120,37 @@ async def test_triage_forces_completion_at_max_turns():
 
     assert done_data is not None
     assert done_data["is_complete"] is True, "triage did not force completion at max turns"
+
+
+@pytest.mark.asyncio
+async def test_triage_does_not_force_completion_before_max_turns():
+    """Regression: forcing completion one turn early (after only 2 of 3
+    answers) skipped the department/reason-for-visit question entirely and
+    sent patients straight to the manual category dropdown. The engine must
+    still ask a real question on turn 3 before forcing anything."""
+    engine = TriageEngine(categories=_make_categories(), language="hi")
+    session = _make_session(turns=MAX_TRIAGE_TURNS - 1)  # name + age already answered
+
+    async def fake_stream(prompt, system="", fast=True):
+        for token in ["Aap ", "kis ", "wajah ", "se ", "aaye ", "hain?"]:
+            yield token
+
+    fake_meta = TriageMeta(is_complete=False, category_confidence="none")
+
+    with patch("app.ticketing.triage_engine.llm.stream_complete", new=fake_stream), \
+         patch("app.ticketing.triage_engine.llm.complete_structured", new=AsyncMock(return_value=fake_meta)):
+        chunks = []
+        done_data = None
+        async for chunk in engine.next_turn_stream(session, "25 saal"):
+            if isinstance(chunk, str):
+                chunks.append(chunk)
+            elif isinstance(chunk, dict) and chunk.get("__done__"):
+                done_data = chunk
+
+    assert "".join(chunks) == "Aap kis wajah se aaye hain?"
+    assert done_data is not None
+    assert done_data["is_complete"] is False
+    assert done_data["question_text"] == "Aap kis wajah se aaye hain?"
 
 
 @pytest.mark.asyncio
