@@ -213,12 +213,22 @@ class TicketVoiceSession:
             if done_data.get("patient_age"):
                 self._patient_age = str(done_data["patient_age"])
 
-            # Handle category result
+            # Handle category result. Accept ANY concrete guess (high or low
+            # confidence) as long as it's a real category for this hospital —
+            # "none" is the only signal that means "couldn't identify it".
+            # Requiring "high" here made the manual dropdown show up almost
+            # every time, since the model rarely commits to "high".
             cat_key = done_data.get("category_guess")
             cat_label = done_data.get("category_label")
             confidence = done_data.get("category_confidence", "none")
+            valid_keys = {c.key for c in self.categories}
 
-            if cat_key and confidence == "high":
+            if (
+                cat_key
+                and cat_key in valid_keys
+                and confidence != "none"
+                and not self._category_key
+            ):
                 self._category_key = cat_key
                 self._category_label = cat_label or cat_key
                 self.session.category = CategoryInfo(
@@ -226,9 +236,16 @@ class TicketVoiceSession:
                 )
                 await self._send(ev.category_identified(cat_key, self._category_label, confidence))
 
-            if done_data.get("is_complete"):
+            # Don't rely solely on the LLM's self-reported is_complete flag —
+            # wrap up as soon as we actually have what we need, so phase 1
+            # never asks a question it doesn't need to.
+            name_known = self._patient_name not in ("the patient", "", None)
+            age_known = self._patient_age != "unknown"
+            info_complete = name_known and age_known and bool(self._category_key)
+
+            if done_data.get("is_complete") or info_complete:
                 if not self._category_key:
-                    # Need manual selection
+                    # Genuinely couldn't identify a category in 3 questions
                     cats = [{"key": c.key, "label": c.label} for c in self.categories]
                     await self._send(ev.category_manual_required(cats))
                     # Wait for category_selected message while keeping things going
