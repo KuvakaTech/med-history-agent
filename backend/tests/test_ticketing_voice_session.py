@@ -43,6 +43,20 @@ def _make_voice_session() -> TicketVoiceSession:
     return vs
 
 
+class _FlakyEngine:
+    """Replays a plan of exceptions/responses -- used to simulate a
+    transient LLM/network failure followed by success (or repeated failure)."""
+
+    def __init__(self, plan):
+        self._plan = list(plan)
+
+    async def next_turn_stream(self, *args, **kwargs):
+        item = self._plan.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        yield item
+
+
 class _FakeTriageEngine:
     """Replays one canned response per call to next_turn_stream."""
 
@@ -199,3 +213,70 @@ async def test_silence_retry_exhausted_sends_fatal_error_and_gives_up():
     error_calls = [c.args[0] for c in vs._send.call_args_list if c.args[0]["type"] == "error"]
     assert len(error_calls) == 1
     assert error_calls[0]["fatal"] is True
+
+
+@pytest.mark.asyncio
+async def test_stream_triage_turn_retries_once_then_succeeds():
+    """A transient LLM/network blip on one attempt must not end the call --
+    it should transparently retry and continue as if nothing happened."""
+    vs = _make_voice_session()
+    good = {"__done__": True, "is_complete": False, "question_text": "next?"}
+    engine = _FlakyEngine([RuntimeError("transient blip"), good])
+
+    done = await vs._stream_triage_turn(engine, "answer", turn_idx=0)
+
+    assert done == good
+    assert vs._stopped.is_set() is False
+    assert vs._fatal_error_sent is False
+    sent_types = [c.args[0]["type"] for c in vs._send.call_args_list]
+    assert "error" not in sent_types
+
+
+@pytest.mark.asyncio
+async def test_stream_triage_turn_exhausts_retries_sends_fatal_and_stops():
+    """Regression: a failure here used to be swallowed and silently fall
+    through to _finalize() with whatever partial transcript existed --
+    producing a near-empty, misleading "report" with no error shown. It
+    must now stop the whole call and surface a real fatal error."""
+    vs = _make_voice_session()
+    engine = _FlakyEngine([RuntimeError("boom"), RuntimeError("boom again")])
+
+    done = await vs._stream_triage_turn(engine, "answer", turn_idx=0)
+
+    assert done is None
+    assert vs._stopped.is_set() is True
+    assert vs._fatal_error_sent is True
+    error_calls = [c.args[0] for c in vs._send.call_args_list if c.args[0]["type"] == "error"]
+    assert len(error_calls) == 1
+    assert error_calls[0]["fatal"] is True
+
+
+@pytest.mark.asyncio
+async def test_teardown_skips_session_partial_after_fatal_error():
+    """Regression: _teardown() unconditionally sent session_partial whenever
+    status was still 'active' -- which included right after a fatal error,
+    so the frontend's auto-redirect-to-results on session_partial silently
+    undercut the "Try Again" error screen 1.5s later."""
+    vs = _make_voice_session()
+    vs._fatal_error_sent = True
+
+    with patch("app.ticketing.voice_session.ticket_session_store.update", new=AsyncMock()):
+        await vs._teardown()
+
+    sent_types = [c.args[0]["type"] for c in vs._send.call_args_list]
+    assert "session_partial" not in sent_types
+    assert "ended" in sent_types
+
+
+@pytest.mark.asyncio
+async def test_teardown_sends_session_partial_without_fatal_error():
+    """A genuinely incomplete-but-not-fatal call (e.g. patient just hung up)
+    should still notify the frontend a partial report is on its way."""
+    vs = _make_voice_session()
+
+    with patch("app.ticketing.voice_session.ticket_session_store.update", new=AsyncMock()):
+        await vs._teardown()
+
+    sent_types = [c.args[0]["type"] for c in vs._send.call_args_list]
+    assert "session_partial" in sent_types
+    assert "ended" in sent_types

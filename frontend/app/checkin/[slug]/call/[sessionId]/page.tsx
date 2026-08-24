@@ -49,6 +49,7 @@ export default function CallPage() {
   const language = searchParams.get("lang") || "hi";
 
   const wsRef = useRef<TicketVoiceWS | null>(null);
+  const fatalErrorRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioQueueRef = useRef<Array<{ question: string; b64: string | null }>>([]);
   const playingRef = useRef(false);
@@ -195,11 +196,18 @@ export default function CallPage() {
           break;
 
         case "ended":
-          router.push(`/checkin/${slug}/result/${sessionId}`);
+          // A fatal error already told the patient what happened and put
+          // them on the "Try Again" screen — a close right after that
+          // (explicit "ended" or the socket just dropping) must not yank
+          // them away to a truncated, misleading summary.
+          if (!fatalErrorRef.current) router.push(`/checkin/${slug}/result/${sessionId}`);
           break;
 
         case "error":
-          if (event.fatal) updateState({ phase: "error", errorMsg: event.message });
+          if (event.fatal) {
+            fatalErrorRef.current = true;
+            updateState({ phase: "error", errorMsg: event.message });
+          }
           break;
       }
     },

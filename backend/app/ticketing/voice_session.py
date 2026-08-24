@@ -79,6 +79,7 @@ class TicketVoiceSession:
         self.ws = ws
         self.categories = categories
         self._stopped = asyncio.Event()
+        self._fatal_error_sent = False
         self._audio_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self._dg: Optional[DeepgramLiveStream] = None
         self._triage_covered: list[str] = []
@@ -108,6 +109,12 @@ class TicketVoiceSession:
         except Exception:
             self._stopped.set()
 
+    async def _send_fatal(self, message: str) -> None:
+        """Send a fatal error and remember it so _teardown() doesn't
+        immediately undercut it with a "session_partial" -> auto-redirect."""
+        self._fatal_error_sent = True
+        await self._send(ev.error(message, fatal=True))
+
     async def _send_audio(self, mp3_bytes: bytes, question: str, turn: int) -> None:
         """Send TTS audio as base64 JSON — avoids binary framing complexity."""
         await self._send({
@@ -121,6 +128,18 @@ class TicketVoiceSession:
     # ── Main entry ─────────────────────────────────────────────
 
     async def run(self) -> None:
+        try:
+            await self._run_call()
+        except Exception as exc:
+            # Any bug we didn't anticipate must still surface as a fatal
+            # error instead of silently closing the socket -- the frontend
+            # treats a bare close as a normal end-of-call and would otherwise
+            # route the patient straight to a truncated, misleading summary.
+            log.error("Voice session crashed for %s: %s", self.session.session_id, exc, exc_info=True)
+            self._stopped.set()
+            await self._send_fatal("Something went wrong during your check-in. Please try again.")
+
+    async def _run_call(self) -> None:
         # Wait for handshake
         try:
             msg = await asyncio.wait_for(self.ws.receive(), timeout=15.0)
@@ -141,7 +160,7 @@ class TicketVoiceSession:
             await self._dg.connect()
         except Exception as exc:
             log.error("Deepgram connect failed for session %s: %s", self.session.session_id, exc)
-            await self._send(ev.error("Voice transcription unavailable. Please try again.", fatal=True))
+            await self._send_fatal("Voice transcription unavailable. Please try again.")
             return
 
         await self._send({
@@ -178,7 +197,7 @@ class TicketVoiceSession:
             opening = await engine.opening_question()
         except Exception as exc:
             log.error("Triage opening question failed: %s", exc)
-            await self._send(ev.error("Could not start triage. Please try again.", fatal=True))
+            await self._send_fatal("Could not start triage. Please try again.")
             return
 
         await self._speak_and_wait(opening, turn=0)
@@ -288,29 +307,41 @@ class TicketVoiceSession:
     async def _stream_triage_turn(
         self, engine: TriageEngine, answer: str, turn_idx: int
     ) -> Optional[dict]:
-        """Stream triage tokens, collect final __done__ dict."""
-        question_tokens = ""
-        done_data: Optional[dict] = None
-        try:
-            async for chunk in engine.next_turn_stream(
-                self.session,
-                answer,
-                known_name=self._patient_name if self._patient_name not in ["the patient", "declined"] else None,
-                known_age=int(self._patient_age) if self._patient_age != "unknown" and self._patient_age.isdigit() else None,
-                known_category=self._category_key,
-                known_confidence="high" if self._category_key else "none",
-            ):
-                if self._stopped.is_set():
-                    return None
-                if isinstance(chunk, str):
-                    question_tokens += chunk
-                elif isinstance(chunk, dict) and chunk.get("__done__"):
-                    done_data = chunk
-        except Exception as exc:
-            log.error("Triage stream failed: %s", exc)
-            await self._send(ev.error("Something went wrong. Please try again."))
-            return None
-        return done_data
+        """Stream triage tokens, collect final __done__ dict.
+
+        Retries once on failure (transient LLM/network blips) before giving
+        up -- a silently-swallowed failure here used to fall straight through
+        to _finalize() with whatever partial transcript existed, producing a
+        near-empty "report" with no indication anything went wrong.
+        """
+        for attempt in range(2):
+            if self._stopped.is_set():
+                return None
+            question_tokens = ""
+            done_data: Optional[dict] = None
+            try:
+                async for chunk in engine.next_turn_stream(
+                    self.session,
+                    answer,
+                    known_name=self._patient_name if self._patient_name not in ["the patient", "declined"] else None,
+                    known_age=int(self._patient_age) if self._patient_age != "unknown" and self._patient_age.isdigit() else None,
+                    known_category=self._category_key,
+                    known_confidence="high" if self._category_key else "none",
+                ):
+                    if self._stopped.is_set():
+                        return None
+                    if isinstance(chunk, str):
+                        question_tokens += chunk
+                    elif isinstance(chunk, dict) and chunk.get("__done__"):
+                        done_data = chunk
+                return done_data
+            except Exception as exc:
+                log.warning("Triage stream failed (attempt %d/2): %s", attempt + 1, exc)
+
+        log.error("Triage stream failed twice for session %s -- ending call", self.session.session_id)
+        self._stopped.set()
+        await self._send_fatal("Something went wrong while processing your answer. Please try again.")
+        return None
 
     # ── Consultation phase ─────────────────────────────────────
 
@@ -330,15 +361,23 @@ class TicketVoiceSession:
         if self.session.qa_log and len(self.session.qa_log) > 0:
             known_complaint = self.session.qa_log[0].answer or None
 
-        # Opening question for phase 2
-        try:
-            opening = await engine.opening_question(
-                self._consult_covered,
-                known_complaint=known_complaint,
-            )
-        except Exception as exc:
-            log.error("Consultation opening failed: %s", exc)
-            await self._send(ev.error("Could not start consultation phase."))
+        # Opening question for phase 2 -- retry once before giving up so a
+        # transient LLM/network blip doesn't silently abandon phase 2 and
+        # fall straight through to a near-empty summary.
+        opening: Optional[str] = None
+        for attempt in range(2):
+            try:
+                opening = await engine.opening_question(
+                    self._consult_covered,
+                    known_complaint=known_complaint,
+                )
+                break
+            except Exception as exc:
+                log.warning("Consultation opening failed (attempt %d/2): %s", attempt + 1, exc)
+        if opening is None:
+            log.error("Consultation opening failed twice for session %s -- ending call", self.session.session_id)
+            self._stopped.set()
+            await self._send_fatal("Could not start the consultation. Please try again.")
             return
 
         await self._speak_and_wait(opening, turn=self.session.turn_count)
@@ -364,26 +403,7 @@ class TicketVoiceSession:
             self.session.turn_count += 1
 
             # Stream next consultation turn
-            question_text = ""
-            done_data: Optional[dict] = None
-            try:
-                async for chunk in engine.next_turn_stream(
-                    self.session,
-                    answer,
-                    self._consult_covered,
-                    known_complaint=known_complaint,
-                ):
-                    if self._stopped.is_set():
-                        return
-                    if isinstance(chunk, str):
-                        question_text += chunk
-                    elif isinstance(chunk, dict) and chunk.get("__done__"):
-                        done_data = chunk
-            except Exception as exc:
-                log.error("Consultation stream failed: %s", exc)
-                await self._send(ev.error("Something went wrong. Please try again."))
-                return
-
+            done_data = await self._stream_consultation_turn(engine, answer, known_complaint)
             if done_data is None:
                 return
 
@@ -413,6 +433,39 @@ class TicketVoiceSession:
         await self._send(ev.consultation_ended())
         self.session.phase = "result"
         await ticket_session_store.update(self.session)
+
+    async def _stream_consultation_turn(
+        self, engine: ConsultationEngine, answer: str, known_complaint: Optional[str]
+    ) -> Optional[dict]:
+        """Stream one consultation turn, collect final __done__ dict.
+
+        Same retry-once-then-fail-fatal shape as _stream_triage_turn: a
+        transient LLM/network failure here used to silently end phase 2 and
+        fall through to a near-empty summary with no error shown.
+        """
+        for attempt in range(2):
+            if self._stopped.is_set():
+                return None
+            done_data: Optional[dict] = None
+            try:
+                async for chunk in engine.next_turn_stream(
+                    self.session,
+                    answer,
+                    self._consult_covered,
+                    known_complaint=known_complaint,
+                ):
+                    if self._stopped.is_set():
+                        return None
+                    if isinstance(chunk, dict) and chunk.get("__done__"):
+                        done_data = chunk
+                return done_data
+            except Exception as exc:
+                log.warning("Consultation stream failed (attempt %d/2): %s", attempt + 1, exc)
+
+        log.error("Consultation stream failed twice for session %s -- ending call", self.session.session_id)
+        self._stopped.set()
+        await self._send_fatal("Something went wrong while processing your answer. Please try again.")
+        return None
 
     # ── Finalize (summary) ─────────────────────────────────────
 
@@ -583,10 +636,10 @@ class TicketVoiceSession:
             if attempt < _MAX_SILENCE_RETRIES:
                 await self._speak_and_wait(question, turn)
             else:
-                await self._send(ev.error(
-                    "We're having trouble hearing you. Please check your microphone and try again.",
-                    fatal=True,
-                ))
+                self._stopped.set()
+                await self._send_fatal(
+                    "We're having trouble hearing you. Please check your microphone and try again."
+                )
         return None
 
     async def _wait_for_category_selection(self) -> Optional[dict]:
@@ -626,5 +679,9 @@ class TicketVoiceSession:
         if self.session.status == "active":
             self.session.status = "partial"
             await ticket_session_store.update(self.session)
-            await self._send(ev.session_partial(self.session.session_id))
+            # A fatal error already told the patient what happened -- don't
+            # immediately undercut it by also telling the frontend a report
+            # is coming (it auto-redirects to results on session_partial).
+            if not self._fatal_error_sent:
+                await self._send(ev.session_partial(self.session.session_id))
         await self._send({"type": "ended", "session_id": self.session.session_id})
