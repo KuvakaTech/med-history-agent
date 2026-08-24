@@ -128,3 +128,41 @@ async def test_none_confidence_after_max_turns_shows_manual_dropdown():
 
     sent_types = [call.args[0]["type"] for call in vs._send.call_args_list]
     assert "category_manual_required" in sent_types
+
+
+@pytest.mark.asyncio
+async def test_premature_is_complete_flag_is_ignored_when_nothing_resolved():
+    """Regression: the LLM's meta call can (and did, in production) return
+    is_complete=true on turn 1 even though nothing was actually resolved --
+    e.g. when STT failed to catch the patient's answer at all. That flag must
+    NOT be trusted on its own; only a verified name+age+category, or genuinely
+    reaching the last allowed turn, should end phase 1."""
+    vs = _make_voice_session()
+    vs._collect_patient_answer = AsyncMock(return_value="<inaudible>")
+    vs._wait_for_category_selection = AsyncMock(
+        return_value={"key": "general_medicine", "label": "General Medicine"}
+    )
+
+    # Turn 1: STT failed, nothing resolved, but the LLM wrongly claims complete.
+    premature = {
+        "__done__": True,
+        "is_complete": True,
+        "question_text": "Sorry, I didn't catch your name. Could you repeat it?",
+        "patient_name": None,
+        "patient_age": None,
+        "category_guess": None,
+        "category_label": None,
+        "category_confidence": "none",
+        "new_flags": [],
+    }
+    unresolved = {**premature, "is_complete": False}
+    forced_final = {**unresolved, "is_complete": True, "question_text": ""}
+
+    fake_engine = _FakeTriageEngine([premature, unresolved, forced_final])
+
+    with patch("app.ticketing.voice_session.TriageEngine", return_value=fake_engine):
+        await vs._run_triage()
+
+    # Must have kept asking through all 3 turns, not stopped after turn 1.
+    assert vs._collect_patient_answer.call_count == 3
+    vs._wait_for_category_selection.assert_awaited_once()

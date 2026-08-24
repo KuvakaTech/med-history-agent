@@ -236,14 +236,17 @@ class TicketVoiceSession:
                 )
                 await self._send(ev.category_identified(cat_key, self._category_label, confidence))
 
-            # Don't rely solely on the LLM's self-reported is_complete flag —
-            # wrap up as soon as we actually have what we need, so phase 1
-            # never asks a question it doesn't need to.
+            # Never trust the LLM's self-reported is_complete flag on its own —
+            # it can (and does) come back true even when nothing was actually
+            # resolved, e.g. when STT failed to catch an answer at all. Only
+            # stop when we've verified name+age+category ourselves, or when
+            # we're genuinely on the last allowed turn.
             name_known = self._patient_name not in ("the patient", "", None)
             age_known = self._patient_age != "unknown"
             info_complete = name_known and age_known and bool(self._category_key)
+            is_last_turn = turn_idx >= MAX_TRIAGE_TURNS - 1
 
-            if done_data.get("is_complete") or info_complete:
+            if info_complete or is_last_turn:
                 if not self._category_key:
                     # Genuinely couldn't identify a category in 3 questions
                     cats = [{"key": c.key, "label": c.label} for c in self.categories]
