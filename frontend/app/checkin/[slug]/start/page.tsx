@@ -189,15 +189,12 @@ export default function StartPage() {
                 ))}
               </div>
 
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={goBack} className="btn-secondary flex-1 !py-4 text-base">
-                  ← Back
-                </button>
+              <div className="pt-2">
                 <button
                   type="button"
                   disabled={phone.length < 10}
                   onClick={goNext}
-                  className="btn-primary flex-1 !py-4 text-base"
+                  className="btn-primary w-full !py-4 text-base"
                 >
                   Next →
                 </button>
@@ -205,7 +202,7 @@ export default function StartPage() {
             </div>
           )}
 
-          {/* STEP 3: Gender */}
+          {/* STEP 2: Gender */}
           {step === "gender" && (
             <div className="space-y-6">
               <div className="text-center space-y-1">
