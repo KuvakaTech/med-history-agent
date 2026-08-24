@@ -56,6 +56,12 @@ export default function ResultPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => router.push(`/checkin/${slug}/`)}
+            className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
+          >
+            ← Back to Check-In
+          </button>
+          <button
             onClick={() => window.print()}
             className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
           >
@@ -83,9 +89,9 @@ export default function ResultPage() {
         )}
 
         {/* ── Receipt / ticket header ── */}
-        <div className="card print:border print:shadow-none">
+        <div className="card print:border-0 print:shadow-none print:p-0">
           {/* Hospital + ticket number row */}
-          <div className="flex items-start justify-between pb-4 border-b border-gray-100">
+          <div className="flex items-start justify-between pb-4 border-b border-gray-100 print:hidden">
             <div>
               <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
                 {result.hospital_name || "Hospital"}
@@ -102,8 +108,11 @@ export default function ResultPage() {
             )}
           </div>
 
-          {/* Patient details */}
-          <div className="pt-4 grid grid-cols-2 gap-y-3 gap-x-6">
+          {/* Patient details — compact single-line fields */}
+          <div className="flex flex-wrap gap-x-8 gap-y-2">
+            {result.ticket_number && (
+              <PatientField label="Ticket No." value={result.ticket_number} />
+            )}
             <PatientField label="Name" value={p?.name || "Not provided"} />
             <PatientField label="Phone" value={p?.phone || "—"} />
             <PatientField
@@ -118,22 +127,6 @@ export default function ResultPage() {
             <PatientField
               label="Category Source"
               value={result.category?.source === "manual" ? "Selected manually" : "Auto-detected"}
-            />
-            <PatientField label="Check-In Time" value={result.started_at || "—"} />
-            {result.ended_at && (
-              <PatientField label="Completed" value={result.ended_at} />
-            )}
-            <PatientField
-              label="Status"
-              value={capitalize(result.status)}
-              valueClass={clsx(
-                "font-semibold",
-                result.status === "completed"
-                  ? "text-green-700"
-                  : result.status === "partial"
-                  ? "text-amber-700"
-                  : "text-blue-700"
-              )}
             />
           </div>
         </div>
@@ -160,18 +153,6 @@ export default function ResultPage() {
           </div>
         )}
 
-        {/* ── Other flags ── */}
-        {otherFlags.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">📌 Notes</h3>
-            {otherFlags.map((f, i) => (
-              <div key={i} className={f.flag_type === "IMPORTANT" ? "flag-important" : "flag-note"}>
-                {f.description}
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* ── SOAP Summary ── */}
         {result.summary && <SummaryCard summary={result.summary} />}
 
@@ -181,18 +162,26 @@ export default function ResultPage() {
           </div>
         )}
 
-        {/* ── Print footer ── */}
-        <div className="hidden print:block border-t pt-4 space-y-1 text-xs text-gray-400 text-center">
-          <p>Kuvaka Clinical AI · Pre-Visit Check-In</p>
-          <p>
-            {result.hospital_name && <span>{result.hospital_name} · </span>}
-            {result.ticket_number && <span>{result.ticket_number} · </span>}
-            {result.started_at}
-          </p>
-          <p className="text-gray-300">
-            This is a pre-visit intake summary, not a medical diagnosis or prescription.
-          </p>
-        </div>
+        {/* ── Notes (other flags) — shown last ── */}
+        {otherFlags.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">
+              <span className="print:hidden">📌 </span>Notes
+            </h3>
+            {otherFlags.map((f, i) => (
+              <div
+                key={i}
+                className={clsx(
+                  f.flag_type === "IMPORTANT" ? "flag-important" : "flag-note",
+                  "print:bg-transparent print:border-0 print:border-l-0 print:text-gray-800 print:p-0"
+                )}
+              >
+                {f.description}
+              </div>
+            ))}
+          </div>
+        )}
+
       </div>
     </main>
   );
@@ -210,10 +199,10 @@ function PatientField({
   valueClass?: string;
 }) {
   return (
-    <div>
-      <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
-      <p className={clsx("text-sm text-gray-800 font-medium", valueClass)}>{value}</p>
-    </div>
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      <span className="text-xs text-gray-400 uppercase tracking-wide">{label}:</span>
+      <span className={clsx("text-sm text-gray-800 font-medium", valueClass)}>{value}</span>
+    </span>
   );
 }
 
@@ -240,7 +229,7 @@ function SummaryCard({ summary }: { summary: SOAPSummary }) {
     <div className="space-y-6">
       {/* Clinical Summary Section */}
       {visible.length > 0 && (
-        <div className="card space-y-4 print:border print:shadow-none">
+        <div className="card space-y-4 print:border-0 print:shadow-none print:p-0">
           <h3 className="text-base font-bold text-gray-900">Clinical Summary</h3>
           <div className="space-y-3">
             {visible.map(([label, value]) => (
@@ -255,9 +244,9 @@ function SummaryCard({ summary }: { summary: SOAPSummary }) {
         </div>
       )}
       
-      {/* Full Transcript Section */}
+      {/* Full Transcript Section — screen only */}
       {hasTranscript && (
-        <div className="card space-y-4 print:border print:shadow-none">
+        <div className="card space-y-4 print:hidden">
           <h3 className="text-base font-bold text-gray-900">Full Conversation Transcript</h3>
           <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
             <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
