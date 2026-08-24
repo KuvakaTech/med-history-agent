@@ -42,6 +42,8 @@ export default function AdminDashboard() {
   const [newCatKey, setNewCatKey]     = useState("");
   const [newCatLabel, setNewCatLabel] = useState("");
   const [savingCat, setSavingCat]     = useState(false);
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editLabel, setEditLabel]       = useState("");
 
   // ── Initial load ──────────────────────────────────────────
   useEffect(() => {
@@ -157,6 +159,23 @@ export default function AdminDashboard() {
       );
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "Failed to update");
+    }
+  };
+
+  const handleRenameCategory = async (catId: string) => {
+    const label = editLabel.trim();
+    if (!label) return;
+    try {
+      const hospital_id = userRole === "super_admin" ? selectedHospital : null;
+      const updated = await adminApi.updateCategory(token, catId, { label }, hospital_id);
+      setCategories((prev) =>
+        prev.map((c) =>
+          (c as unknown as { category_id: string }).category_id === catId ? updated : c
+        )
+      );
+      setEditingCatId(null);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to rename");
     }
   };
 
@@ -447,26 +466,67 @@ export default function AdminDashboard() {
                   category_id: string;
                   active: boolean;
                 };
+                const isEditing = editingCatId === c.category_id;
                 return (
                   <div
                     key={c.category_id || c.key}
-                    className="card flex items-center justify-between py-3"
+                    className="card flex items-center justify-between py-3 gap-3"
                   >
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800">{c.label}</p>
-                      <p className="text-xs text-gray-400 font-mono">{c.key}</p>
-                    </div>
-                    <button
-                      onClick={() => handleToggleCategory(c.category_id, c.active)}
-                      className={clsx(
-                        "text-xs font-semibold px-3 py-1.5 rounded-full transition-all",
-                        c.active
-                          ? "bg-green-100 text-green-700 hover:bg-red-50 hover:text-red-600"
-                          : "bg-gray-100 text-gray-400 hover:bg-green-100 hover:text-green-700"
-                      )}
-                    >
-                      {c.active ? "Active" : "Inactive"}
-                    </button>
+                    {isEditing ? (
+                      <div className="flex-1 flex items-center gap-2">
+                        <input
+                          autoFocus
+                          className="input-field flex-1 text-sm py-1.5"
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRenameCategory(c.category_id);
+                            if (e.key === "Escape") setEditingCatId(null);
+                          }}
+                        />
+                        <button
+                          onClick={() => handleRenameCategory(c.category_id)}
+                          className="btn-primary text-xs py-1.5 px-3"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingCatId(null)}
+                          className="btn-secondary text-xs py-1.5 px-3"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{c.label}</p>
+                        <p className="text-xs text-gray-400 font-mono">{c.key}</p>
+                      </div>
+                    )}
+                    {!isEditing && (
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => {
+                            setEditingCatId(c.category_id);
+                            setEditLabel(c.label);
+                          }}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-full bg-gray-100 text-gray-500 hover:bg-brand-light hover:text-brand transition-all"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleToggleCategory(c.category_id, c.active)}
+                          className={clsx(
+                            "text-xs font-semibold px-3 py-1.5 rounded-full transition-all",
+                            c.active
+                              ? "bg-green-100 text-green-700 hover:bg-red-50 hover:text-red-600"
+                              : "bg-gray-100 text-gray-400 hover:bg-green-100 hover:text-green-700"
+                          )}
+                        >
+                          {c.active ? "Active" : "Inactive"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
