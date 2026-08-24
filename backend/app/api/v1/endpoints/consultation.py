@@ -41,6 +41,24 @@ log = logging.getLogger(__name__)
 # provider errors (rate limits, auth, etc.) into the UI.
 GENERIC_LLM_ERROR = "Something went wrong generating the next question. Please try again."
 
+LANGUAGE_NAME_TO_CODE = {
+    "hindi": "hi", "english": "en", "marathi": "mr",
+    "gujarati": "gu", "tamil": "ta", "telugu": "te",
+}
+
+
+async def _translate_to_patient_language(text: Optional[str], patient_language: Optional[str]) -> Optional[str]:
+    """Translate doctor-entered text (e.g. chief complaint) into the patient's language
+    if it wasn't already typed in that language."""
+    if not text or not patient_language:
+        return text
+    target_code = LANGUAGE_NAME_TO_CODE.get(patient_language.lower(), patient_language.lower()[:2])
+    translator = TranslationService()
+    detected = await translator.detect_language(text)
+    if not detected or detected == target_code:
+        return text
+    return await translator.translate(text, source_lang=detected, target_lang=patient_language)
+
 # ─────────────────────────────────────────────
 # Request / Response models
 # ─────────────────────────────────────────────
@@ -229,6 +247,8 @@ async def start_consultation(body: StartRequest, user: dict = Depends(verify_tok
         patient_age = patient.age
         patient_gender = patient.gender
 
+    chief_complaint = await _translate_to_patient_language(body.chief_complaint, body.patient_language)
+
     ctx = ConsultationContext(
         session_id=str(uuid.uuid4()),
         specialty=body.specialty,
@@ -236,7 +256,7 @@ async def start_consultation(body: StartRequest, user: dict = Depends(verify_tok
         patient_name=patient_name,
         patient_age=patient_age,
         patient_gender=patient_gender,
-        chief_complaint=body.chief_complaint,
+        chief_complaint=chief_complaint,
         patient_id=body.patient_id,
         latitude=body.latitude,
         longitude=body.longitude,
@@ -246,7 +266,7 @@ async def start_consultation(body: StartRequest, user: dict = Depends(verify_tok
         patient_name=patient_name,
         patient_age=patient_age,
         patient_gender=patient_gender,
-        chief_complaint=body.chief_complaint,
+        chief_complaint=chief_complaint,
     )
     ctx.current_question = opening
     await session_store.create(ctx, user_id=user["sub"])
