@@ -4,14 +4,14 @@ import { useParams, useRouter } from "next/navigation";
 import { ticketApi } from "@/lib/ticketing-api";
 import clsx from "clsx";
 
-const LANGUAGES = [
-  { code: "hi", label: "हिंदी", sub: "Hindi" },
-  { code: "en", label: "English", sub: "अंग्रेज़ी" },
-  { code: "mr", label: "मराठी", sub: "Marathi" },
-  { code: "gu", label: "ગુજરાતી", sub: "Gujarati" },
-  { code: "ta", label: "தமிழ்", sub: "Tamil" },
-  { code: "te", label: "తెలుగు", sub: "Telugu" },
-];
+// const LANGUAGES = [
+//   { code: "hi", label: "हिंदी", sub: "Hindi" },
+//   { code: "en", label: "English", sub: "अंग्रेज़ी" },
+//   { code: "mr", label: "मराठी", sub: "Marathi" },
+//   { code: "gu", label: "ગુજરાતી", sub: "Gujarati" },
+//   { code: "ta", label: "தமிழ்", sub: "Tamil" },
+//   { code: "te", label: "తెలుగు", sub: "Telugu" },
+// ];
 
 const GENDERS = [
   { value: "male", label: "पुरुष", sub: "Male", icon: "👨" },
@@ -20,7 +20,8 @@ const GENDERS = [
 
 const KEYPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "back"];
 
-const STEPS = ["language", "phone", "gender"] as const;
+// Language step disabled — Hindi is sent directly, phone number is now the first step.
+const STEPS = ["phone", "gender"] as const;
 type Step = (typeof STEPS)[number];
 
 export default function StartPage() {
@@ -32,7 +33,7 @@ export default function StartPage() {
   const step: Step = STEPS[stepIndex];
 
   const [phone, setPhone] = useState("");
-  const [language, setLanguage] = useState("");
+  const [language] = useState("hi");
   const [gender, setGender] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -110,7 +111,7 @@ export default function StartPage() {
         </div>
 
         <div className="card p-8 space-y-6">
-          {/* STEP 1: Language */}
+          {/* STEP: Language — disabled, Hindi is sent directly
           {step === "language" && (
             <div className="space-y-6">
               <div className="text-center space-y-1">
@@ -140,8 +141,9 @@ export default function StartPage() {
               </div>
             </div>
           )}
+          */}
 
-          {/* STEP 2: Phone number */}
+          {/* STEP 1: Phone number */}
           {step === "phone" && (
             <div className="space-y-6">
               <div className="text-center space-y-1">
@@ -155,7 +157,11 @@ export default function StartPage() {
                     key={i}
                     className={clsx(
                       "w-7 h-11 sm:w-9 sm:h-12 rounded-lg border-2 flex items-center justify-center text-xl font-bold",
-                      phone[i] ? "border-brand text-gray-900 bg-brand-light/40" : "border-gray-200 text-gray-300"
+                      phone[i]
+                        ? "border-brand text-gray-900 bg-brand-light/40"
+                        : i === phone.length
+                        ? "border-brand text-gray-300"
+                        : "border-gray-200 text-gray-300"
                     )}
                   >
                     {phone[i] ?? ""}
