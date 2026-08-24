@@ -10,7 +10,7 @@ const jakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "kuvaka Clinical AI",
+  title: "Community Health Assistant",
   description: "Intelligent clinical history-taking assistant",
 };
 

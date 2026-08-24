@@ -284,7 +284,7 @@ export default function CallPage() {
           )}
           <button
             onClick={handleStop}
-            className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            className="text-xs text-white font-semibold px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 transition-colors"
           >
             End Call
           </button>
@@ -297,6 +297,33 @@ export default function CallPage() {
         </div>
       )}
 
+      {state.phase === "category_select" && state.availableCategories.length > 0 && (
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
+          <div className="w-full max-w-3xl space-y-8 fade-up">
+            <div className="text-center space-y-1">
+              <h2 className="text-xl font-semibold text-gray-900">कृपया अपना विभाग चुनें</h2>
+              <p className="text-sm text-gray-500">Please select your department</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {state.availableCategories.map((cat) => (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => handleCategorySelect(cat)}
+                  className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-gray-200 bg-white py-8 px-4 text-center transition-all active:scale-95 hover:border-brand/40 hover:text-brand"
+                >
+                  <span className="text-base font-semibold text-gray-800">
+                    {CATEGORY_LABELS_HI[cat.key] ?? cat.label}
+                  </span>
+                  <span className="text-xs font-normal text-gray-400">{cat.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {state.phase !== "category_select" && (
       <div className="flex-1 flex flex-col items-center px-4 py-8 gap-6">
         <div className="w-full max-w-sm space-y-6 fade-up">
 
@@ -321,9 +348,7 @@ export default function CallPage() {
             </div>
           )}
 
-          {(state.phase === "triage" ||
-            state.phase === "consultation" ||
-            state.phase === "category_select") && (
+          {(state.phase === "triage" || state.phase === "consultation") && (
             <>
               <div className="flex flex-col items-center gap-3">
                 <OrbAnimation
@@ -403,29 +428,6 @@ export default function CallPage() {
                 </div>
               )}
 
-              {state.phase === "category_select" && state.availableCategories.length > 0 && (
-                <div className="card space-y-3 border-brand/30 border">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-semibold text-gray-700">कृपया अपना विभाग चुनें:</p>
-                    <p className="text-xs text-gray-400">Please select your department:</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
-                    {state.availableCategories.map((cat) => (
-                      <button
-                        key={cat.key}
-                        onClick={() => handleCategorySelect(cat)}
-                        className="text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-brand hover:bg-brand-light transition-all"
-                      >
-                        <div className="text-sm font-medium text-gray-700 hover:text-brand">
-                          {CATEGORY_LABELS_HI[cat.key] ?? cat.label}
-                        </div>
-                        <div className="text-xs text-gray-400">{cat.label}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {state.flags.length > 0 && (
                 <div className="space-y-1.5">
                   {state.flags.slice(-2).map((f, i) => (
@@ -449,6 +451,7 @@ export default function CallPage() {
           )}
         </div>
       </div>
+      )}
     </main>
   );
 }
