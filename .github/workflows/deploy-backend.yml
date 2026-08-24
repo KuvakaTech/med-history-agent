@@ -1,0 +1,92 @@
+name: Deploy backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "scripts/deploy.sh"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pip install poetry==1.8.3
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: poetry install --no-interaction --no-ansi
+
+      - name: Run ticketing (v2) test suite
+        working-directory: backend
+        # Scoped to the ticketing suite for now -- the full suite has an
+        # unrelated pre-existing hang in the cabin tests.
+        run: poetry run pytest tests/test_ticketing_api.py tests/test_ticketing_engines.py tests/test_ticketing_models.py tests/test_ticketing_stores.py tests/test_ticketing_voice_session.py -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/419691362841/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "github-deployer@decrackle-f14cf.iam.gserviceaccount.com"
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # scripts/deploy.sh is deliberately gitignored (local-only), so its
+      # steps are inlined here rather than checked in. Keep these two in
+      # sync if either changes.
+      - name: Deploy to med-history-agent VM
+        env:
+          PROJECT: decrackle-f14cf
+          ZONE: asia-south1-c
+          INSTANCE: med-history-agent
+          REMOTE_USER: macbookprom1
+          REMOTE_DIR: /home/macbookprom1/app
+          HEALTH_URL: https://med-history-agent.decrackle.io/health
+        run: |
+          set -euo pipefail
+          ssh() { gcloud compute ssh "${REMOTE_USER}@${INSTANCE}" --project="$PROJECT" --zone="$ZONE" --command="$1"; }
+
+          echo "==> Pulling latest main"
+          ssh "cd $REMOTE_DIR && git pull origin main"
+
+          echo "==> Building backend image"
+          ssh "cd $REMOTE_DIR && sudo docker compose build backend"
+
+          echo "==> Recreating backend container"
+          ssh "cd $REMOTE_DIR && sudo docker compose up -d --no-deps backend"
+
+          echo "==> Waiting for startup"
+          for i in $(seq 1 15); do
+            sleep 2
+            if curl -sf -m 5 "$HEALTH_URL" > /dev/null; then
+              echo "==> Healthy: $(curl -s -m 5 "$HEALTH_URL")"
+              exit 0
+            fi
+          done
+
+          echo "==> Health check failed after 30s"
+          exit 1
