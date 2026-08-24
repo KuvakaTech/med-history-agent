@@ -28,8 +28,8 @@ from app.ticketing.triage_engine import _language_name
 
 log = logging.getLogger(__name__)
 
-MIN_CONSULTATION_TURNS = 3   # ask at least 3 questions in phase 2
-MAX_CONSULTATION_TURNS = 7   # questions 4-10 = up to 7 questions in phase 2
+MIN_CONSULTATION_TURNS = 7   # ask at least 7 questions in phase 2 for proper notes
+MAX_CONSULTATION_TURNS = 12  # can go up to 12 total questions (3 triage + 12 consultation = 15 max)
 
 
 # --------------------------------------------------------------------------- #
@@ -37,94 +37,150 @@ MAX_CONSULTATION_TURNS = 7   # questions 4-10 = up to 7 questions in phase 2
 # --------------------------------------------------------------------------- #
 
 _CONSULT_SYSTEM = """\
-You are a clinical AI screener conducting a pre-visit history intake at a hospital.
-The patient is about to see a {category} doctor.
+You are a junior clinical screener — a medical AI assistant performing pre-consultation history taking BEFORE the patient meets the {category} physician.
 
-Your job: gather enough background so the doctor can use their consultation time well.
-Ask ONE focused question per turn. Target {min_turns}-{max_turns} questions total.
+──────────────────────────────────────
+ROLE & GOAL
+──────────────────────────────────────
+You are NOT replacing the doctor. Your job: gather complete essential clinical history so the physician can make the most of their consultation time.
 
-What you already know from intake:
-  Name    : {name}
-  Age     : {age}
-  Gender  : {gender}
-  Dept    : {category}
+GOAL: Cover ALL required areas by asking ONE focused question at a time. Each question should address a single topic only. The screening takes {min_turns}–{max_turns} questions and must NEVER exceed {max_turns}. Mark is_complete = true only when all areas are sufficiently covered.
 
-REQUIRED AREAS to cover (roughly in this order, but adapt based on the conversation):
-  1. chief_complaint    -- main symptom or concern (may already be known from triage)
-  2. duration           -- when did it start and for how long?
-  3. severity           -- how bad on a scale of 1-10?
-  4. character_location -- what does it feel like and exactly where?
-  5. modifying_factors  -- what makes it better or worse?
-  6. associated_symptoms-- anything else alongside the main complaint?
-  7. past_history       -- relevant past history, current medications, known allergies
+Patient details already known:
+  Name: {name}, Age: {age}, Gender: {gender}, Department: {category}
 
-RULES:
-- ONE question per turn. ONE topic only.
-- Do NOT re-ask anything already known (see covered areas passed in each turn).
-- Follow up naturally on what the patient just said before jumping to the next area.
-- Never diagnose, prescribe, or suggest treatments.
-- Flag red flags immediately (chest pain, stroke symptoms, suicidal ideation, etc.).
-- Respond in the patient's language: {language}.
-- Do NOT ask about name, age, gender, or department -- you already know these.
+──────────────────────────────────────
+8 REQUIRED AREAS — all must be covered before you mark is_complete = true
+──────────────────────────────────────
+1. Chief complaint — what brings them in today (may already be known from triage)
+2. Timeline — when it started, how long it has been going on
+3. Severity — how bad it is (1–10 scale where 10 = unbearable)
+4. Character + location — what it feels like, where exactly
+5. Modifying factors — what makes it better or worse
+6. Associated symptoms — anything else they have noticed alongside it
+7. Past medical/surgical history — prior conditions, operations, hospitalizations
+8. Current medications and known allergies — what they take, any drug reactions
+
+──────────────────────────────────────
+QUESTIONING RULES — CRITICAL
+──────────────────────────────────────
+• Ask ONE question per turn. ONE topic only. Never bundle multiple questions into one.
+• WRONG: "How long have you had this, how severe is it, and does anything make it better?"
+• RIGHT: "How long have you been experiencing this?" → wait for answer → "On a scale of 1–10, how would you rate the severity?" → wait → "Is there anything that makes it better or worse?"
+• Each question must be short, clear, and focused on a single piece of information.
+• NEVER repeat a question you have already asked — check the CONSULTATION HISTORY carefully.
+• Follow up naturally based on what the patient just said before moving to the next area.
+• Never diagnose. Never suggest treatments or tests. The physician will handle examination.
+
+──────────────────────────────────────
+BEHAVIOUR RULES
+──────────────────────────────────────
+• Warm, calm, professional tone. Use plain accessible language.
+• One question. One topic. Every single time.
+• Build naturally on previous answers — show you're listening.
+• Mark is_complete = true only after all required areas are sufficiently covered.
+• Always respond in the patient's language: {language}.
+
+──────────────────────────────────────
+RED FLAG DETECTION — check EVERY answer for urgent symptoms
+──────────────────────────────────────
+CRITICAL_RED_FLAG (immediate medical attention):
+  • Chest pain/tightness (possible heart attack)
+  • Acute severe breathlessness or difficulty breathing
+  • Sudden severe headache ("worst headache of my life")
+  • Stroke symptoms: facial droop, arm weakness, slurred speech, confusion
+  • Vomiting blood or black/tarry stools
+  • Loss of consciousness or fainting
+  • Signs of allergic reaction: swelling, difficulty breathing, rash
+  • Active suicidal thoughts or intent to harm self/others
+  • Severe abdominal pain with vomiting
+  • High fever (≥39°C) with confusion or stiff neck
+
+RED_FLAG (needs prompt medical attention):
+  • Unexplained weight loss (>10 lbs in month)
+  • Night sweats or fever for >1 week
+  • Blood in urine, stool, or when coughing
+  • Pain radiating to left arm, jaw, or between shoulder blades
+  • Syncope (fainting) or near-fainting episodes
+  • New lumps or masses anywhere on body
+  • Rapidly worsening neurological symptoms
+  • Severe pain (≥8/10 on pain scale)
+  • Pregnancy possibility in females of childbearing age
+  • Drug interaction risks with current medications
 """
 
 _CONSULT_Q_PROMPT = """\
-Clinical history -- turn {turn} of max {max_turns}.
-
-Conversation so far:
+CONSULTATION HISTORY ({turn} exchanges completed):
 {history}
 
-Patient just said: "{answer}"
-
-Already covered areas: {covered_str}
-Already known chief complaint from triage: {known_complaint}
+PATIENT'S LATEST ANSWER:
+"{answer}"
 
 {urgency_note}
 
-Next area to explore: {next_area}
+AREAS ALREADY COVERED: {covered_str}
+CHIEF COMPLAINT FROM TRIAGE: {known_complaint}
 
-Generate the NEXT clinical question.
-- If the patient's last answer already partially addresses "{next_area}", ask a natural
-  follow-up on THAT rather than switching to a generic new-topic question.
-- ONE topic only, in {language}.
-- Output ONLY the question text. No JSON. No labels."""
+NEXT AREA TO COVER:
+{next_area}
+
+Generate the NEXT clinical question. Ask about ONE topic only — the area listed above.
+Do NOT combine multiple topics. Do NOT ask two things in one question.
+Do NOT repeat a question already asked in CONSULTATION HISTORY above — check it carefully.
+Follow up naturally based on what the patient just said before moving to the next area.
+Build on their previous answer when possible to show you're listening.
+
+Output ONLY the question text in {language} — no JSON, no labels, no prefix."""
 
 _CONSULT_META_PROMPT = """\
-Clinical history -- turn {turn} of max {max_turns}.
-
-Conversation so far:
+CONSULTATION HISTORY ({turn} exchanges completed):
 {history}
 
-Patient just said: "{answer}"
+PATIENT'S LATEST ANSWER:
+"{answer}"
 
-Assess:
-  is_complete    : true when all required areas are adequately covered,
-                   OR turn >= {max_turns}. Respect min {min_turns} turns.
-  new_flags      : list of NEW red flags from the latest answer only
-                   (use flag_type + description keys).
-  covered_areas  : list of area keys from {area_keys} that are NOW covered
-                   (include all previously covered ones too).
+{urgency_note}
 
-Return JSON only -- no explanation, no markdown."""
+Assess three things:
+1. is_complete — Set TRUE when ALL of the following are sufficiently covered:
+   ✓ Chief complaint identified and elaborated
+   ✓ Timeline, severity, and symptom character well described  
+   ✓ Modifying factors and associated symptoms explored
+   ✓ Past medical history and current medications/allergies documented
+   Set TRUE only if no critical clinical gaps remain that the physician genuinely cannot work without.
+   Minimum {min_turns} questions must be asked unless all areas are thoroughly covered.
+
+2. new_flags — Any NEW clinical red flags raised by the latest answer only?
+   Check for: chest pain, breathing problems, severe headache, stroke signs, blood in urine/stool/vomit,
+   fainting, severe pain (≥8/10), allergic reactions, suicidal thoughts, high fever with confusion.
+   Use flag_type (CRITICAL_RED_FLAG or RED_FLAG) and description fields.
+
+3. covered_areas — Which of these topic keys are now sufficiently answered, considering the
+   FULL conversation so far? Choose only from: {area_keys}
+   Return every key that is adequately covered, not just ones from this turn.
+
+Return JSON only — no other text."""
 
 _AREA_KEYS = [
     "chief_complaint",
-    "duration",
+    "timeline", 
     "severity",
     "character_location",
     "modifying_factors",
     "associated_symptoms",
     "past_history",
+    "medications_allergies",
 ]
 
 _AREA_PROMPTS = {
-    "chief_complaint":     "chief complaint -- what is the main symptom or reason for the visit?",
-    "duration":            "duration -- when did it start and how long has it been going on?",
-    "severity":            "severity -- how bad is it on a scale of 1-10?",
-    "character_location":  "character and location -- what does it feel like and exactly where?",
-    "modifying_factors":   "modifying factors -- what makes it better or worse?",
-    "associated_symptoms": "associated symptoms -- anything else alongside the main complaint?",
-    "past_history":        "past medical history, current medications, and known allergies",
+    "chief_complaint":     "Chief complaint — what is the main symptom or reason for the visit?",
+    "timeline":            "Timeline — when did it start and how long has it been going on?", 
+    "severity":            "Severity — how bad is it on a scale of 1-10 (10 = unbearable)?",
+    "character_location":  "Character and location — what does it feel like and where exactly?",
+    "modifying_factors":   "Modifying factors — what makes it better or worse?",
+    "associated_symptoms": "Associated symptoms — anything else noticed alongside the main complaint?",
+    "past_history":        "Past medical and surgical history — prior conditions, operations, hospitalizations",
+    "medications_allergies": "Current medications and known allergies — what they take and any drug reactions",
 }
 
 
@@ -149,22 +205,24 @@ def _build_history(qa_log: list[TicketQAEntry]) -> str:
 def _urgency_note(turn: int) -> str:
     if turn >= MAX_CONSULTATION_TURNS - 1:
         return (
-            f"IMPORTANT: Turn {turn}/{MAX_CONSULTATION_TURNS}. This is the LAST allowed question. "
-            "Ask about the single most important remaining gap. After this, is_complete = true."
+            f"NOTE: {turn} exchanges completed. This is the LAST question allowed — "
+            "the screening ends automatically after the patient answers. "
+            "Ask about the single most important remaining gap, and set is_complete = true."
         )
     if turn >= MIN_CONSULTATION_TURNS:
         return (
-            f"Note: Turn {turn}/{MAX_CONSULTATION_TURNS}. "
-            "If all required areas are adequately covered, you may set is_complete = true."
+            f"NOTE: {turn} exchanges completed. Check whether all required areas are covered. "
+            "If they are sufficiently addressed, mark is_complete = true. Only continue if a key gap remains."
         )
     return ""
 
 
 def _next_area(covered: list[str]) -> str:
-    for key in _AREA_KEYS:
-        if key not in covered:
-            return _AREA_PROMPTS[key]
-    return "any remaining relevant clinical detail"
+    """Returns the FIRST uncovered area so the LLM asks one question at a time."""
+    missing = [desc for key, desc in _AREA_PROMPTS.items() if key not in covered]
+    if not missing:
+        return "All essential areas appear covered."
+    return missing[0]
 
 
 def _covered_str(covered: list[str]) -> str:
@@ -204,18 +262,21 @@ class ConsultationEngine:
     ) -> str:
         """First question for phase 2 -- no answer to process yet."""
         next_area = _next_area(covered)
-        complaint_ctx = (
-            f'The patient mentioned "{known_complaint}" during triage. '
-            "Do NOT ask what they are here for again -- that is already known. "
-            "Instead, start by asking a follow-up that deepens understanding of their complaint."
-            if known_complaint
-            else f"Ask about: {next_area}."
-        )
-        prompt = (
-            f"The triage intake is complete. Now begin the clinical history.\n"
-            f"{complaint_ctx}\n"
-            f"ONE question, in {self._lang_name}. Output ONLY the question text."
-        )
+        
+        if known_complaint:
+            prompt = (
+                f"The triage is complete. The patient mentioned: '{known_complaint}' as their main concern. "
+                f"Start the clinical history by greeting them by name and briefly acknowledging their "
+                f"stated reason, then ask them to tell you more about it — specifically about: {next_area}. "
+                f"Do NOT ask 'what brings you in' again — you already know. "
+                f"Be warm and concise — one or two sentences in {self._lang_name}."
+            )
+        else:
+            prompt = (
+                f"The triage is complete. Start the clinical history by asking about: {next_area}. "
+                f"ONE question, in {self._lang_name}. Output ONLY the question text."
+            )
+        
         return await llm.complete(prompt, system=self._system, fast=True)
 
     async def next_turn_stream(
