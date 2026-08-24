@@ -1,0 +1,12 @@
+# Never bake secrets into the image -- config is injected at container
+# start via docker-compose's env_file:, not read from a file in the image.
+.env
+.env.*
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.git/
+tests/
