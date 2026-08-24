@@ -206,6 +206,10 @@ class TicketVoiceSession:
             # Apply extracted data
             if done_data.get("patient_name"):
                 self._patient_name = done_data["patient_name"]
+            elif turn_idx >= 1 and not done_data.get("patient_name") and self._patient_name == "the patient":
+                # If we've asked for name (turn 1+) but still don't have it, mark as declined
+                self._patient_name = "declined"
+            
             if done_data.get("patient_age"):
                 self._patient_age = str(done_data["patient_age"])
 
@@ -268,7 +272,7 @@ class TicketVoiceSession:
             async for chunk in engine.next_turn_stream(
                 self.session,
                 answer,
-                known_name=self._patient_name if self._patient_name != "the patient" else None,
+                known_name=self._patient_name if self._patient_name not in ["the patient", "declined"] else None,
                 known_age=int(self._patient_age) if self._patient_age != "unknown" and self._patient_age.isdigit() else None,
                 known_category=self._category_key,
                 known_confidence="high" if self._category_key else "none",
