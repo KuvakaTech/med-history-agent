@@ -34,7 +34,7 @@ jobs:
         working-directory: backend
         # Scoped to the ticketing suite for now -- the full suite has an
         # unrelated pre-existing hang in the cabin tests.
-        run: poetry run pytest tests/test_ticketing_api.py tests/test_ticketing_engines.py tests/test_ticketing_models.py tests/test_ticketing_stores.py tests/test_ticketing_voice_session.py -q
+        run: poetry run python -m pytest tests/test_ticketing_api.py tests/test_ticketing_engines.py tests/test_ticketing_models.py tests/test_ticketing_stores.py tests/test_ticketing_voice_session.py -q
 
   deploy:
     needs: test
