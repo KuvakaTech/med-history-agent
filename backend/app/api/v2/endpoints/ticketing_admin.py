@@ -242,6 +242,7 @@ async def list_sessions(
     status: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     ticket: Optional[str] = Query(None, description="Exact ticket number, e.g. TKT-000042"),
+    phone: Optional[str] = Query(None, description="Exact patient phone number"),
     include_deleted: bool = Query(False),
     date_from: Optional[str] = Query(None, description="ISO date, e.g. 2026-08-01"),
     date_to:   Optional[str] = Query(None, description="ISO date, e.g. 2026-08-31"),
@@ -250,14 +251,27 @@ async def list_sessions(
 ):
     hid = _resolve_hid(user, hospital_id)
 
-    sessions = await ticket_session_store.list_for_hospital(
-        hospital_id=hid,
-        limit=limit,
-        status=status,
-        category_key=category,
-        include_deleted=include_deleted,
-        search_ticket=ticket,
-    )
+    if phone:
+        patient = await ticket_patient_store.get_by_phone(phone.strip())
+        sessions = (
+            await ticket_session_store.list_for_patient(
+                patient.patient_id, hospital_id=hid, include_deleted=include_deleted
+            )
+            if patient else []
+        )
+        if status:
+            sessions = [s for s in sessions if s.get("status") == status]
+        if category:
+            sessions = [s for s in sessions if (s.get("category") or {}).get("key") == category]
+    else:
+        sessions = await ticket_session_store.list_for_hospital(
+            hospital_id=hid,
+            limit=limit,
+            status=status,
+            category_key=category,
+            include_deleted=include_deleted,
+            search_ticket=ticket,
+        )
 
     # Date range filter — done in Python after fetch (avoids Mongo query complexity)
     if date_from or date_to:
@@ -290,7 +304,9 @@ async def get_session_detail(
     hospital_id: Optional[str] = Query(None),
     user: dict = Depends(require_hospital_admin),
 ):
-    hid = _resolve_hid(user, hospital_id)
+    # hospital_admin is always scoped via their JWT hospital_id; super_admin may
+    # omit hospital_id entirely to look up a session across all hospitals.
+    hid = user.get("hospital_id") or hospital_id
 
     session = await ticket_session_store.get(session_id, hospital_id=hid)
     if not session:

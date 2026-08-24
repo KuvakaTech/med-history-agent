@@ -114,6 +114,9 @@ function SoapNote({ summary }: { summary: unknown }) {
 
   const note = summary as Record<string, unknown>;
   const SECTION_ORDER = ["subjective", "objective", "assessment", "plan"];
+  const hasTranscript = Boolean(
+    note.full_transcript && typeof note.full_transcript === "string" && note.full_transcript.trim()
+  );
 
   return (
     <div className="space-y-5">
@@ -160,6 +163,28 @@ function SoapNote({ summary }: { summary: unknown }) {
           </div>
         );
       })}
+
+      {/* Full Transcript Section */}
+      {hasTranscript && (
+        <div>
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+              T
+            </span>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Full Transcript</p>
+          </div>
+          <div className="pl-7">
+            <div className="bg-gray-50 rounded-lg p-3 max-h-64 overflow-y-auto">
+              <pre className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
+                {note.full_transcript as string}
+              </pre>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1 italic">
+              Complete conversation record between AI assistant and patient
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

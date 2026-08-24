@@ -109,9 +109,11 @@ export const adminApi = {
       include_deleted?: boolean;
       limit?: number;
       ticket?: string;
+      phone?: string;
       date_from?: string;
       date_to?: string;
-    }
+    },
+    hospital_id?: string | null
   ) => {
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
@@ -119,8 +121,10 @@ export const adminApi = {
     if (params?.include_deleted) qs.set("include_deleted", "true");
     if (params?.limit) qs.set("limit", String(params.limit));
     if (params?.ticket) qs.set("ticket", params.ticket);
+    if (params?.phone) qs.set("phone", params.phone);
     if (params?.date_from) qs.set("date_from", params.date_from);
     if (params?.date_to) qs.set("date_to", params.date_to);
+    if (hospital_id) qs.set("hospital_id", hospital_id);
     const q = qs.toString();
     return adminReq<{ sessions: AdminSession[]; count: number }>(
       "GET",
@@ -129,28 +133,41 @@ export const adminApi = {
     );
   },
 
-  getSession: (token: string, sessionId: string) =>
-    adminReq<AdminSession & { qa_log: unknown[]; summary: unknown; patient: unknown }>(
+  getSession: (token: string, sessionId: string, hospital_id?: string | null) => {
+    const q = hospital_id ? `?hospital_id=${hospital_id}` : "";
+    return adminReq<AdminSession & { qa_log: unknown[]; summary: unknown; patient: unknown }>(
       "GET",
-      `/sessions/${sessionId}`,
+      `/sessions/${sessionId}${q}`,
       token
-    ),
+    );
+  },
 
-  listCategories: (token: string, include_inactive?: boolean) =>
-    adminReq<{ categories: TicketCategory[] }>(
+  listCategories: (token: string, include_inactive?: boolean, hospital_id?: string | null) => {
+    const qs = new URLSearchParams();
+    if (include_inactive) qs.set("include_inactive", "true");
+    if (hospital_id) qs.set("hospital_id", hospital_id);
+    const q = qs.toString();
+    return adminReq<{ categories: TicketCategory[] }>(
       "GET",
-      `/categories${include_inactive ? "?include_inactive=true" : ""}`,
+      `/categories${q ? `?${q}` : ""}`,
       token
-    ),
+    );
+  },
 
-  createCategory: (token: string, data: { key: string; label: string }) =>
-    adminReq<TicketCategory>("POST", "/categories", token, data),
+  createCategory: (token: string, data: { key: string; label: string }, hospital_id?: string | null) => {
+    const q = hospital_id ? `?hospital_id=${hospital_id}` : "";
+    return adminReq<TicketCategory>("POST", `/categories${q}`, token, data);
+  },
 
   updateCategory: (
     token: string,
     categoryId: string,
-    data: { label?: string; active?: boolean }
-  ) => adminReq<TicketCategory>("PATCH", `/categories/${categoryId}`, token, data),
+    data: { label?: string; active?: boolean },
+    hospital_id?: string | null
+  ) => {
+    const q = hospital_id ? `?hospital_id=${hospital_id}` : "";
+    return adminReq<TicketCategory>("PATCH", `/categories/${categoryId}${q}`, token, data);
+  },
 
   listAdminUsers: (token: string, hospital_id?: string) => {
     const q = hospital_id ? `?hospital_id=${hospital_id}` : "";

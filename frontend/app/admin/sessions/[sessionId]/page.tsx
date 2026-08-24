@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { adminApi } from "@/lib/ticketing-api";
-import type { TicketFlag } from "@/lib/ticketing-types";
+import type { Hospital, TicketFlag } from "@/lib/ticketing-types";
 import { getToken } from "@/lib/api";
 import clsx from "clsx";
 
@@ -41,11 +41,27 @@ export default function SessionDetailPage() {
   const [session, setSession] = useState<DetailSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [userRole, setUserRole] = useState("");
+  const [hospitals, setHospitals] = useState<Hospital[]>([]);
 
   useEffect(() => {
     getToken()
-      .then((t) => adminApi.getSession(t, sessionId))
-      .then((s) => setSession(s as unknown as DetailSession))
+      .then(async (t) => {
+        // Decode token to get user role
+        const payload = JSON.parse(atob(t.split('.')[1]));
+        const role = payload.role;
+        setUserRole(role);
+
+        // Backend resolves scoping itself: hospital_admin is always scoped via
+        // their JWT, super_admin passing no hospital_id gets a global lookup.
+        const [sessionData] = await Promise.all([
+          adminApi.getSession(t, sessionId, null),
+          role === "super_admin"
+            ? adminApi.listHospitals(t).then((r) => setHospitals(r.hospitals))
+            : Promise.resolve(),
+        ]);
+        setSession(sessionData as unknown as DetailSession);
+      })
       .catch((e) => {
         if (e.message?.includes("401") || e.message === "refresh_failed") {
           router.push("/login");
@@ -56,6 +72,8 @@ export default function SessionDetailPage() {
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  const sessionHospital = hospitals.find((h) => h.hospital_id === session?.hospital_id);
 
   if (loading) return <Spinner />;
   if (error) return <p className="p-8 text-red-600 text-sm">{error}</p>;
@@ -69,15 +87,28 @@ export default function SessionDetailPage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-100 px-6 h-14 flex items-center gap-3 sticky top-0 z-50">
-        <button
-          onClick={() => router.push("/admin")}
-          className="text-sm text-gray-500 hover:text-brand transition-colors"
-        >
-          ← Sessions
-        </button>
-        <span className="text-gray-300">|</span>
-        <span className="text-sm font-mono text-gray-400">{sessionId.slice(0, 12)}…</span>
+      <header className="bg-white border-b border-gray-100 px-6 h-14 flex items-center justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push("/admin")}
+            className="text-sm text-gray-500 hover:text-brand transition-colors"
+          >
+            ← Sessions
+          </button>
+          <span className="text-gray-300">|</span>
+          <span className="text-sm font-mono text-gray-400">{sessionId.slice(0, 12)}…</span>
+          {userRole === "super_admin" && (
+            <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
+              Super Admin
+            </span>
+          )}
+        </div>
+
+        {userRole === "super_admin" && sessionHospital && (
+          <span className="text-xs font-semibold text-gray-500">
+            {sessionHospital.name}
+          </span>
+        )}
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-6 fade-up">
@@ -238,17 +269,42 @@ function SummaryView({ summary }: { summary: Record<string, unknown> }) {
     ["Assessment", summary.assessment as string],
     ["Plan", summary.plan as string],
   ];
+  
+  const hasTranscript = Boolean(
+    summary.full_transcript && typeof summary.full_transcript === "string" && summary.full_transcript.trim()
+  );
+  
   return (
-    <div className="space-y-3">
-      {fields.map(([label, value]) =>
-        value ? (
-          <div key={label as string}>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
-              {label}
-            </p>
-            <p className="text-sm text-gray-800 leading-relaxed">{value}</p>
+    <div className="space-y-4">
+      {/* SOAP Fields */}
+      <div className="space-y-3">
+        {fields.map(([label, value]) =>
+          value ? (
+            <div key={label as string}>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                {label}
+              </p>
+              <p className="text-sm text-gray-800 leading-relaxed">{value}</p>
+            </div>
+          ) : null
+        )}
+      </div>
+      
+      {/* Full Transcript from Summary */}
+      {hasTranscript && (
+        <div className="border-t pt-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Complete Conversation Transcript
+          </p>
+          <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
+            <pre className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
+              {summary.full_transcript as string}
+            </pre>
           </div>
-        ) : null
+          <p className="text-xs text-gray-400 mt-1 italic">
+            Generated conversation record between AI assistant and patient
+          </p>
+        </div>
       )}
     </div>
   );

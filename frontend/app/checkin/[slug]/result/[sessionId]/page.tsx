@@ -232,21 +232,43 @@ function SummaryCard({ summary }: { summary: SOAPSummary }) {
   ];
 
   const visible = fields.filter(([, v]) => v?.trim());
-  if (visible.length === 0) return null;
+  const hasTranscript = summary.full_transcript?.trim();
+  
+  if (visible.length === 0 && !hasTranscript) return null;
 
   return (
-    <div className="card space-y-4 print:border print:shadow-none">
-      <h3 className="text-base font-bold text-gray-900">Clinical Summary</h3>
-      <div className="space-y-3">
-        {visible.map(([label, value]) => (
-          <div key={label}>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-              {label}
-            </p>
-            <p className="text-sm text-gray-800 leading-relaxed">{value}</p>
+    <div className="space-y-6">
+      {/* Clinical Summary Section */}
+      {visible.length > 0 && (
+        <div className="card space-y-4 print:border print:shadow-none">
+          <h3 className="text-base font-bold text-gray-900">Clinical Summary</h3>
+          <div className="space-y-3">
+            {visible.map(([label, value]) => (
+              <div key={label}>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  {label}
+                </p>
+                <p className="text-sm text-gray-800 leading-relaxed">{value}</p>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+      
+      {/* Full Transcript Section */}
+      {hasTranscript && (
+        <div className="card space-y-4 print:border print:shadow-none">
+          <h3 className="text-base font-bold text-gray-900">Full Conversation Transcript</h3>
+          <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+            <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
+              {summary.full_transcript}
+            </pre>
+          </div>
+          <p className="text-xs text-gray-500 italic">
+            Complete conversation record between AI assistant and patient
+          </p>
+        </div>
+      )}
     </div>
   );
 }

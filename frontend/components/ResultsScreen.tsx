@@ -25,6 +25,26 @@ function NoteSection({ data }: { data: Record<string, unknown> | null }) {
         <div className={clsx("space-y-3", depth > 0 && "pl-4 border-l-2 border-gray-100 mt-1")}>
           {Object.entries(v as Record<string, unknown>).map(([k, val]) => {
             if (!val) return null;
+            
+            // Special handling for full_transcript
+            if (k === "full_transcript" && typeof val === "string" && val.trim()) {
+              return (
+                <div key={k} className="border-t pt-4">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
+                    Full Conversation Transcript
+                  </p>
+                  <div className="bg-gray-50 rounded-lg p-4 max-h-80 overflow-y-auto">
+                    <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans">
+                      {val}
+                    </pre>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2 italic">
+                    Complete conversation record between AI assistant and patient
+                  </p>
+                </div>
+              );
+            }
+            
             return (
               <div key={k}>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">

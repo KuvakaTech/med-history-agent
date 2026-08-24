@@ -58,6 +58,7 @@ export interface SOAPSummary {
   } | null;
   assessment?: string | null;
   plan?: string | null;
+  full_transcript?: string | null;  // Add full transcript
 }
 
 // WebSocket events from server → client

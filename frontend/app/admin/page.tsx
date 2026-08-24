@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminApi } from "@/lib/ticketing-api";
-import type { AdminSession, TicketCategory } from "@/lib/ticketing-types";
+import type { AdminSession, Hospital, TicketCategory } from "@/lib/ticketing-types";
 import { getToken } from "@/lib/api";
 import clsx from "clsx";
 
@@ -24,8 +24,14 @@ export default function AdminDashboard() {
   const [error, setError]           = useState("");
   const [activeTab, setActiveTab]   = useState<"sessions" | "categories">("sessions");
 
+  // Hospital selection for super admins
+  const [hospitals, setHospitals]   = useState<Hospital[]>([]);
+  const [selectedHospital, setSelectedHospital] = useState("");
+  const [userRole, setUserRole]     = useState("");
+
   // Filters
   const [ticketSearch, setTicketSearch] = useState("");
+  const [phoneSearch, setPhoneSearch]   = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [catFilter, setCatFilter]       = useState("");
   const [showDeleted, setShowDeleted]   = useState(false);
@@ -42,14 +48,34 @@ export default function AdminDashboard() {
     getToken()
       .then(async (t) => {
         setToken(t);
-        const [s, c, st] = await Promise.all([
-          adminApi.listSessions(t, { include_deleted: false }),
-          adminApi.listCategories(t, true),
-          adminApi.getStats(t).catch(() => null),
-        ]);
-        setSessions(s.sessions);
-        setCategories(c.categories);
-        if (st) setStats(st);
+        
+        // Decode token to get user role
+        const payload = JSON.parse(atob(t.split('.')[1]));
+        const role = payload.role;
+        setUserRole(role);
+        
+        // Load hospitals if super admin
+        if (role === "super_admin") {
+          try {
+            const hospitalsResponse = await adminApi.listHospitals(t);
+            setHospitals(hospitalsResponse.hospitals);
+            
+            // Auto-select first hospital if available
+            if (hospitalsResponse.hospitals.length > 0) {
+              const firstHospitalId = hospitalsResponse.hospitals[0].hospital_id;
+              setSelectedHospital(firstHospitalId);
+              
+              // Load data with first hospital
+              await loadDataForHospital(t, firstHospitalId);
+            }
+          } catch (e) {
+            console.error("Failed to load hospitals:", e);
+            setError("Failed to load hospitals. Please check console for details.");
+          }
+        } else {
+          // Hospital admin - load data without hospital_id
+          await loadDataForHospital(t, null);
+        }
       })
       .catch((e) => {
         if (e.message?.includes("401") || e.message === "refresh_failed") {
@@ -62,38 +88,68 @@ export default function AdminDashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Helper function to load data for a specific hospital
+  const loadDataForHospital = async (t: string, hospital_id: string | null) => {
+    try {
+      const [s, c, st] = await Promise.all([
+        adminApi.listSessions(t, { include_deleted: false }, hospital_id),
+        adminApi.listCategories(t, true, hospital_id),
+        adminApi.getStats(t, hospital_id || undefined).catch(() => null),
+      ]);
+      setSessions(s.sessions);
+      setCategories(c.categories);
+      if (st) setStats(st);
+    } catch (e) {
+      throw e;
+    }
+  };
+
+  // Handle hospital selection change
+  useEffect(() => {
+    if (token && selectedHospital && userRole === "super_admin") {
+      setLoading(true);
+      loadDataForHospital(token, selectedHospital)
+        .catch((e) => setError(e.message))
+        .finally(() => setLoading(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedHospital, token, userRole]);
+
   // ── Fetch / search sessions ───────────────────────────────
   const refetch = useCallback(async () => {
     if (!token) return;
     setFetching(true);
     setError("");
     try {
+      const hospital_id = userRole === "super_admin" ? selectedHospital : null;
       const s = await adminApi.listSessions(token, {
         status:          statusFilter || undefined,
         category:        catFilter || undefined,
         include_deleted: showDeleted,
         ticket:          ticketSearch || undefined,
+        phone:           phoneSearch || undefined,
         date_from:       dateFrom || undefined,
         date_to:         dateTo || undefined,
-      });
+      }, hospital_id);
       setSessions(s.sessions);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load sessions");
     } finally {
       setFetching(false);
     }
-  }, [token, statusFilter, catFilter, showDeleted, ticketSearch, dateFrom, dateTo]);
+  }, [token, statusFilter, catFilter, showDeleted, ticketSearch, phoneSearch, dateFrom, dateTo, userRole, selectedHospital]);
 
   // Re-fetch when dropdowns/date change (not ticket — that needs explicit search)
   useEffect(() => {
     if (token) refetch();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, catFilter, showDeleted, dateFrom, dateTo, token]);
+  }, [statusFilter, catFilter, showDeleted, dateFrom, dateTo, token, userRole, selectedHospital]);
 
   // ── Category actions ──────────────────────────────────────
   const handleToggleCategory = async (catId: string, active: boolean) => {
     try {
-      const updated = await adminApi.updateCategory(token, catId, { active: !active });
+      const hospital_id = userRole === "super_admin" ? selectedHospital : null;
+      const updated = await adminApi.updateCategory(token, catId, { active: !active }, hospital_id);
       setCategories((prev) =>
         prev.map((c) =>
           (c as unknown as { category_id: string }).category_id === catId ? updated : c
@@ -108,10 +164,11 @@ export default function AdminDashboard() {
     if (!newCatKey.trim() || !newCatLabel.trim()) return;
     setSavingCat(true);
     try {
+      const hospital_id = userRole === "super_admin" ? selectedHospital : null;
       const cat = await adminApi.createCategory(token, {
         key:   newCatKey.trim().toLowerCase().replace(/\s+/g, "_"),
         label: newCatLabel.trim(),
-      });
+      }, hospital_id);
       setCategories((prev) => [...prev, cat]);
       setNewCatKey("");
       setNewCatLabel("");
@@ -130,12 +187,38 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-3">
           <img src="/kuvaka_logo.png" alt="Kuvaka" className="h-6 w-auto" />
           <span className="text-sm font-semibold text-gray-700">Admin Dashboard</span>
+          {userRole === "super_admin" && (
+            <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
+              Super Admin
+            </span>
+          )}
         </div>
-        {stats && (
-          <span className="text-xs text-gray-400 hidden sm:block">
-            {stats.date_ist}
-          </span>
-        )}
+        <div className="flex items-center gap-4">
+          {userRole === "super_admin" && hospitals.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Hospital:
+              </label>
+              <select
+                className="input-field text-sm py-1 px-2 min-w-0"
+                value={selectedHospital}
+                onChange={(e) => setSelectedHospital(e.target.value)}
+              >
+                <option value="">Select Hospital</option>
+                {hospitals.map((h) => (
+                  <option key={h.hospital_id} value={h.hospital_id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {stats && (
+            <span className="text-xs text-gray-400 hidden sm:block">
+              {stats.date_ist}
+            </span>
+          )}
+        </div>
       </header>
 
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -145,42 +228,53 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ── Stats cards ── */}
-        {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <StatCard label="Today" value={stats.today.total} sub="check-ins" />
-            <StatCard label="Completed" value={stats.today.completed} color="green" />
-            <StatCard label="Partial" value={stats.today.partial} color="amber" />
-            <StatCard label="Active" value={stats.today.active} color="blue" />
-            <StatCard
-              label="Critical today"
-              value={stats.today.critical}
-              color={stats.today.critical > 0 ? "red" : undefined}
-              sub={`${stats.all_time.critical} all-time`}
-            />
+        {userRole === "super_admin" && !selectedHospital && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+            Please select a hospital to view data.
           </div>
         )}
 
-        {/* ── Tabs ── */}
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-          {(["sessions", "categories"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={clsx(
-                "px-5 py-2 rounded-lg text-sm font-semibold transition-all",
-                activeTab === tab
-                  ? "bg-white text-brand shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              {tab === "sessions" ? `Sessions (${sessions.length})` : "Departments"}
-            </button>
-          ))}
-        </div>
+        {/* Show content only if hospital is selected (for super admin) or if user is hospital admin */}
+        {(userRole !== "super_admin" || selectedHospital) && (
+          <>
+            {/* ── Stats cards ── */}
+            {stats && (
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <StatCard label="Today" value={stats.today.total} sub="check-ins" />
+                <StatCard label="Completed" value={stats.today.completed} color="green" />
+                <StatCard label="Partial" value={stats.today.partial} color="amber" />
+                <StatCard label="Active" value={stats.today.active} color="blue" />
+                <StatCard
+                  label="Critical today"
+                  value={stats.today.critical}
+                  color={stats.today.critical > 0 ? "red" : undefined}
+                  sub={`${stats.all_time.critical} all-time`}
+                />
+              </div>
+            )}
+
+            {/* ── Tabs ── */}
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+              {(["sessions", "categories"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={clsx(
+                    "px-5 py-2 rounded-lg text-sm font-semibold transition-all",
+                    activeTab === tab
+                      ? "bg-white text-brand shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  {tab === "sessions" ? `Sessions (${sessions.length})` : "Departments"}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* ── Sessions tab ── */}
-        {activeTab === "sessions" && (
+        {(userRole !== "super_admin" || selectedHospital) && activeTab === "sessions" && (
           <div className="space-y-4">
             {/* Filters row */}
             <div className="flex flex-wrap gap-3 items-end">
@@ -195,6 +289,29 @@ export default function AdminDashboard() {
                     placeholder="TKT-000001"
                     value={ticketSearch}
                     onChange={(e) => setTicketSearch(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => e.key === "Enter" && refetch()}
+                  />
+                  <button
+                    onClick={refetch}
+                    disabled={fetching}
+                    className="btn-secondary text-sm py-2 px-3"
+                  >
+                    {fetching ? "…" : "Search"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Phone search */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Mobile No.
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    className="input-field w-36 text-sm py-2 font-mono"
+                    placeholder="9876543210"
+                    value={phoneSearch}
+                    onChange={(e) => setPhoneSearch(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && refetch()}
                   />
                   <button
@@ -296,7 +413,7 @@ export default function AdminDashboard() {
         )}
 
         {/* ── Categories tab ── */}
-        {activeTab === "categories" && (
+        {(userRole !== "super_admin" || selectedHospital) && activeTab === "categories" && (
           <div className="space-y-4">
             <div className="card space-y-3">
               <h3 className="text-sm font-bold text-gray-700">Add Department</h3>

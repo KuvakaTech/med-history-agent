@@ -180,6 +180,7 @@ class TicketVoiceSession:
 
         from app.ticketing.triage_engine import MAX_TRIAGE_TURNS
 
+        current_question = opening
         for turn_idx in range(MAX_TRIAGE_TURNS):
             if self._stopped.is_set():
                 return
@@ -190,10 +191,9 @@ class TicketVoiceSession:
                 return
 
             # Record Q&A
-            current_q = self.session.qa_log[-1].question_text if self.session.qa_log else opening
             self.session.qa_log.append(TicketQAEntry(
                 question_id=f"triage_{turn_idx + 1}",
-                question_text=current_q,
+                question_text=current_question,
                 answer=answer,
             ))
             self.session.turn_count += 1
@@ -247,11 +247,7 @@ class TicketVoiceSession:
             # Speak next question (streamed text already collected in done_data)
             next_q = done_data.get("question_text", "")
             if next_q:
-                self.session.qa_log.append(TicketQAEntry(
-                    question_id=f"triage_q_{turn_idx + 2}",
-                    question_text=next_q,
-                    answer="",  # placeholder; filled on next iteration
-                ))
+                current_question = next_q
                 await self._speak_and_wait(next_q, turn=turn_idx + 1)
 
         # Transition to consultation
@@ -324,6 +320,7 @@ class TicketVoiceSession:
 
         from app.ticketing.consultation_engine import MAX_CONSULTATION_TURNS
 
+        current_question = opening
         for turn_idx in range(MAX_CONSULTATION_TURNS):
             if self._stopped.is_set():
                 return
@@ -332,12 +329,9 @@ class TicketVoiceSession:
             if answer is None:
                 return
 
-            current_q = opening if turn_idx == 0 else (
-                self.session.qa_log[-1].question_text if self.session.qa_log else ""
-            )
             self.session.qa_log.append(TicketQAEntry(
                 question_id=f"consult_{turn_idx + 1}",
-                question_text=current_q,
+                question_text=current_question,
                 answer=answer,
             ))
             self.session.turn_count += 1
@@ -386,6 +380,7 @@ class TicketVoiceSession:
 
             next_q = done_data.get("question_text", "")
             if next_q:
+                current_question = next_q
                 await self._speak_and_wait(next_q, turn=self.session.turn_count)
 
         await self._send(ev.consultation_ended())

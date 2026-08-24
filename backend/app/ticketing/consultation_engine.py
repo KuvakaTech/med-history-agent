@@ -318,6 +318,7 @@ class ConsultationEngine:
             min_turns=MIN_CONSULTATION_TURNS,
             history=history,
             answer=latest_answer,
+            urgency_note=_urgency_note(turn_count),
             area_keys=area_keys_str,
         )
 

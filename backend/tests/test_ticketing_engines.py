@@ -25,6 +25,7 @@ from app.ticketing.consultation_engine import (
     MIN_CONSULTATION_TURNS,
     ConsultationEngine,
     ConsultMeta,
+    _AREA_KEYS,
 )
 
 
@@ -269,7 +270,7 @@ async def test_consultation_red_flags_accumulate_on_session():
 
     with patch("app.ticketing.consultation_engine.llm.stream_complete", new=fake_stream), \
          patch("app.ticketing.consultation_engine.llm.complete_structured", new=AsyncMock(return_value=fake_meta)):
-        async for _ in engine.next_turn_stream(session, "haan seene mein dard", covered=list(range(4))):
+        async for _ in engine.next_turn_stream(session, "haan seene mein dard", covered=_AREA_KEYS[:4]):
             pass
 
     assert len(session.flags) == 2
@@ -293,7 +294,7 @@ async def test_consultation_no_diagnosis_or_prescription_calls():
          patch("app.ticketing.consultation_engine.llm.complete_structured", new=AsyncMock(return_value=fake_meta)), \
          patch("app.clinical.services.diagnosis.DiagnosisService.diagnose") as mock_dx, \
          patch("app.clinical.services.prescription.PrescriptionService.prescribe") as mock_rx:
-        async for _ in engine.next_turn_stream(session, "ok", covered=list(range(7))):
+        async for _ in engine.next_turn_stream(session, "ok", covered=_AREA_KEYS[:7]):
             pass
 
     mock_dx.assert_not_called()

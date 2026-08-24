@@ -63,4 +63,10 @@ class SummarizationService:
 
         prompt = SUMMARIZE_PROMPT.format(transcript=transcript)
         result = await llm.complete_structured(prompt, SOAPNote, max_tokens=2048)
-        return result.model_dump(mode="json")  # type: ignore[union-attr]
+        
+        # Return both SOAP note and full transcript
+        soap_note = result.model_dump(mode="json")  # type: ignore[union-attr]
+        return {
+            **soap_note,
+            "full_transcript": transcript
+        }
