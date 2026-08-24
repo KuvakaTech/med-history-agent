@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from app.agent import llm
 from app.ticketing.models import TicketFlag, TicketQAEntry, TicketSession
+from app.ticketing.triage_engine import _language_name
 
 log = logging.getLogger(__name__)
 
@@ -185,7 +186,6 @@ class ConsultationEngine:
         age: str = "unknown",
         gender: str = "unknown",
     ) -> None:
-        from app.ticketing.triage_engine import _language_name
         self._lang_name = _language_name(language)
         self._system = _CONSULT_SYSTEM.format(
             category=category_label,
