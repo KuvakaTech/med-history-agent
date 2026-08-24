@@ -50,22 +50,24 @@ jobs:
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: "projects/419691362841/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
-          service_account: "github-deployer@decrackle-f14cf.iam.gserviceaccount.com"
+          workload_identity_provider: "${{ vars.DEPLOY_WIF_PROVIDER }}"
+          service_account: "${{ vars.DEPLOY_SA_EMAIL }}"
 
       - uses: google-github-actions/setup-gcloud@v2
 
       # scripts/deploy.sh is deliberately gitignored (local-only), so its
       # steps are inlined here rather than checked in. Keep these two in
-      # sync if either changes.
-      - name: Deploy to med-history-agent VM
+      # sync if either changes. Infra identifiers live in repo Variables
+      # (Settings -> Secrets and variables -> Actions), not in this file,
+      # since the repo is public.
+      - name: Deploy to backend VM
         env:
-          PROJECT: decrackle-f14cf
-          ZONE: asia-south1-c
-          INSTANCE: med-history-agent
-          REMOTE_USER: macbookprom1
-          REMOTE_DIR: /home/macbookprom1/app
-          HEALTH_URL: https://med-history-agent.decrackle.io/health
+          PROJECT: ${{ vars.DEPLOY_GCP_PROJECT }}
+          ZONE: ${{ vars.DEPLOY_GCP_ZONE }}
+          INSTANCE: ${{ vars.DEPLOY_GCP_INSTANCE }}
+          REMOTE_USER: ${{ vars.DEPLOY_REMOTE_USER }}
+          REMOTE_DIR: ${{ vars.DEPLOY_REMOTE_DIR }}
+          HEALTH_URL: ${{ vars.DEPLOY_HEALTH_URL }}
         run: |
           set -euo pipefail
           ssh() { gcloud compute ssh "${REMOTE_USER}@${INSTANCE}" --project="$PROJECT" --zone="$ZONE" --command="$1"; }
