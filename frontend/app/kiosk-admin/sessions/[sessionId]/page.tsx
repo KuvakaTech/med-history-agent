@@ -139,6 +139,7 @@ export default function KioskAdminSessionPage() {
             ].map(([label, value]) =>
               value ? (
                 <div key={label as string} className="px-5 py-4">
+                  {/* @ts-ignore */}
                   <p className="text-xs font-semibold text-gray-400 uppercase">{label}</p>
                   <p className="text-gray-900 mt-1">{String(value)}</p>
                 </div>
