@@ -4,7 +4,7 @@ import Link from "next/link";
 
 const CARDS = [
   {
-    title: "Jan Sunvai Varanasi",
+    title: "Office of District Magistrate Varanasi",
     sub: "Public grievance kiosk",
     href: "/kiosk/varanasi-jan-sunwai/start",
     icon: "🗣️",
@@ -16,7 +16,7 @@ const CARDS = [
     icon: "🏛️",
   },
   {
-    title: "Berasia",
+    title: "Hospital Platform",
     sub: "Hospital staff login",
     href: "/login",
     icon: "🏥",
