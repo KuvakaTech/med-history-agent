@@ -65,15 +65,26 @@ class GrievanceExtract(BaseModel):
 
 
 _JAN_SUNWAI_EXTRACT_PROMPT = """\
-Extract a structured Jan Sunwai grievance record from this kiosk voice transcript.
+Extract a structured Jan Sunwai district grievance record from this kiosk voice transcript.
 
 Rules:
 - Use ONLY what is explicitly said. Do not invent facts.
 - Phone was captured at kiosk intake — do not extract phone from transcript.
 - Never extract Aadhaar, bank account, OTP, or passwords.
-- urgency: "urgent" for emergencies, safety threats, live electrical danger, rapidly worsening health; else "normal".
+- urgency: "urgent" for emergencies, safety threats, live electrical danger, land grab/threat,
+  self-harm/distress, rapidly worsening health; else "normal".
 - department_tag: one of health, water, electricity, road, ration, land_revenue, pension_welfare,
-  sanitation, education, police_safety, employment, other, to_be_assigned.
+  sanitation, education, police_safety, employment, agriculture, certificates, out_of_scope,
+  other, to_be_assigned.
+- category_details (dict) — populate when mentioned:
+  - tehsil, block, ward: Sadar, Pindra, Rajatalab; blocks Arajiline, Baragaon, etc.
+  - out_of_scope: true for RTI, civil sub-judice only matters, govt employee transfer, etc.
+  - out_of_scope_reason: e.g. rti, sub_judice, govt_employee_service
+  - route_to: e.g. PVVNL, Tehsil, Nagar_Nigam, PWD, DSO, CMO, DRDA, Police
+  - revenue/land (9A): khasra, gata, khatauni, rakba, namantaran_type (purchase/inheritance),
+    vaad_case_number, sub_judice (court matter), opposite_party
+  - billing (8.1): current_amount, previous_amount, consumer_number, connection_type
+- out_of_scope matters → department_tag out_of_scope + category_details.out_of_scope=true + route_to.
 
 Transcript:
 {transcript}

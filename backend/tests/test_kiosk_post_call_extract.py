@@ -88,6 +88,16 @@ async def test_extract_assigns_complaint_number():
     assert out.grievance.full_name == "Ram Kumar"
 
 
+def test_jan_sunwai_extract_prompt():
+    centre = KioskCentre(slug="varanasi-jan-sunwai", name="Jan Sunwai")
+    prompt = _extract_prompt_for_centre(centre)
+    assert "Jan Sunwai" in prompt
+    assert "land_revenue" in prompt
+    assert "khasra" in prompt
+    assert "out_of_scope" in prompt
+    assert "route_to" in prompt
+
+
 def test_nagar_nigam_extract_prompt():
     centre = KioskCentre(slug="varanasi-nagar-nigam", name="Nagar Nigam")
     prompt = _extract_prompt_for_centre(centre)

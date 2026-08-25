@@ -19,6 +19,15 @@ def test_jan_sunwai_prompt_loads():
     text = system_instruction(centre, "hi")
     assert "JAN SUNWAI" in text.upper()
     assert "Speak only in Hindi" in text
+    # New docx anchors
+    assert "3.1 NEVER REVEAL" in text
+    assert "9A" in text
+    assert "NAMANTARAN" in text
+    assert "11.1 SIGNAL THE WRAP-UP" in text
+    assert "3.4 NEVER LOOP" in text
+    # Hindi-only welcome (no language picker in base prompt)
+    assert "English mein" not in text.split("Speak only in Hindi")[0]
+    assert "NEVER invent, guess, or speak any complaint number" in text
 
 
 def test_nagar_nigam_prompt_loads():

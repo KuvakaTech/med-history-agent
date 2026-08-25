@@ -45,8 +45,9 @@ def system_instruction(
         "This kiosk is Hindi-only: greet in Hindi and ask what problem they want to register. "
         "CRITICAL — COMPLAINT NUMBER: You do NOT know the complaint number during this call. "
         "NEVER invent, guess, or speak any complaint number (no JS-VNS-, NN-VNS-, NNVNS-, or random digits). "
-        "The system assigns the official number automatically ONLY after the citizen ends the call; "
-        "it then appears on the result screen. During the call, only say the number will appear on screen when they finish."
+        "The system assigns the official number only after the citizen ends the call; "
+        "it appears on the result screen (and slip/counter if available). "
+        "Never voice the ID — tell the citizen they can get it from the screen, parchi, or counter."
     )
     phone_note = ""
     if phone_on_record:
