@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, getToken } from "@/lib/api";
 
@@ -9,6 +9,10 @@ export default function KioskAdminLoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    document.title = "Admin Panel";
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,8 +39,7 @@ export default function KioskAdminLoginPage() {
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-amber-50 to-white px-6">
       <div className="w-full max-w-md bg-white rounded-2xl border border-gray-100 shadow-sm p-8 space-y-6">
         <div className="text-center space-y-2">
-          <h1 className="text-xl font-bold text-gray-900">Kiosk Admin</h1>
-          <p className="text-sm text-gray-500">Jan Sunwai / Nagar Nigam grievance console</p>
+          <p className="text-sm text-gray-500">Login to Admin Panel</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

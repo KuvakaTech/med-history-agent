@@ -37,6 +37,19 @@ export default function KioskStartPage() {
   const [centreInitialsLabel, setCentreInitialsLabel] = useState("");
 
   useEffect(() => {
+    if (slug === "varanasi-nagar-nigam") {
+      document.title = "Varanasi Nagar Nigam";
+    } else if (slug === "varanasi-jan-sunwai") {
+      document.title = "वाराणसी जन सुनवाई";
+    } else {
+      return;
+    }
+    return () => {
+      document.title = "Community Health Assistant";
+    };
+  }, [slug]);
+
+  useEffect(() => {
     kioskApi
       .getCentre(slug)
       .then((c) => {
@@ -91,15 +104,27 @@ export default function KioskStartPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-amber-50 to-white flex flex-col px-6 py-10 select-none">
-      <div className="flex items-center gap-3 self-start">
-        <div className="h-10 w-10 rounded-full bg-amber-600 text-white flex items-center justify-center text-sm font-bold">
-          {centreInitialsLabel || "—"}
+      {slug === "varanasi-nagar-nigam" ? (
+        <div className="flex flex-col self-start leading-tight">
+          <span className="text-xl font-extrabold text-orange-600">वाराणसी नगर निगम</span>
+          <span className="text-xs font-bold text-orange-500 tracking-widest">VARANASI NAGAR NIGAM</span>
         </div>
-        <div>
-          <p className="text-sm font-semibold text-gray-900">{centreName || "शिकायत कियोस्क"}</p>
-          <p className="text-xs text-gray-500">Varanasi</p>
+      ) : slug === "varanasi-jan-sunwai" ? (
+        <div className="flex flex-col self-start leading-tight">
+          <span className="text-xl font-extrabold text-orange-600">वाराणसी जन सुनवाई</span>
+          <span className="text-xs font-bold text-orange-500 tracking-widest">VARANASI JAN SUNWAI</span>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center gap-3 self-start">
+          <div className="h-10 w-10 rounded-full bg-amber-600 text-white flex items-center justify-center text-sm font-bold">
+            {centreInitialsLabel || "—"}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-900">{centreName || "शिकायत कियोस्क"}</p>
+            <p className="text-xs text-gray-500">Varanasi</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col items-center justify-center">
         <div className="w-full max-w-3xl space-y-8 fade-up">
@@ -150,7 +175,7 @@ export default function KioskStartPage() {
                   type="button"
                   disabled={phone.length < 10}
                   onClick={goNext}
-                  className="btn-primary w-full !py-4 text-base disabled:opacity-40"
+                  className="w-full !py-4 text-base rounded-lg font-semibold text-white bg-amber-600 hover:bg-amber-700 transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   आगे बढ़ें →
                 </button>

@@ -44,6 +44,19 @@ export default function KioskResultPage() {
       .finally(() => setLoading(false));
   }, [slug, sessionId]);
 
+  useEffect(() => {
+    if (slug === "varanasi-nagar-nigam") {
+      document.title = "Varanasi Nagar Nigam";
+    } else if (slug === "varanasi-jan-sunwai") {
+      document.title = "वाराणसी जन सुनवाई";
+    } else {
+      return;
+    }
+    return () => {
+      document.title = "Community Health Assistant";
+    };
+  }, [slug]);
+
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -94,7 +107,13 @@ export default function KioskResultPage() {
 
       <div ref={printRef} className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         <div className="text-center space-y-2">
-          <p className="text-sm text-gray-500">{result.centre_name || "Jan Sunwai"}</p>
+          {slug === "varanasi-nagar-nigam" ? (
+            <p className="text-lg font-extrabold text-orange-600">वाराणसी नगर निगम</p>
+          ) : slug === "varanasi-jan-sunwai" ? (
+            <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
+          ) : (
+            <p className="text-sm text-gray-500">{result.centre_name || "Jan Sunwai"}</p>
+          )}
           <h1 className="text-xl font-bold text-gray-900">
             {isPartial ? "अधूरी शिकायत" : "शिकायत दर्ज हो गई"}
           </h1>

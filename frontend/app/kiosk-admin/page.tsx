@@ -65,6 +65,10 @@ export default function KioskAdminDashboard() {
   const [newCentreName, setNewCentreName] = useState("");
   const [creatingCentre, setCreatingCentre] = useState(false);
 
+  useEffect(() => {
+    document.title = "Admin Panel";
+  }, []);
+
   const loadData = useCallback(
     async (t: string, centreId?: string, isSuperAdmin = false) => {
       setFetching(true);
@@ -165,7 +169,6 @@ export default function KioskAdminDashboard() {
     <main className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-100 px-6 h-14 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold text-amber-800">Kiosk Admin</span>
           <span className="text-sm text-gray-600">{centreName}</span>
           {userRole === "super_admin" && (
             <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">

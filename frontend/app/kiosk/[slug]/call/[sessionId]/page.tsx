@@ -30,6 +30,19 @@ export default function KioskCallPage() {
       .catch(() => setCentreName(slug));
   }, [slug]);
 
+  useEffect(() => {
+    if (slug === "varanasi-nagar-nigam") {
+      document.title = "Varanasi Nagar Nigam";
+    } else if (slug === "varanasi-jan-sunwai") {
+      document.title = "वाराणसी जन सुनवाई";
+    } else {
+      return;
+    }
+    return () => {
+      document.title = "Community Health Assistant";
+    };
+  }, [slug]);
+
   const handleEvent = useCallback(
     (event: KioskWSEvent) => {
       switch (event.type) {
@@ -114,9 +127,15 @@ export default function KioskCallPage() {
     <main className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-100 px-4 h-14 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-amber-800">
-            {centreName || "शिकायत कियोस्क"}
-          </span>
+          {slug === "varanasi-nagar-nigam" ? (
+            <span className="text-sm font-extrabold text-orange-600">वाराणसी नगर निगम</span>
+          ) : slug === "varanasi-jan-sunwai" ? (
+            <span className="text-sm font-extrabold text-orange-600">वाराणसी जन सुनवाई</span>
+          ) : (
+            <span className="text-sm font-semibold text-amber-800">
+              {centreName || "शिकायत कियोस्क"}
+            </span>
+          )}
           <span className="text-xs text-gray-400">
             {phase === "processing" ? "प्रसंस्करण…" : "शिकायत दर्ज"}
           </span>

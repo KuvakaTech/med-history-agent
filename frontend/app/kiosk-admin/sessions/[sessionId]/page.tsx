@@ -34,6 +34,10 @@ export default function KioskAdminSessionPage() {
   const [centres, setCentres] = useState<KioskCentre[]>([]);
 
   useEffect(() => {
+    document.title = "Admin Panel";
+  }, []);
+
+  useEffect(() => {
     getToken()
       .then(async (t) => {
         const payload = JSON.parse(atob(t.split(".")[1]));

@@ -23,7 +23,7 @@ export default function Home() {
         }
         router.replace(`/checkin/${FALLBACK_HOSPITAL_SLUG}/`);
       })
-      .catch(() => router.replace("/login"));
+      .catch(() => router.replace("/dashboard"));
   }, [router]);
   return null;
 }
