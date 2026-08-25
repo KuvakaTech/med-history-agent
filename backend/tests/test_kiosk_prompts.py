@@ -41,6 +41,8 @@ def test_nagar_nigam_prompt_loads():
     assert "6G" in text
     # Hindi-only welcome (no language picker in base prompt)
     assert "English mein" not in text.split("Speak only in Hindi")[0]
+    # Complaint number assigned after call, not spoken during session
+    assert "NEVER invent, guess, or speak any complaint number" in text
 
 
 def test_slug_defaults_without_explicit_fields():
