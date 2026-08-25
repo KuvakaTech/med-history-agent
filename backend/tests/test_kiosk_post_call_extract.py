@@ -93,3 +93,7 @@ def test_nagar_nigam_extract_prompt():
     prompt = _extract_prompt_for_centre(centre)
     assert "Nagar Nigam" in prompt
     assert "jal_kal_water" in prompt
+    assert "out_of_scope" in prompt
+    assert "route_to" in prompt
+    assert "service_request" in prompt
+    assert "pvvnl_electricity_bill" in prompt

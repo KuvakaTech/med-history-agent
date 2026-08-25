@@ -33,6 +33,14 @@ def test_nagar_nigam_prompt_loads():
     assert "NAGAR NIGAM" in text.upper()
     kick = kickoff_text(centre, "hi")
     assert "Nagar Nigam" in kick
+    # Expanded section 6 anchors
+    assert "6A" in text
+    assert "PVVNL" in text
+    assert "janm praman patra" in text
+    assert "out_of_scope=true" in text
+    assert "6G" in text
+    # Hindi-only welcome (no language picker in base prompt)
+    assert "English mein" not in text.split("Speak only in Hindi")[0]
 
 
 def test_slug_defaults_without_explicit_fields():

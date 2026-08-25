@@ -80,21 +80,33 @@ Transcript:
 """
 
 _NAGAR_NIGAM_EXTRACT_PROMPT = """\
-Extract a structured Nagar Nigam civic complaint record from this kiosk voice transcript.
+Extract a structured Nagar Nigam civic complaint or service-intake record from this kiosk voice transcript.
 
 Rules:
 - Use ONLY what is explicitly said. Do not invent facts.
 - Phone was captured at kiosk intake — do not extract phone from transcript.
 - Never extract Aadhaar, bank account, OTP, or passwords.
-- urgency: "urgent" for open manhole, sewage in homes, contaminated water illness, animal bite,
-  dangerous tree/pole, live electrical danger, disease outbreak, life/safety threats; else "normal".
+- urgency: "urgent" for open manhole, sewage in homes, contaminated water illness, animal bite/attack,
+  dangerous tree/pole, live electrical danger, disease outbreak, disconnection notice, overflow into homes,
+  life/safety threats; else "normal".
+- sentiment: use "bereaved" for death registration/certificate flows (6C); else omit or use stated tone.
 - department_tag: one of sanitation, sewer_drainage, jal_kal_water, roads, street_lights,
   property_tax, stray_animals, encroachment, parks, birth_death_cert, public_health,
   out_of_scope, other, to_be_assigned.
-- Put municipal zone in category_details.zone_tag if mentioned (Adampur, Bhelupur, Dashashwamedh,
-  Kotwali, Varunapar, or ward number).
-- out_of_scope matters (PVVNL bijli supply, tehsil land records, ration/pension) → department_tag out_of_scope
-  and note reason in category_details.out_of_scope_reason.
+- category_details (dict) — populate when mentioned:
+  - zone_tag: Adampur, Bhelupur, Dashashwamedh, Kotwali, Varunapar, or ward number
+  - out_of_scope: true if PVVNL bijli bill/supply, tehsil land dispute, private boundary, ration/pension, VDA map
+  - out_of_scope_reason: e.g. pvvnl_electricity_bill, tehsil_land_dispute, private_land_boundary, ration, vda_map
+  - route_to: e.g. PVVNL, Tehsil, Jan_Sunwai, VDA
+  - service_request: true for birth/death registration intake (6B/6C), not a grievance
+  - request_type: new_registration | certificate | correction | grievance
+  - current_amount, previous_amount: for bill/tax disputes
+  - consumer_number, connection_type: domestic | commercial | agricultural for bijli/water
+  - nuisance_type: pigs | dogs | cattle | mosquitoes | drain (for 6G animal/public-health)
+  - encroachment_on: public_road | footpath | drain | private_land
+  - child_name, date_of_birth, place_of_birth, father_name, mother_name, informant_relation, days_since_event (birth 6B)
+  - deceased_name, date_of_death, place_of_death, cause_of_death, informant_relation (death 6C)
+- out_of_scope matters → department_tag out_of_scope + category_details.out_of_scope=true + route_to.
 
 Transcript:
 {transcript}
