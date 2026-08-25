@@ -24,7 +24,7 @@ const CARDS = [
 ];
 
 const ADMIN_LINKS = [
-  { label: "Hospital Admin", href: "/login" },
+  { label: "Hospital Admin", href: "/login?to=admin" },
   { label: "Nagar Nigam Admin", href: "/kiosk-admin/login" },
   { label: "Jan Sunvai Admin", href: "/kiosk-admin/login" },
 ];
