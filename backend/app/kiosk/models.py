@@ -19,12 +19,42 @@ def to_ist_str(dt: Optional[datetime]) -> Optional[str]:
     return ist.strftime("%Y-%m-%d %H:%M:%S IST")
 
 
+_SLUG_DEFAULTS: dict[str, dict[str, str]] = {
+    "varanasi-jan-sunwai": {
+        "prompt_file": "jan_sunwai_system.txt",
+        "complaint_prefix": "JS-VNS",
+    },
+    "varanasi-nagar-nigam": {
+        "prompt_file": "nagar_nigam_system.txt",
+        "complaint_prefix": "NN-VNS",
+    },
+}
+
+
+def defaults_for_slug(slug: str) -> dict[str, str]:
+    return _SLUG_DEFAULTS.get(slug, _SLUG_DEFAULTS["varanasi-jan-sunwai"])
+
+
 class KioskCentre(BaseModel):
     centre_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     slug: str
     name: str
     default_language: str = "hi"
+    prompt_file: Optional[str] = None
+    complaint_prefix: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+def prompt_file_for_centre(centre: KioskCentre) -> str:
+    if centre.prompt_file:
+        return centre.prompt_file
+    return defaults_for_slug(centre.slug)["prompt_file"]
+
+
+def complaint_prefix_for_centre(centre: KioskCentre) -> str:
+    if centre.complaint_prefix:
+        return centre.complaint_prefix
+    return defaults_for_slug(centre.slug)["complaint_prefix"]
 
 
 class KioskTranscriptEntry(BaseModel):

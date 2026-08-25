@@ -1,5 +1,6 @@
 "use client";
 import type {
+  CentreResponse,
   GrievanceResultResponse,
   KioskWSEvent,
   StartSessionResponse,
@@ -11,6 +12,15 @@ const WS_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001"
   .replace(/^http/, "ws");
 
 export const kioskApi = {
+  getCentre: async (slug: string): Promise<CentreResponse> => {
+    const res = await fetch(`${API_V2}/kiosk/${slug}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
   startSession: async (
     slug: string,
     phone: string,

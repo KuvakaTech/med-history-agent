@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.kiosk import events as ev
 from app.kiosk.gemini_live import GeminiLiveSession, LiveEvent, complaint_tools
 from app.kiosk.hindi_display import to_devanagari_display
-from app.kiosk.models import KioskSession, KioskTranscriptEntry
+from app.kiosk.models import KioskCentre, KioskSession, KioskTranscriptEntry
 from app.kiosk.post_call_extract import run_post_call_extract
 from app.kiosk.prompts import kickoff_text, system_instruction
 from app.kiosk.session_store import kiosk_session_store
@@ -72,9 +72,11 @@ class KioskVoiceSession:
         self,
         session: KioskSession,
         ws: WebSocket,
+        centre: KioskCentre,
         live_factory: Any = None,
     ) -> None:
         self.session = session
+        self.centre = centre
         self.ws = ws
         self._live_factory = live_factory or GeminiLiveSession
         self._stopped = asyncio.Event()
@@ -152,6 +154,7 @@ class KioskVoiceSession:
             ev.complaint_started(self.session.session_id, self.session.language)
         )
         instruction = system_instruction(
+            self.centre,
             self.session.language,
             phone_on_record=self.session.phone,
         )
@@ -165,7 +168,7 @@ class KioskVoiceSession:
         up = asyncio.create_task(self._relay_client_to_gemini(), name="kiosk_up")
         down = asyncio.create_task(self._relay_gemini_to_client(), name="kiosk_down")
         try:
-            await self._live.send_text(kickoff_text(self.session.language))
+            await self._live.send_text(kickoff_text(self.centre, self.session.language))
             await self._wait_phase()
         finally:
             up.cancel()
@@ -353,7 +356,7 @@ class KioskVoiceSession:
             except asyncio.QueueEmpty:
                 break
         try:
-            await run_post_call_extract(self.session)
+            await run_post_call_extract(self.session, self.centre)
         except Exception as exc:
             log.error("kiosk post-call failed: %s", exc, exc_info=True)
             self.session.status = "partial"

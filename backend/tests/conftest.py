@@ -10,6 +10,7 @@ import pytest
 # Settings are read at import time, so a JWT secret has to exist before app.core.config
 # is first imported. setdefault keeps a real .env value if one is already present.
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
+os.environ.setdefault("KIOSK_ENABLED", "true")
 
 from app.cabin import leases as cabin_leases  # noqa: E402
 from app.cabin import store as cabin_store  # noqa: E402

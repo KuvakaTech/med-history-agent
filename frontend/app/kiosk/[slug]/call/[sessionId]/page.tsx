@@ -21,6 +21,14 @@ export default function KioskCallPage() {
   const [partialTranscript, setPartialTranscript] = useState("");
   const [agentSpeaking, setAgentSpeaking] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [centreName, setCentreName] = useState("");
+
+  useEffect(() => {
+    kioskApi
+      .getCentre(slug)
+      .then((c) => setCentreName(c.name))
+      .catch(() => setCentreName(slug));
+  }, [slug]);
 
   const handleEvent = useCallback(
     (event: KioskWSEvent) => {
@@ -106,7 +114,9 @@ export default function KioskCallPage() {
     <main className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-100 px-4 h-14 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-amber-800">Jan Sunwai</span>
+          <span className="text-sm font-semibold text-amber-800">
+            {centreName || "शिकायत कियोस्क"}
+          </span>
           <span className="text-xs text-gray-400">
             {phase === "processing" ? "प्रसंस्करण…" : "शिकायत दर्ज"}
           </span>

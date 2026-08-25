@@ -23,8 +23,8 @@ def _date_key() -> str:
     return now.strftime("%Y%m%d")
 
 
-async def next_complaint_number(centre_id: str) -> str:
-    """Return JS-VNS-YYYYMMDD-NNNNN for this centre and IST day."""
+async def next_complaint_number(centre_id: str, prefix: str = "JS-VNS") -> str:
+    """Return {prefix}-YYYYMMDD-NNNNN for this centre and IST day."""
     global _mongo_write_failed
     date_part = _date_key()
     counter_id = f"{centre_id}_{date_part}"
@@ -43,4 +43,4 @@ async def next_complaint_number(centre_id: str) -> str:
         key = counter_id
         _local_counters[key] = _local_counters.get(key, 0) + 1
         seq = _local_counters[key]
-    return f"JS-VNS-{date_part}-{seq:05d}"
+    return f"{prefix}-{date_part}-{seq:05d}"

@@ -14,6 +14,14 @@ const KEYPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", 
 const STEPS = ["phone", "gender"] as const;
 type Step = (typeof STEPS)[number];
 
+function centreInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
+
 export default function KioskStartPage() {
   const params = useParams();
   const router = useRouter();
@@ -25,6 +33,21 @@ export default function KioskStartPage() {
   const [language] = useState("hi");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [centreName, setCentreName] = useState("");
+  const [centreInitialsLabel, setCentreInitialsLabel] = useState("");
+
+  useEffect(() => {
+    kioskApi
+      .getCentre(slug)
+      .then((c) => {
+        setCentreName(c.name);
+        setCentreInitialsLabel(centreInitials(c.name));
+      })
+      .catch(() => {
+        setCentreName(slug);
+        setCentreInitialsLabel(slug.slice(0, 2).toUpperCase());
+      });
+  }, [slug]);
 
   const goNext = () => {
     setError("");
@@ -69,12 +92,12 @@ export default function KioskStartPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-amber-50 to-white flex flex-col px-6 py-10 select-none">
       <div className="flex items-center gap-3 self-start">
-        <div className="h-10 w-10 rounded-full bg-amber-600 text-white flex items-center justify-center text-lg font-bold">
-          JS
+        <div className="h-10 w-10 rounded-full bg-amber-600 text-white flex items-center justify-center text-sm font-bold">
+          {centreInitialsLabel || "—"}
         </div>
         <div>
-          <p className="text-sm font-semibold text-gray-900">Jan Sunwai</p>
-          <p className="text-xs text-gray-500">Varanasi Zila Prashasan</p>
+          <p className="text-sm font-semibold text-gray-900">{centreName || "शिकायत कियोस्क"}</p>
+          <p className="text-xs text-gray-500">Varanasi</p>
         </div>
       </div>
 

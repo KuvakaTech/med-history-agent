@@ -1,15 +1,18 @@
-"""Jan Sunwai system prompt loader — mirrors ticketing prompts_v2 language pattern."""
+"""Kiosk system prompt loader — centre slug selects voice agent context."""
 from __future__ import annotations
 
 from pathlib import Path
 
-_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "jan_sunwai_system.txt"
+from app.kiosk.models import KioskCentre, prompt_file_for_centre
+
+_PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 
-def _load_base_prompt() -> str:
-    if _PROMPT_PATH.is_file():
-        return _PROMPT_PATH.read_text(encoding="utf-8").strip()
-    return "You are the Jan Sunwai kiosk AI assistant for Varanasi District Administration."
+def _load_base_prompt(centre: KioskCentre) -> str:
+    path = _PROMPTS_DIR / prompt_file_for_centre(centre)
+    if path.is_file():
+        return path.read_text(encoding="utf-8").strip()
+    return f"You are the kiosk AI assistant for {centre.name}."
 
 
 def _language_name(code: str) -> str:
@@ -27,10 +30,13 @@ def _language_name(code: str) -> str:
     return mapping.get((code or "hi").lower(), "Hindi")
 
 
-def system_instruction(language: str, phone_on_record: str | None = None) -> str:
-    base = _load_base_prompt()
+def system_instruction(
+    centre: KioskCentre,
+    language: str,
+    phone_on_record: str | None = None,
+) -> str:
+    base = _load_base_prompt(centre)
     lang = _language_name(language)
-    # Runtime overrides base doc section 1.2 (language choice) — kiosk is Hindi-only.
     runtime = (
         f"\n\nSpeak only in {lang}. "
         "Use Hindi (Devanagari script) for everything you say aloud — it is shown live on the kiosk screen. "
@@ -47,10 +53,11 @@ def system_instruction(language: str, phone_on_record: str | None = None) -> str
     return base + runtime + phone_note
 
 
-def kickoff_text(language: str) -> str:
+def kickoff_text(centre: KioskCentre, language: str) -> str:
     lang = _language_name(language)
     return (
-        f"The citizen is now at the kiosk. Greet them warmly in {lang} only. "
-        "Do NOT ask Hindi or English — begin Jan Sunwai intake immediately. "
+        f"The citizen is now at the kiosk for {centre.name}. "
+        f"Greet them warmly in {lang} only. "
+        "Do NOT ask Hindi or English — begin intake immediately. "
         "Do not wait for further instructions."
     )

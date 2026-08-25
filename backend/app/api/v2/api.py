@@ -20,8 +20,12 @@ api_v2_router.include_router(ticketing_router, prefix="/t", tags=["ticketing"])
 # Jan Sunwai kiosk — /api/v2/kiosk/{slug}/... (off unless KIOSK_ENABLED=true)
 if settings.KIOSK_ENABLED:
     from app.api.v2.endpoints.kiosk import router as kiosk_router
+    from app.api.v2.endpoints.kiosk_admin import router as kiosk_admin_router
 
     api_v2_router.include_router(kiosk_router, prefix="/kiosk", tags=["kiosk"])
+    api_v2_router.include_router(
+        kiosk_admin_router, prefix="/kiosk-admin", tags=["kiosk-admin"]
+    )
 
 # Admin routes: /api/v2/admin/...
 api_v2_router.include_router(admin_router, prefix="/admin", tags=["ticketing-admin"])

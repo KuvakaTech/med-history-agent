@@ -1,4 +1,4 @@
-"""Post-call grievance extraction for Jan Sunwai kiosk."""
+"""Post-call grievance extraction for kiosk centres."""
 from __future__ import annotations
 
 import logging
@@ -12,8 +12,11 @@ from app.kiosk.counter_store import next_complaint_number
 from app.kiosk.models import (
     GrievanceAddress,
     GrievanceRecord,
+    KioskCentre,
     KioskSession,
     KioskTranscriptEntry,
+    complaint_prefix_for_centre,
+    prompt_file_for_centre,
 )
 from app.kiosk.session_store import kiosk_session_store
 
@@ -61,7 +64,7 @@ class GrievanceExtract(BaseModel):
     category_details: dict[str, Any] = Field(default_factory=dict)
 
 
-_EXTRACT_PROMPT = """\
+_JAN_SUNWAI_EXTRACT_PROMPT = """\
 Extract a structured Jan Sunwai grievance record from this kiosk voice transcript.
 
 Rules:
@@ -75,6 +78,33 @@ Rules:
 Transcript:
 {transcript}
 """
+
+_NAGAR_NIGAM_EXTRACT_PROMPT = """\
+Extract a structured Nagar Nigam civic complaint record from this kiosk voice transcript.
+
+Rules:
+- Use ONLY what is explicitly said. Do not invent facts.
+- Phone was captured at kiosk intake — do not extract phone from transcript.
+- Never extract Aadhaar, bank account, OTP, or passwords.
+- urgency: "urgent" for open manhole, sewage in homes, contaminated water illness, animal bite,
+  dangerous tree/pole, live electrical danger, disease outbreak, life/safety threats; else "normal".
+- department_tag: one of sanitation, sewer_drainage, jal_kal_water, roads, street_lights,
+  property_tax, stray_animals, encroachment, parks, birth_death_cert, public_health,
+  out_of_scope, other, to_be_assigned.
+- Put municipal zone in category_details.zone_tag if mentioned (Adampur, Bhelupur, Dashashwamedh,
+  Kotwali, Varunapar, or ward number).
+- out_of_scope matters (PVVNL bijli supply, tehsil land records, ration/pension) → department_tag out_of_scope
+  and note reason in category_details.out_of_scope_reason.
+
+Transcript:
+{transcript}
+"""
+
+
+def _extract_prompt_for_centre(centre: KioskCentre) -> str:
+    if prompt_file_for_centre(centre) == "nagar_nigam_system.txt":
+        return _NAGAR_NIGAM_EXTRACT_PROMPT
+    return _JAN_SUNWAI_EXTRACT_PROMPT
 
 
 def format_transcript(entries: list[KioskTranscriptEntry]) -> str:
@@ -103,7 +133,10 @@ def _address_from_extract(prefix: str, data: GrievanceExtract) -> GrievanceAddre
     )
 
 
-async def run_post_call_extract(session: KioskSession) -> KioskSession:
+async def run_post_call_extract(
+    session: KioskSession,
+    centre: KioskCentre,
+) -> KioskSession:
     transcript_text = format_transcript(session.transcript)
     if not transcript_text.strip():
         session.status = "partial"
@@ -112,10 +145,11 @@ async def run_post_call_extract(session: KioskSession) -> KioskSession:
         await kiosk_session_store.update(session)
         return session
 
+    prompt_template = _extract_prompt_for_centre(centre)
     extracted = GrievanceExtract()
     try:
         extracted = await llm.complete_structured(  # type: ignore[assignment]
-            _EXTRACT_PROMPT.format(transcript=transcript_text),
+            prompt_template.format(transcript=transcript_text),
             GrievanceExtract,
             fast=False,
             max_tokens=4096,
@@ -157,7 +191,10 @@ async def run_post_call_extract(session: KioskSession) -> KioskSession:
         optional_email=extracted.optional_email,
         category_details=extracted.category_details,
     )
-    session.complaint_number = await next_complaint_number(session.centre_id)
+    session.complaint_number = await next_complaint_number(
+        session.centre_id,
+        prefix=complaint_prefix_for_centre(centre),
+    )
     session.status = "completed"
     session.phase = "result"
     session.ended_at = datetime.utcnow()

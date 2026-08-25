@@ -78,3 +78,17 @@ async def require_super_admin(
             detail="Super admin access required.",
         )
     return payload
+
+
+async def require_centre_admin(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+) -> dict:
+    """Requires role == centre_admin OR super_admin."""
+    payload = _decode_credentials(credentials)
+    role = payload.get("role", "doctor")
+    if role not in ("centre_admin", "super_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Kiosk centre admin access required.",
+        )
+    return payload

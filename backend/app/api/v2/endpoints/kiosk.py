@@ -39,6 +39,24 @@ class StartSessionResponse(BaseModel):
     status: str
 
 
+class CentreResponse(BaseModel):
+    slug: str
+    name: str
+    default_language: str
+
+
+@router.get("/{slug}", response_model=CentreResponse)
+async def get_centre(slug: str) -> CentreResponse:
+    centre = await centre_store.get_by_slug(slug)
+    if not centre:
+        raise HTTPException(status_code=404, detail="Kiosk centre not found.")
+    return CentreResponse(
+        slug=centre.slug,
+        name=centre.name,
+        default_language=centre.default_language,
+    )
+
+
 class KioskTranscriptLine(BaseModel):
     speaker: str
     text: str
@@ -196,7 +214,7 @@ async def voice_stream(ws: WebSocket, slug: str, session_id: str) -> None:
             await ws.close(code=1013)
             return
         try:
-            voice = KioskVoiceSession(session=session, ws=ws)
+            voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
             await voice.run()
         finally:
             await release_live_slot(centre.centre_id)

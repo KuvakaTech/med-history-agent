@@ -69,6 +69,8 @@ def _make_access_token(user: dict) -> str:
         "role": user.get("role", "doctor"),
         # hospital_id is only set for hospital_admin accounts
         "hospital_id": user.get("hospital_id"),
+        # centre_id is only set for centre_admin accounts
+        "centre_id": user.get("centre_id"),
         "iat": now,
         "exp": now + timedelta(minutes=settings.JWT_EXPIRE_MINUTES),
     }

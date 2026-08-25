@@ -43,6 +43,12 @@ export interface StartSessionResponse {
   status: string;
 }
 
+export interface CentreResponse {
+  slug: string;
+  name: string;
+  default_language: string;
+}
+
 export interface KioskTranscriptEntry {
   speaker: "user" | "agent";
   text: string;

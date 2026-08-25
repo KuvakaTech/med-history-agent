@@ -18,3 +18,11 @@ async def test_complaint_number_format():
     with patch("app.kiosk.counter_store._col", side_effect=RuntimeError("no mongo")):
         num = await next_complaint_number(centre_id)
     assert re.match(r"^JS-VNS-\d{8}-\d{5}$", num)
+
+
+@pytest.mark.asyncio
+async def test_complaint_number_custom_prefix():
+    centre_id = "nagar-centre"
+    with patch("app.kiosk.counter_store._col", side_effect=RuntimeError("no mongo")):
+        num = await next_complaint_number(centre_id, prefix="NN-VNS")
+    assert re.match(r"^NN-VNS-\d{8}-\d{5}$", num)

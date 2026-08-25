@@ -38,10 +38,11 @@ async def create_admin(
     email: str,
     name: str,
     hashed_password: str,
-    role: str,                        # "hospital_admin" | "super_admin"
+    role: str,                        # hospital_admin | centre_admin | super_admin
     hospital_id: Optional[str] = None,
+    centre_id: Optional[str] = None,
 ) -> dict:
-    """Create a hospital_admin or super_admin account. Called only by super_admin."""
+    """Create an admin account. Called only by super_admin."""
     db = get_db()
     if await db["users"].find_one({"email": email.lower()}):
         raise ValueError("Email already registered.")
@@ -50,7 +51,8 @@ async def create_admin(
         "name": name.strip(),
         "hashed_password": hashed_password,
         "role": role,
-        "hospital_id": hospital_id,   # None for super_admin
+        "hospital_id": hospital_id,
+        "centre_id": centre_id,
         "created_at": datetime.now(timezone.utc),
     }
     result = await db["users"].insert_one(doc)
@@ -71,11 +73,18 @@ async def get_by_id(user_id: str) -> Optional[dict]:
         return None
 
 
-async def list_admins(hospital_id: Optional[str] = None) -> list[dict]:
-    """List hospital_admin and super_admin accounts. Scoped by hospital_id if provided."""
+async def list_admins(
+    hospital_id: Optional[str] = None,
+    centre_id: Optional[str] = None,
+) -> list[dict]:
+    """List admin accounts. Scoped by hospital_id or centre_id if provided."""
     db = get_db()
-    query: dict = {"role": {"$in": ["hospital_admin", "super_admin"]}}
+    query: dict = {
+        "role": {"$in": ["hospital_admin", "centre_admin", "super_admin"]},
+    }
     if hospital_id:
         query["hospital_id"] = hospital_id
+    if centre_id:
+        query["centre_id"] = centre_id
     cursor = db["users"].find(query, {"hashed_password": 0, "_id": 0})
     return [doc async for doc in cursor]

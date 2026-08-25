@@ -15,6 +15,24 @@ _mongo_write_failed = False
 
 STALE_MINUTES = 30
 
+_LIST_PROJECTION = {
+    "_id": 0,
+    "session_id": 1,
+    "centre_id": 1,
+    "complaint_number": 1,
+    "phone": 1,
+    "language": 1,
+    "gender": 1,
+    "phase": 1,
+    "status": 1,
+    "turn_count": 1,
+    "started_at": 1,
+    "ended_at": 1,
+    "updated_at": 1,
+    "deleted_at": 1,
+    "grievance": 1,
+}
+
 
 def _col():
     from app.core.database import get_db
@@ -109,6 +127,64 @@ class KioskSessionStore:
             except Exception as exc:
                 log.warning("KioskSession soft_delete failed: %s", exc)
         return doc is not None and doc.get("centre_id") == centre_id
+
+    async def get_by_complaint_number(
+        self, complaint_number: str, centre_id: Optional[str] = None
+    ) -> Optional[KioskSession]:
+        query: dict = {"complaint_number": complaint_number.strip()}
+        if centre_id:
+            query["centre_id"] = centre_id
+        try:
+            doc = await _col().find_one(query, {"_id": 0})
+            if doc:
+                return KioskSession.model_validate(doc)
+        except Exception as exc:
+            log.warning("get_by_complaint_number failed: %s", exc)
+        sid = _mem_by_complaint.get(complaint_number.strip())
+        if sid:
+            return await self.get(sid, centre_id=centre_id)
+        return None
+
+    async def list_for_centre(
+        self,
+        centre_id: str,
+        limit: int = 100,
+        status: Optional[str] = None,
+        include_deleted: bool = False,
+        search_complaint: Optional[str] = None,
+        search_phone: Optional[str] = None,
+    ) -> list[dict]:
+        query: dict = {"centre_id": centre_id}
+        if status:
+            query["status"] = status
+        if not include_deleted:
+            query["deleted_at"] = None
+        if search_complaint:
+            query["complaint_number"] = search_complaint.strip()
+        if search_phone:
+            query["phone"] = search_phone.strip()
+        try:
+            cursor = (
+                _col()
+                .find(query, _LIST_PROJECTION)
+                .sort("started_at", -1)
+                .limit(limit)
+            )
+            return [doc async for doc in cursor]
+        except Exception as exc:
+            log.warning("KioskSession list failed, using cache: %s", exc)
+
+        rows = [
+            {k: v for k, v in d.items() if k in _LIST_PROJECTION or k == "centre_id"}
+            for d in _mem.values()
+            if d.get("centre_id") == centre_id
+            and (not status or d.get("status") == status)
+            and (include_deleted or d.get("deleted_at") is None)
+            and (not search_complaint or d.get("complaint_number") == search_complaint.strip())
+            and (not search_phone or d.get("phone") == search_phone.strip())
+        ]
+        rows.sort(key=lambda d: d.get("started_at") or "", reverse=True)
+        return rows[:limit]
 
     async def _maybe_flip_stale(self, doc: dict) -> dict:
         if not _is_stale(doc):
