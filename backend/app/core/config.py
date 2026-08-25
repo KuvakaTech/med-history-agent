@@ -136,6 +136,13 @@ class Settings(BaseSettings):
     TICKETING_MAX_CONCURRENT_LIVE_SESSIONS_PER_HOSPITAL: int = 5
     TICKETING_PERSIST_INTERVAL_SECS: float = 15.0
 
+    # ── Kiosk (Jan Sunwai) ──────────────────────────────────────
+    KIOSK_ENABLED: bool = False
+    KIOSK_GEMINI_LIVE_VOICE: str = "Kore"  # female prebuilt voice (Jan Sunwai persona)
+    KIOSK_MAX_SESSION_MINUTES: int = 20
+    KIOSK_MAX_CONCURRENT_LIVE_SESSIONS_PER_CENTRE: int = 3
+    KIOSK_PERSIST_INTERVAL_SECS: float = 15.0
+
     # Only used for the per-session cost log line. A setting rather than a constant so
     # ops can correct it without a new image as the rate moves.
     LLM_USD_TO_INR: float = 88.0

@@ -67,6 +67,26 @@ async def lifespan(app: FastAPI):
         # ticket_number counter document — _id already has a built-in unique index
         # in every MongoDB collection, so no explicit index creation needed here
         # await db["ticket_counters"].create_index("_id", unique=True)
+        # Kiosk (Jan Sunwai)
+        await db["kiosk_centres"].create_index("centre_id", unique=True)
+        await db["kiosk_centres"].create_index("slug", unique=True)
+        await db["kiosk_sessions"].create_index("session_id", unique=True)
+        # Partial unique index — Mongo sparse indexes still index explicit nulls.
+        try:
+            await db["kiosk_sessions"].drop_index("complaint_number_1")
+        except Exception:
+            pass
+        await db["kiosk_sessions"].create_index(
+            "complaint_number",
+            unique=True,
+            partialFilterExpression={"complaint_number": {"$type": "string"}},
+        )
+        await db["kiosk_sessions"].update_many(
+            {"complaint_number": None},
+            {"$unset": {"complaint_number": ""}},
+        )
+        await db["kiosk_sessions"].create_index([("centre_id", 1), ("started_at", -1)])
+        await db["kiosk_sessions"].create_index([("centre_id", 1), ("status", 1)])
         log.info("MongoDB connected and indexes ensured")
     except Exception as exc:
         log.warning("MongoDB index setup failed (will retry on first request): %s", exc)

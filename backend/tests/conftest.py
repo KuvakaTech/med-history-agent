@@ -13,6 +13,8 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
 from app.cabin import leases as cabin_leases  # noqa: E402
 from app.cabin import store as cabin_store  # noqa: E402
+from app.kiosk import centre_store as kiosk_centre_store  # noqa: E402
+from app.kiosk import session_store as kiosk_session_store_mod  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -50,3 +52,25 @@ def isolate_cabin_store(monkeypatch):
     yield
     cabin_store._mem.clear()
     cabin_store._mongo_write_failed = False
+
+
+@pytest.fixture(autouse=True)
+def isolate_kiosk_stores(monkeypatch):
+    """In-memory kiosk stores only — no Mongo in unit tests."""
+
+    def unavailable():
+        raise RuntimeError("MongoDB intentionally unavailable in tests")
+
+    monkeypatch.setattr(kiosk_centre_store, "_col", unavailable)
+    monkeypatch.setattr(kiosk_session_store_mod, "_col", unavailable)
+    kiosk_centre_store._mem_centres.clear()
+    kiosk_session_store_mod._mem.clear()
+    kiosk_session_store_mod._mem_by_complaint.clear()
+    kiosk_session_store_mod._mongo_write_failed = True
+    kiosk_centre_store._mongo_write_failed = True
+    yield
+    kiosk_centre_store._mem_centres.clear()
+    kiosk_session_store_mod._mem.clear()
+    kiosk_session_store_mod._mem_by_complaint.clear()
+    kiosk_session_store_mod._mongo_write_failed = False
+    kiosk_centre_store._mongo_write_failed = False

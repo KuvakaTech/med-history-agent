@@ -17,5 +17,11 @@ if settings.ENABLE_SETUP_ENDPOINT:
 # Public patient-facing routes: /api/v2/t/{slug}/...
 api_v2_router.include_router(ticketing_router, prefix="/t", tags=["ticketing"])
 
+# Jan Sunwai kiosk — /api/v2/kiosk/{slug}/... (off unless KIOSK_ENABLED=true)
+if settings.KIOSK_ENABLED:
+    from app.api.v2.endpoints.kiosk import router as kiosk_router
+
+    api_v2_router.include_router(kiosk_router, prefix="/kiosk", tags=["kiosk"])
+
 # Admin routes: /api/v2/admin/...
 api_v2_router.include_router(admin_router, prefix="/admin", tags=["ticketing-admin"])
