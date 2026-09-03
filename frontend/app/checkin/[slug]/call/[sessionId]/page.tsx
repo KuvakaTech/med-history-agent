@@ -200,12 +200,12 @@ export default function CallPage() {
           break;
 
         case "result_ready":
-          router.push(`/checkin/${slug}/result/${sessionId}`);
+          router.push(`/checkin/${slug}/result/${sessionId}?autoprint=1`);
           break;
 
         case "session_partial":
           updateState({ phase: "processing" });
-          setTimeout(() => router.push(`/checkin/${slug}/result/${sessionId}`), 1500);
+          setTimeout(() => router.push(`/checkin/${slug}/result/${sessionId}?autoprint=1`), 1500);
           break;
 
         case "partial_transcript":
@@ -221,7 +221,7 @@ export default function CallPage() {
           // them on the "Try Again" screen — a close right after that
           // (explicit "ended" or the socket just dropping) must not yank
           // them away to a truncated, misleading summary.
-          if (!fatalErrorRef.current) router.push(`/checkin/${slug}/result/${sessionId}`);
+          if (!fatalErrorRef.current) router.push(`/checkin/${slug}/result/${sessionId}?autoprint=1`);
           break;
 
         case "error":

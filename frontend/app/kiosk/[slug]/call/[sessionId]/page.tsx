@@ -65,15 +65,15 @@ export default function KioskCallPage() {
           setPartialTranscript(event.text || "");
           break;
         case "result_ready":
-          router.push(`/kiosk/${slug}/result/${sessionId}`);
+          router.push(`/kiosk/${slug}/result/${sessionId}?autoprint=1`);
           break;
         case "session_partial":
           setPhase("processing");
-          setTimeout(() => router.push(`/kiosk/${slug}/result/${sessionId}`), 1500);
+          setTimeout(() => router.push(`/kiosk/${slug}/result/${sessionId}?autoprint=1`), 1500);
           break;
         case "ended":
           if (!fatalErrorRef.current) {
-            router.push(`/kiosk/${slug}/result/${sessionId}`);
+            router.push(`/kiosk/${slug}/result/${sessionId}?autoprint=1`);
           }
           break;
         case "error":

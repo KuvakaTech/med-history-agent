@@ -1,22 +1,35 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ticketApi } from "@/lib/ticketing-api";
 import type { SessionResultResponse, SOAPSummary, TicketFlag } from "@/lib/ticketing-types";
 import clsx from "clsx";
 
 export default function ResultPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResultPageInner />
+    </Suspense>
+  );
+}
+
+function ResultPageInner() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const slug = params.slug as string;
   const sessionId = params.sessionId as string;
+  const autoprint = searchParams.get("autoprint") === "1";
 
   const [result, setResult] = useState<SessionResultResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [discarding, setDiscarding] = useState(false);
   const [discarded, setDiscarded] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const printTriggeredRef = useRef(false);
+  const countdownStartedRef = useRef(false);
 
   useEffect(() => {
     ticketApi
@@ -25,6 +38,46 @@ export default function ResultPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [slug, sessionId]);
+
+  // Auto-print the receipt after a 5s countdown, only when landing here fresh
+  // from a just-finished consultation (?autoprint=1). On kiosk machines
+  // launched with Chrome/Edge's --kiosk-printing flag, window.print() sends
+  // straight to the default printer with no dialog; without that flag the
+  // browser still shows its normal print dialog.
+  useEffect(() => {
+    if (!result || !autoprint || countdownStartedRef.current) return;
+    countdownStartedRef.current = true;
+    setCountdown(5);
+  }, [result, autoprint]);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) {
+      printTriggeredRef.current = true;
+      setCountdown(null);
+      window.print();
+      return;
+    }
+    const t = setTimeout(() => setCountdown((c) => (c !== null ? c - 1 : c)), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
+
+  // After the auto-triggered print finishes (dialog closed, or sent silently
+  // to the printer under --kiosk-printing), head back to start a fresh check-in.
+  useEffect(() => {
+    if (!autoprint) return;
+    const handleAfterPrint = () => {
+      if (printTriggeredRef.current) {
+        router.replace(`/checkin/${slug}/start`);
+      }
+    };
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => window.removeEventListener("afterprint", handleAfterPrint);
+  }, [autoprint, slug, router]);
+
+  const handleCancelAutoPrint = () => {
+    setCountdown(null);
+  };
 
   const handleDiscard = async () => {
     if (!confirm("Discard this check-in record? This cannot be undone.")) return;
@@ -54,27 +107,39 @@ export default function ResultPage() {
           <img src="/kuvaka_logo.png" alt="Kuvaka" className="h-6 w-auto" />
           <span className="text-xs text-gray-400">Check-In Summary</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => router.push(`/checkin/${slug}/`)}
-            className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
-          >
-            ← Back to Check-In
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
-          >
-            <span>🖨️</span> Print
-          </button>
-          <button
-            onClick={handleDiscard}
-            disabled={discarding}
-            className="text-xs text-red-500 hover:text-red-700 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-          >
-            {discarding ? "Discarding…" : "Discard"}
-          </button>
-        </div>
+        {countdown !== null ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-brand">Printing in {countdown}s</span>
+            <button
+              onClick={handleCancelAutoPrint}
+              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => router.push(`/checkin/${slug}/`)}
+              className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
+            >
+              ← Back to Check-In
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
+            >
+              <span>🖨️</span> Print
+            </button>
+            <button
+              onClick={handleDiscard}
+              disabled={discarding}
+              className="text-xs text-red-500 hover:text-red-700 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {discarding ? "Discarding…" : "Discard"}
+            </button>
+          </div>
+        )}
       </header>
 
       {/* ── Printable content ── */}

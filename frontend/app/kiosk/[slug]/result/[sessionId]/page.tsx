@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { kioskApi } from "@/lib/kiosk-api";
 import type {
   GrievanceAddress,
@@ -26,15 +26,28 @@ function formatAddress(addr: GrievanceAddress | null | undefined): string {
 }
 
 export default function KioskResultPage() {
+  return (
+    <Suspense fallback={null}>
+      <KioskResultPageInner />
+    </Suspense>
+  );
+}
+
+function KioskResultPageInner() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const slug = params.slug as string;
   const sessionId = params.sessionId as string;
+  const autoprint = searchParams.get("autoprint") === "1";
 
   const [result, setResult] = useState<GrievanceResultResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [countdown, setCountdown] = useState<number | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const printTriggeredRef = useRef(false);
+  const countdownStartedRef = useRef(false);
 
   useEffect(() => {
     kioskApi
@@ -43,6 +56,46 @@ export default function KioskResultPage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [slug, sessionId]);
+
+  // Auto-print the grievance slip after a 5s countdown, only when landing here
+  // fresh from a just-finished complaint (?autoprint=1). On kiosk machines
+  // launched with Chrome/Edge's --kiosk-printing flag, window.print() sends
+  // straight to the default printer with no dialog; without that flag the
+  // browser still shows its normal print dialog.
+  useEffect(() => {
+    if (!result || !autoprint || countdownStartedRef.current) return;
+    countdownStartedRef.current = true;
+    setCountdown(5);
+  }, [result, autoprint]);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) {
+      printTriggeredRef.current = true;
+      setCountdown(null);
+      window.print();
+      return;
+    }
+    const t = setTimeout(() => setCountdown((c) => (c !== null ? c - 1 : c)), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
+
+  // After the auto-triggered print finishes (dialog closed, or sent silently
+  // to the printer under --kiosk-printing), head back to start a fresh complaint.
+  useEffect(() => {
+    if (!autoprint) return;
+    const handleAfterPrint = () => {
+      if (printTriggeredRef.current) {
+        router.replace(`/kiosk/${slug}/start`);
+      }
+    };
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => window.removeEventListener("afterprint", handleAfterPrint);
+  }, [autoprint, slug, router]);
+
+  const handleCancelAutoPrint = () => {
+    setCountdown(null);
+  };
 
   useEffect(() => {
     if (slug === "varanasi-nagar-nigam") {
@@ -87,22 +140,35 @@ export default function KioskResultPage() {
     <main className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-100 px-5 h-14 flex items-center justify-between sticky top-0 z-50 print:hidden">
         <span className="text-sm font-semibold text-gray-700">शिकायत पर्ची</span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="btn-secondary text-xs py-2 px-3"
-          >
-            Print
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push(`/kiosk/${slug}/start`)}
-            className="btn-primary text-xs py-2 px-3"
-          >
-            नई शिकायत
-          </button>
-        </div>
+        {countdown !== null ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-amber-700">Printing in {countdown}s</span>
+            <button
+              type="button"
+              onClick={handleCancelAutoPrint}
+              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="btn-secondary text-xs py-2 px-3"
+            >
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(`/kiosk/${slug}/start`)}
+              className="btn-primary text-xs py-2 px-3"
+            >
+              नई शिकायत
+            </button>
+          </div>
+        )}
       </header>
 
       <div ref={printRef} className="max-w-2xl mx-auto px-6 py-8 space-y-6">
