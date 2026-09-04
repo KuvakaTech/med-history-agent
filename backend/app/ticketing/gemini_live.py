@@ -19,6 +19,7 @@ and runs a Haiku structured extract, then the manual category picker.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
@@ -51,6 +52,52 @@ log = logging.getLogger(__name__)
 
 INPUT_MIME = "audio/pcm;rate=16000"
 OUTPUT_RATE_HZ = 24000
+
+_TOOL_LEAK_RE = re.compile(
+    r"call:finish_(?:triage|consultation)\{.*?(?:\}|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def merge_transcript_chunk(buf: str, chunk: str) -> str:
+    """Merge Gemini transcription chunks (incremental or cumulative)."""
+    chunk = chunk or ""
+    if not chunk:
+        return buf
+    if not buf:
+        return chunk
+    if chunk == buf:
+        return buf
+    if chunk.startswith(buf):
+        return chunk
+    if buf.endswith(chunk):
+        return buf
+    overlap = min(len(buf), len(chunk))
+    for n in range(overlap, 0, -1):
+        if buf.endswith(chunk[:n]):
+            return buf + chunk[n:]
+    return buf + chunk
+
+
+def dedupe_concatenated_repeats(text: str) -> str:
+    """Collapse exact whole-string repetition (e.g. closing line said 7×)."""
+    t = (text or "").strip()
+    n = len(t)
+    if n < 2:
+        return t
+    for size in range(1, n // 2 + 1):
+        if n % size != 0:
+            continue
+        unit = t[:size]
+        if unit * (n // size) == t:
+            return unit
+    return t
+
+
+def sanitize_agent_transcript(text: str) -> str:
+    """Strip leaked tool-call syntax and repeated closing phrases."""
+    cleaned = _TOOL_LEAK_RE.sub("", text or "").strip()
+    return dedupe_concatenated_repeats(cleaned)
 
 LANGUAGE_TO_BCP47: dict[str, str] = {
     "hi": "hi-IN",
@@ -100,10 +147,13 @@ def triage_tools() -> list[Tool]:
                 FunctionDeclaration(
                     name="finish_triage",
                     description=(
-                        "Call once you have the patient's name (or they declined), "
-                        "their age, and enough of their reason for visiting to route "
+                        "Call once identity fields have been asked or skipped "
+                        "(name confirmed or given up, age, address, who came with them) "
+                        "AND you have enough of their reason for visiting to route "
                         "them to a department. Do not call before asking about why "
-                        "they came in. Never ask the patient which department they want."
+                        "they came in. Never ask the patient which department they want. "
+                        "Never invent missing identity fields. Never say the word guardian "
+                        "to the patient."
                     ),
                     parameters=Schema(
                         type=Type.OBJECT,
@@ -114,7 +164,19 @@ def triage_tools() -> list[Tool]:
                             ),
                             "patient_age": Schema(
                                 type=Type.INTEGER,
-                                description="Age in years",
+                                description="Age in years if clearly given; omit if skipped",
+                            ),
+                            "address": Schema(
+                                type=Type.STRING,
+                                description="Address if clearly given; omit if skipped",
+                            ),
+                            "guardian_name": Schema(
+                                type=Type.STRING,
+                                description=(
+                                    "Name of the person who came with the patient "
+                                    "(not a relation-only word like bhaiya/didi). "
+                                    "Omit if they came alone or skipped."
+                                ),
                             ),
                             "routing_summary": Schema(
                                 type=Type.STRING,
@@ -132,7 +194,6 @@ def triage_tools() -> list[Tool]:
                         },
                         required=[
                             "patient_name",
-                            "patient_age",
                             "routing_summary",
                             "category_key",
                             "confidence",
@@ -224,6 +285,7 @@ class GeminiLiveSession:
         self._user_buf = ""
         self._agent_buf = ""
         self._user_speaking = False
+        self._user_final_emitted = False
 
     @property
     def session_handle(self) -> Optional[str]:
@@ -244,11 +306,12 @@ class GeminiLiveSession:
         self._user_buf = ""
         self._agent_buf = ""
         self._user_speaking = False
+        self._user_final_emitted = False
         handle = session_handle if session_handle is not None else self._session_handle
         config = build_live_config(
             system_instruction,
             language_code=bcp47_language(language),
-            voice=settings.GEMINI_LIVE_VOICE or "Puck",
+            voice=settings.GEMINI_LIVE_VOICE or "Kore",
             tools=tools,
             session_handle=handle,
             model=settings.GEMINI_LIVE_MODEL,
@@ -277,6 +340,23 @@ class GeminiLiveSession:
         if self._closed or not self._session or not text:
             return
         await self._session.send_realtime_input(text=text)
+
+    def pending_user_text(self) -> str:
+        """Buffered user speech not yet finalized."""
+        if self._user_final_emitted:
+            return ""
+        return self._user_buf.strip()
+
+    def force_finalize_user(self) -> str:
+        """Finalize buffered user speech; return text or empty string."""
+        if self._user_final_emitted:
+            return ""
+        text = self._user_buf.strip()
+        self._user_buf = ""
+        self._user_speaking = False
+        if text:
+            self._user_final_emitted = True
+        return text
 
     async def send_tool_response(
         self,
@@ -353,15 +433,20 @@ class GeminiLiveSession:
         if interim is not None and interim.text:
             if not self._user_speaking:
                 self._user_speaking = True
+                self._user_final_emitted = False
                 events.append(LiveEvent(kind="user_speech_started"))
-            events.append(LiveEvent(kind="user_transcript_partial", text=interim.text))
+            self._user_buf = merge_transcript_chunk(self._user_buf, interim.text)
+            events.append(
+                LiveEvent(kind="user_transcript_partial", text=self._user_buf)
+            )
 
         inp = getattr(content, "input_transcription", None)
         if inp is not None and inp.text:
             if not self._user_speaking:
                 self._user_speaking = True
+                self._user_final_emitted = False
                 events.append(LiveEvent(kind="user_speech_started"))
-            self._user_buf += inp.text
+            self._user_buf = merge_transcript_chunk(self._user_buf, inp.text)
             events.append(
                 LiveEvent(kind="user_transcript_partial", text=self._user_buf)
             )
@@ -369,24 +454,27 @@ class GeminiLiveSession:
                 text = self._user_buf.strip()
                 self._user_buf = ""
                 self._user_speaking = False
-                if text:
+                if text and not self._user_final_emitted:
+                    self._user_final_emitted = True
                     events.append(LiveEvent(kind="user_transcript_final", text=text))
 
         out = getattr(content, "output_transcription", None)
         if out is not None and out.text:
-            self._agent_buf += out.text
+            self._agent_buf = merge_transcript_chunk(self._agent_buf, out.text)
+            partial = sanitize_agent_transcript(self._agent_buf)
             events.append(
-                LiveEvent(kind="agent_transcript_partial", text=self._agent_buf)
+                LiveEvent(kind="agent_transcript_partial", text=partial)
             )
             if out.finished:
-                text = self._agent_buf.strip()
+                text = sanitize_agent_transcript(self._agent_buf)
                 self._agent_buf = ""
                 if text:
                     events.append(LiveEvent(kind="agent_transcript_final", text=text))
 
         model_turn = getattr(content, "model_turn", None)
         if model_turn is not None:
-            if self._user_buf.strip():
+            if self._user_buf.strip() and not self._user_final_emitted:
+                self._user_final_emitted = True
                 events.append(
                     LiveEvent(kind="user_transcript_final", text=self._user_buf.strip())
                 )
@@ -401,12 +489,23 @@ class GeminiLiveSession:
 
         if getattr(content, "turn_complete", False):
             if self._agent_buf.strip():
+                text = sanitize_agent_transcript(self._agent_buf)
+                self._agent_buf = ""
+                if text:
+                    events.append(
+                        LiveEvent(kind="agent_transcript_final", text=text)
+                    )
+            if self._user_buf.strip() and not self._user_final_emitted:
+                self._user_final_emitted = True
                 events.append(
                     LiveEvent(
-                        kind="agent_transcript_final", text=self._agent_buf.strip()
+                        kind="user_transcript_final",
+                        text=self._user_buf.strip(),
                     )
                 )
-                self._agent_buf = ""
+                self._user_buf = ""
+                self._user_speaking = False
+            self._user_final_emitted = False
             events.append(LiveEvent(kind="turn_complete"))
 
         return events

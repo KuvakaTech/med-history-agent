@@ -42,6 +42,8 @@ class ExtractedFlag(BaseModel):
 class PostCallExtract(BaseModel):
     patient_name: Optional[str] = None
     patient_age: Optional[int] = None
+    address: Optional[str] = None
+    guardian_name: Optional[str] = None
     category_key: Optional[str] = None
     category_label: Optional[str] = None
     qa_log: list[ExtractedQA] = Field(default_factory=list)
@@ -52,9 +54,11 @@ _EXTRACT_PROMPT = """\
 Extract a structured clinical intake record from this hospital check-in voice transcript.
 
 Rules:
-- Use ONLY what is explicitly said. Do not invent symptoms, names, ages, or departments.
+- Use ONLY what is explicitly said. Do not invent symptoms, names, ages, addresses, companion names, or departments.
 - patient_name: string if clearly shared, null if declined or never given.
 - patient_age: integer years if stated, else null.
+- address: string if clearly shared, else null.
+- guardian_name: the accompanying person's actual name if clearly shared, else null. A relation-only word (bhaiya, didi, mummy) is not a name.
 - category_key: one of the allowed keys below that best fits the reason for visit, or null.
 - category_label: matching human-readable label, or null.
 - qa_log: reconstruct agent questions and patient answers as pairs, in order. Skip empty turns.
@@ -72,10 +76,11 @@ Transcript:
 """
 
 _TRIAGE_FALLBACK_PROMPT = """\
-This is a short hospital-reception transcript (name, age, reason for visit).
+This is a short hospital-reception transcript (name, age, address, guardian, reason for visit).
 
-Extract:
-  patient_name, patient_age, category_guess (one of the allowed keys or null),
+Extract only what was clearly said. Never invent.
+  patient_name, patient_age, patient_address, guardian_name,
+  category_guess (one of the allowed keys or null),
   category_label, category_confidence (high/low/none), is_complete, new_flags.
 
 Allowed category keys: {category_keys}
@@ -197,12 +202,17 @@ async def run_post_call_extract(
     session.status = "completed"
     session.phase = "result"
     session.ended_at = datetime.utcnow()
-    await ticket_session_store.update(session)
-
     name = extracted.patient_name
     if name in ("declined", "the patient", ""):
         name = None
     age = extracted.patient_age
+    address = (extracted.address or "").strip() or None
+    guardian = (extracted.guardian_name or "").strip() or None
+    if address:
+        session.address = address
+    if guardian:
+        session.guardian_name = guardian
+    await ticket_session_store.update(session)
     try:
         patient = await ticket_patient_store.get(session.patient_id)
         if patient is not None:
@@ -212,6 +222,10 @@ async def run_post_call_extract(
                 patient.age = age
             if session.gender and session.gender != "unknown":
                 patient.gender = session.gender
+            if address:
+                patient.address = address
+            if guardian:
+                patient.guardian_name = guardian
             await ticket_patient_store.update(patient)
     except Exception as exc:
         log.warning("Patient persist after extract failed: %s", exc)

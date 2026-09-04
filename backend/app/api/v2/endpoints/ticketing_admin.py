@@ -1,20 +1,23 @@
-"""Hospital admin and super-admin endpoints for the ticketing flow.
+"""Hospital admin, doctor viewer, and super-admin endpoints for the ticketing flow.
 
 Role rules:
-  hospital_admin  — scoped to their hospital_id (from JWT)
+  doctor          — view sessions/stats for their hospital_id (from JWT)
+  hospital_admin  — scoped to their hospital_id (from JWT); departments + PIN
   super_admin     — can pass ?hospital_id= to scope, or omit to see all
 
 Routes:
   GET  /v2/admin/hospitals                  (super_admin)
   POST /v2/admin/hospitals                  (super_admin)
-  GET  /v2/admin/stats                      (hospital_admin | super_admin)
-  GET  /v2/admin/sessions                   (hospital_admin | super_admin)
-  GET  /v2/admin/sessions/{id}              (hospital_admin | super_admin)
+    PATCH /v2/admin/hospital/pin              (hospital_admin | super_admin)
+    PATCH /v2/admin/hospital/settings         (hospital_admin | super_admin)
+  GET  /v2/admin/stats                      (doctor | hospital_admin | super_admin)
+  GET  /v2/admin/sessions                   (doctor | hospital_admin | super_admin)
+  GET  /v2/admin/sessions/{id}              (doctor | hospital_admin | super_admin)
   GET  /v2/admin/categories                 (hospital_admin | super_admin)
   POST /v2/admin/categories                 (hospital_admin | super_admin)
   PATCH /v2/admin/categories/{id}           (hospital_admin | super_admin)
   GET  /v2/admin/users                      (super_admin)
-  POST /v2/admin/users                      (super_admin) — create hospital_admin account
+  POST /v2/admin/users                      (super_admin) — create hospital_admin or doctor
 """
 from __future__ import annotations
 
@@ -26,9 +29,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, field_validator
 
 from app.auth import user_store
-from app.auth.deps import require_hospital_admin, require_super_admin
+from app.auth.deps import (
+    require_hospital_admin,
+    require_hospital_viewer,
+    require_super_admin,
+)
 from app.ticketing.hospital_store import hospital_store
-from app.ticketing.models import Hospital, TicketCategory, to_ist_str
+from app.ticketing.models import Hospital, TicketCategory, hospital_public_dict, to_ist_str
 from app.ticketing.patient_store import ticket_patient_store
 from app.ticketing.session_store import ticket_session_store
 
@@ -42,14 +49,15 @@ class CreateHospitalRequest(BaseModel):
     slug: str
     name: str
     default_language: str = "hi"
+    kiosk_pin: Optional[str] = None
 
 
 class CreateAdminUserRequest(BaseModel):
     email: EmailStr
     name: str
     password: str
-    role: Literal["hospital_admin", "super_admin"] = "hospital_admin"
-    hospital_id: Optional[str] = None   # required when role == hospital_admin
+    role: Literal["hospital_admin", "super_admin", "doctor"] = "hospital_admin"
+    hospital_id: Optional[str] = None   # required when role is hospital_admin or doctor
 
     @field_validator("password")
     @classmethod
@@ -67,6 +75,22 @@ class CreateCategoryRequest(BaseModel):
 class UpdateCategoryRequest(BaseModel):
     label: Optional[str] = None
     active: Optional[bool] = None
+
+
+class SetHospitalSettingsRequest(BaseModel):
+    collect_caste: bool
+
+
+class SetKioskPinRequest(BaseModel):
+    pin: str
+
+    @field_validator("pin")
+    @classmethod
+    def pin_digits(cls, v: str) -> str:
+        pin = v.strip()
+        if not pin.isdigit() or not (4 <= len(pin) <= 8):
+            raise ValueError("PIN must be 4–8 digits.")
+        return pin
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -91,7 +115,7 @@ def _format_session(s: dict) -> dict:
 
 
 def _resolve_hid(user: dict, hospital_id_param: Optional[str]) -> str:
-    """Get hospital_id — from JWT for hospital_admin, from query param for super_admin."""
+    """Get hospital_id — from JWT for hospital_admin/doctor, from query param for super_admin."""
     hid = user.get("hospital_id") or hospital_id_param
     if not hid:
         raise HTTPException(
@@ -120,7 +144,7 @@ async def get_current_hospital(
     hospital = await hospital_store.get(hid)
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found.")
-    return hospital.model_dump(mode="json")
+    return hospital_public_dict(hospital)
 
 
 @router.post("/hospitals", status_code=201)
@@ -131,13 +155,45 @@ async def create_hospital(
     slug = body.slug.strip().lower().replace(" ", "-")
     if await hospital_store.get_by_slug(slug):
         raise HTTPException(status_code=409, detail=f"Slug '{slug}' already in use.")
+    pin = (body.kiosk_pin or "").strip()
+    if pin and (not pin.isdigit() or not (4 <= len(pin) <= 8)):
+        raise HTTPException(status_code=422, detail="PIN must be 4–8 digits.")
     hospital = Hospital(
         slug=slug,
         name=body.name.strip(),
         default_language=body.default_language,
     )
     await hospital_store.create(hospital)
-    return hospital.model_dump(mode="json")
+    if pin:
+        await hospital_store.set_kiosk_pin(hospital.hospital_id, pin)
+        hospital = await hospital_store.get(hospital.hospital_id) or hospital
+    return hospital_public_dict(hospital)
+
+
+@router.patch("/hospital/pin")
+async def set_hospital_pin(
+    body: SetKioskPinRequest,
+    hospital_id: Optional[str] = Query(None),
+    user: dict = Depends(require_hospital_admin),
+):
+    hid = _resolve_hid(user, hospital_id)
+    hospital = await hospital_store.set_kiosk_pin(hid, body.pin)
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found.")
+    return {"ok": True, "has_kiosk_pin": True}
+
+
+@router.patch("/hospital/settings")
+async def set_hospital_settings(
+    body: SetHospitalSettingsRequest,
+    hospital_id: Optional[str] = Query(None),
+    user: dict = Depends(require_hospital_admin),
+):
+    hid = _resolve_hid(user, hospital_id)
+    hospital = await hospital_store.set_collect_caste(hid, body.collect_caste)
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found.")
+    return hospital_public_dict(hospital)
 
 
 # ── Admin user management (super_admin) ───────────────────────
@@ -147,7 +203,7 @@ async def list_admin_users(
     hospital_id: Optional[str] = Query(None),
     user: dict = Depends(require_super_admin),
 ):
-    """List all hospital_admin and super_admin accounts."""
+    """List hospital_admin, doctor, and super_admin accounts."""
     admins = await user_store.list_admins(hospital_id=hospital_id)
     return {"users": admins}
 
@@ -157,11 +213,11 @@ async def create_admin_user(
     body: CreateAdminUserRequest,
     user: dict = Depends(require_super_admin),
 ):
-    """Create a hospital_admin or super_admin account."""
-    if body.role == "hospital_admin" and not body.hospital_id:
+    """Create a hospital_admin, doctor, or super_admin account."""
+    if body.role in ("hospital_admin", "doctor") and not body.hospital_id:
         raise HTTPException(
             status_code=422,
-            detail="hospital_id is required when creating a hospital_admin.",
+            detail="hospital_id is required when creating a hospital_admin or doctor.",
         )
     if body.hospital_id:
         hospital = await hospital_store.get(body.hospital_id)
@@ -194,7 +250,7 @@ async def create_admin_user(
 @router.get("/stats")
 async def get_stats(
     hospital_id: Optional[str] = Query(None),
-    user: dict = Depends(require_hospital_admin),
+    user: dict = Depends(require_hospital_viewer),
 ):
     """Dashboard stats for a hospital: today's sessions broken down by status,
     plus a running count of sessions with critical flags."""
@@ -262,7 +318,7 @@ async def list_sessions(
     date_from: Optional[str] = Query(None, description="ISO date, e.g. 2026-08-01"),
     date_to:   Optional[str] = Query(None, description="ISO date, e.g. 2026-08-31"),
     limit: int = Query(100, ge=1, le=500),
-    user: dict = Depends(require_hospital_admin),
+    user: dict = Depends(require_hospital_viewer),
 ):
     hid = _resolve_hid(user, hospital_id)
 
@@ -317,9 +373,9 @@ async def list_sessions(
 async def get_session_detail(
     session_id: str,
     hospital_id: Optional[str] = Query(None),
-    user: dict = Depends(require_hospital_admin),
+    user: dict = Depends(require_hospital_viewer),
 ):
-    # hospital_admin is always scoped via their JWT hospital_id; super_admin may
+    # hospital_admin/doctor are always scoped via their JWT hospital_id; super_admin may
     # omit hospital_id entirely to look up a session across all hospitals.
     hid = user.get("hospital_id") or hospital_id
 

@@ -32,11 +32,14 @@ class TicketPatientStore:
         name: Optional[str] = None,
         age: Optional[int] = None,
         gender: Optional[str] = None,
+        caste: Optional[str] = None,
+        address: Optional[str] = None,
+        guardian_name: Optional[str] = None,
     ) -> TicketPatient:
         """Insert or update a patient by phone (globally unique).
 
-        Fields name/age/gender are only written when non-None — never erased
-        by a new session that didn't collect them yet.
+        Fields name/age/gender/caste/address/guardian_name are only written when
+        non-None — never erased by a new session that didn't collect them yet.
         """
         global _mongo_write_failed
 
@@ -47,6 +50,12 @@ class TicketPatientStore:
             update_fields["age"] = age
         if gender is not None:
             update_fields["gender"] = gender
+        if caste is not None:
+            update_fields["caste"] = caste
+        if address is not None:
+            update_fields["address"] = address
+        if guardian_name is not None:
+            update_fields["guardian_name"] = guardian_name
 
         new_id = str(uuid.uuid4())
 
@@ -82,7 +91,15 @@ class TicketPatientStore:
             return TicketPatient.model_validate(doc)
 
         # Brand new patient (memory-only)
-        patient = TicketPatient(phone=phone, name=name, age=age, gender=gender)
+        patient = TicketPatient(
+            phone=phone,
+            name=name,
+            age=age,
+            gender=gender,
+            caste=caste,
+            address=address,
+            guardian_name=guardian_name,
+        )
         doc = patient.model_dump(mode="json")
         _mem[patient.patient_id] = doc
         _phone_index[phone] = patient.patient_id

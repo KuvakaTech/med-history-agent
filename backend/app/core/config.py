@@ -130,11 +130,18 @@ class Settings(BaseSettings):
     # Off by default: same WS URL as v1, orchestrator switches here.
     TICKETING_USE_GEMINI_LIVE: bool = True
     GEMINI_LIVE_MODEL: str = "gemini-3.1-flash-live-preview"
-    GEMINI_LIVE_VOICE: str = "Puck"
+    GEMINI_LIVE_VOICE: str = "Kore"  # female prebuilt voice
     TICKETING_POST_CALL_MODEL: str = ""  # empty → ANTHROPIC_MODEL
     TICKETING_MAX_SESSION_MINUTES: int = 15
     TICKETING_MAX_CONCURRENT_LIVE_SESSIONS_PER_HOSPITAL: int = 5
     TICKETING_PERSIST_INTERVAL_SECS: float = 15.0
+    TICKETING_KIOSK_TOKEN_HOURS: int = 12  # reception-desk unlock JWT lifetime
+    TICKETING_PARTIAL_FINAL_SECS: float = 3.0
+    TICKETING_SILENCE_NUDGE_SECS: float = 8.0
+    TICKETING_SILENCE_PROMPT_SECS: float = 15.0
+    TICKETING_AGENT_STALL_SECS: float = 10.0
+    TICKETING_AGENT_PLAYING_MAX_SECS: float = 30.0
+    TICKETING_MAX_SILENCE_RETRIES: int = 2
 
     # ── Kiosk (Jan Sunwai) ──────────────────────────────────────
     KIOSK_ENABLED: bool = False

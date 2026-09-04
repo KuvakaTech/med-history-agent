@@ -11,7 +11,10 @@ from app.ticketing.gemini_live import (
     bcp47_language,
     build_live_config,
     consultation_tools,
+    dedupe_concatenated_repeats,
     is_native_audio_model,
+    merge_transcript_chunk,
+    sanitize_agent_transcript,
     triage_tools,
 )
 from app.ticketing.models import TicketCategory
@@ -67,6 +70,8 @@ def test_triage_and_consult_tool_names():
     assert triage[0].name == "finish_triage"
     assert consult[0].name == "finish_consultation"
     assert "patient_name" in (triage[0].parameters.required or [])
+    assert "address" in (triage[0].parameters.properties or {})
+    assert "guardian_name" in (triage[0].parameters.properties or {})
 
 
 def test_parse_interrupted_and_tool_call():
@@ -134,3 +139,84 @@ def test_triage_prompt_never_asks_department():
     assert "finish_triage" in text
     assert "orthopedics" in text
     assert "किस विभाग में जाना चाहती हैं?" in text
+    assert "Kya aapke saath koi aaya hai?" in text
+    assert "Never say \"guardian\"" in text
+    assert "dohra sakti" in text
+
+
+def test_triage_prompt_forbids_asking_permission_to_repeat_name():
+    cats = [TicketCategory(hospital_id="h1", key="orthopedics", label="Orthopaedics")]
+    text = triage_system_instruction(cats, "hi", "female")
+    assert "Aapka naam Priya hai, theek hai?" in text
+    assert "NEVER ask permission to repeat" in text
+    assert "Unka naam kya hai?" in text
+
+
+def test_merge_transcript_chunk_handles_cumulative_and_repeats():
+    closing = "ठीक है। आपकी सलाह डॉक्टर तक पहुंचा दी जाएगी। धन्यवाद।"
+    buf = ""
+    for _ in range(7):
+        buf = merge_transcript_chunk(buf, closing)
+    assert buf == closing
+
+    assert merge_transcript_chunk("Hello", "Hello world") == "Hello world"
+    assert merge_transcript_chunk("Hello wo", "world") == "Hello world"
+
+
+def test_sanitize_agent_transcript_strips_tool_leak_and_repeats():
+    closing = "ठीक है। आपकी सलाह डॉक्टर तक पहुंचा दी जाएगी। धन्यवाद।"
+    leaked = (
+        "call:finish_consultation{reason:All required information gathered"
+        "ठीक है। आपकी बात समझ गई। क्या आप मुझे बता सकते हैं?"
+    )
+    assert "finish_consultation" not in sanitize_agent_transcript(leaked)
+    assert sanitize_agent_transcript(closing * 7) == closing
+    assert dedupe_concatenated_repeats(closing * 3) == closing
+
+
+def test_interim_input_buffered_in_user_buf():
+    sess = GeminiLiveSession()
+    interim_msg = SimpleNamespace(
+        session_resumption_update=None,
+        go_away=None,
+        tool_call=None,
+        server_content=SimpleNamespace(
+            interrupted=False,
+            interim_input_transcription=SimpleNamespace(text="namaste "),
+            input_transcription=None,
+            output_transcription=None,
+            model_turn=None,
+            turn_complete=False,
+        ),
+    )
+    kinds = [e.kind for e in sess._parse(interim_msg)]
+    assert "user_transcript_partial" in kinds
+    assert sess.pending_user_text() == "namaste"
+
+
+def test_turn_complete_flushes_orphaned_user_buf():
+    sess = GeminiLiveSession()
+    sess._user_buf = "nahi"
+    msg = SimpleNamespace(
+        session_resumption_update=None,
+        go_away=None,
+        tool_call=None,
+        server_content=SimpleNamespace(
+            interrupted=False,
+            interim_input_transcription=None,
+            input_transcription=None,
+            output_transcription=None,
+            model_turn=None,
+            turn_complete=True,
+        ),
+    )
+    events = sess._parse(msg)
+    assert any(e.kind == "user_transcript_final" and e.text == "nahi" for e in events)
+
+
+def test_force_finalize_user_clears_buffer():
+    sess = GeminiLiveSession()
+    sess._user_buf = "haan"
+    assert sess.force_finalize_user() == "haan"
+    assert sess.pending_user_text() == ""
+    assert sess.force_finalize_user() == ""

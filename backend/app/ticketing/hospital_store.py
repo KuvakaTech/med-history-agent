@@ -4,7 +4,14 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from app.ticketing.models import Hospital, TicketCategory, DEFAULT_CATEGORIES
+import bcrypt
+
+from app.ticketing.models import (
+    DEFAULT_CATEGORIES,
+    Hospital,
+    TicketCategory,
+    hospital_public_dict,
+)
 
 log = logging.getLogger(__name__)
 
@@ -76,9 +83,60 @@ class HospitalStore:
     async def list_all(self) -> list[dict]:
         try:
             cursor = _hospitals_col().find({}, {"_id": 0})
-            return [doc async for doc in cursor]
+            docs = [doc async for doc in cursor]
+            return [hospital_public_dict(d) for d in docs]
         except Exception:
-            return list(_mem_hospitals.values())
+            return [hospital_public_dict(d) for d in _mem_hospitals.values()]
+
+    async def set_kiosk_pin(self, hospital_id: str, pin: str) -> Optional[Hospital]:
+        global _mongo_write_failed
+        hospital = await self.get(hospital_id)
+        if not hospital:
+            return None
+        hashed = bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
+        hospital.kiosk_pin_hash = hashed
+        doc = hospital.model_dump(mode="json")
+        _mem_hospitals[hospital_id] = doc
+        if not _mongo_write_failed:
+            try:
+                await _hospitals_col().update_one(
+                    {"hospital_id": hospital_id},
+                    {"$set": {"kiosk_pin_hash": hashed}},
+                )
+            except Exception as exc:
+                log.warning("Hospital PIN write failed: %s", exc)
+                _mongo_write_failed = True
+        return hospital
+
+    async def set_collect_caste(
+        self, hospital_id: str, collect_caste: bool
+    ) -> Optional[Hospital]:
+        global _mongo_write_failed
+        hospital = await self.get(hospital_id)
+        if not hospital:
+            return None
+        hospital.collect_caste = collect_caste
+        doc = hospital.model_dump(mode="json")
+        _mem_hospitals[hospital_id] = doc
+        if not _mongo_write_failed:
+            try:
+                await _hospitals_col().update_one(
+                    {"hospital_id": hospital_id},
+                    {"$set": {"collect_caste": collect_caste}},
+                )
+            except Exception as exc:
+                log.warning("Hospital collect_caste write failed: %s", exc)
+                _mongo_write_failed = True
+        return hospital
+
+    @staticmethod
+    def verify_kiosk_pin(hospital: Hospital, pin: str) -> bool:
+        if not hospital.kiosk_pin_hash:
+            return False
+        try:
+            return bcrypt.checkpw(pin.encode(), hospital.kiosk_pin_hash.encode())
+        except Exception:
+            return False
 
     # ── Categories ────────────────────────────────────────────
 

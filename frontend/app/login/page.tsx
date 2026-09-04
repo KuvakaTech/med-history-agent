@@ -2,7 +2,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
 
 const features = [
   "Structured patient history in under 5 minutes",
@@ -32,7 +32,16 @@ function LoginForm() {
     setLoading(true);
     try {
       await api.login(email.trim(), password);
-      router.push(searchParams.get("to") === "admin" ? "/admin" : "/");
+      const token = await getToken();
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      if (
+        searchParams.get("to") === "admin" ||
+        (payload.role === "doctor" && payload.hospital_id)
+      ) {
+        router.push("/admin");
+      } else {
+        router.push("/");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed.");
     } finally {

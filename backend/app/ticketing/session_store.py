@@ -21,6 +21,13 @@ _mem: dict[str, dict] = {}
 _mem_by_ticket: dict[str, str] = {}   # ticket_number → session_id
 _mongo_write_failed = False
 _local_counter = 0   # fallback counter when Mongo is down
+_local_opd: dict[str, int] = {}  # hospital_id_YYYYMMDD → seq
+
+
+def _ist_date_key() -> str:
+    """IST calendar date used to reset the daily OPD sequence."""
+    now = datetime.utcnow() + timedelta(hours=5.5)
+    return now.strftime("%Y%m%d")
 
 STALE_MINUTES = 30
 
@@ -35,6 +42,10 @@ _LIST_PROJECTION = {
     "category": 1,
     "language": 1,
     "gender": 1,
+    "caste": 1,
+    "opd_number": 1,
+    "address": 1,
+    "guardian_name": 1,
     "turn_count": 1,
     "started_at": 1,
     "ended_at": 1,
@@ -86,11 +97,30 @@ async def _next_ticket_number() -> str:
     return f"TKT-{seq:06d}"
 
 
+async def _next_opd_number(hospital_id: str, date_key: Optional[str] = None) -> int:
+    """Increment the per-hospital IST-day OPD sequence. Resets to 1 each new date."""
+    date_part = date_key or _ist_date_key()
+    counter_id = f"opd_{hospital_id}_{date_part}"
+    try:
+        result = await _counters_col().find_one_and_update(
+            {"_id": counter_id},
+            {"$inc": {"seq": 1}},
+            upsert=True,
+            return_document=True,
+        )
+        return int(result["seq"])
+    except Exception as exc:
+        log.warning("OPD counter unavailable, using local fallback: %s", exc)
+        _local_opd[counter_id] = _local_opd.get(counter_id, 0) + 1
+        return _local_opd[counter_id]
+
+
 class TicketSessionStore:
     async def create(self, session: TicketSession) -> TicketSession:
         global _mongo_write_failed
         # Assign ticket number before first persist
         session.ticket_number = await _next_ticket_number()
+        session.opd_number = await _next_opd_number(session.hospital_id)
         doc = session.model_dump(mode="json")
         _mem[session.session_id] = doc
         if session.ticket_number:

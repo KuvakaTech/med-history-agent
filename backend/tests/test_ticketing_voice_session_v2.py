@@ -4,6 +4,7 @@ from __future__ import annotations
 import array
 import asyncio
 import os
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
@@ -11,6 +12,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 import pytest
 
 from app.core.config import settings
+from app.ticketing import events as ev
 from app.ticketing import session_store as ss
 from app.ticketing.gemini_live import LiveEvent
 from app.ticketing.models import TicketCategory, TicketSession, TicketTranscriptEntry
@@ -197,3 +199,52 @@ async def test_session_minutes_watchdog(monkeypatch):
     await vs._watchdog()
     assert vs._stopped.is_set()
     assert vs._phase_done.is_set()
+
+
+@pytest.mark.asyncio
+async def test_stall_monitor_force_finalizes_partial():
+    vs = _make_v2()
+    vs._phase = "consultation"
+    vs._live.pending_user_text = MagicMock(return_value="nahi")
+    vs._live.force_finalize_user = MagicMock(return_value="nahi")
+    vs._live.send_text = AsyncMock()
+    vs._pending_user_text = "nahi"
+    await vs._force_finalize_pending_user("consultation")
+    assert vs.session.turn_count == 1
+    vs._live.send_text.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_stall_monitor_silence_nudge(monkeypatch):
+    vs = _make_v2()
+    vs._phase = "triage"
+    vs._awaiting_user = True
+    vs._awaiting_user_since = time.monotonic() - 9.0
+    vs._live.send_text = AsyncMock()
+    monkeypatch.setattr(settings, "TICKETING_SILENCE_NUDGE_SECS", 8.0)
+    monkeypatch.setattr(settings, "TICKETING_SILENCE_PROMPT_SECS", 15.0)
+    elapsed = time.monotonic() - vs._awaiting_user_since
+    if elapsed >= settings.TICKETING_SILENCE_NUDGE_SECS and not vs._silence_nudge_sent:
+        await vs._send(ev.silence_nudge())
+        vs._silence_nudge_sent = True
+    types_sent = [c.args[0]["type"] for c in vs._send.call_args_list]
+    assert "silence_nudge" in types_sent
+
+
+@pytest.mark.asyncio
+async def test_stall_monitor_silence_skip_after_retries(monkeypatch):
+    vs = _make_v2()
+    vs._phase = "consultation"
+    vs._awaiting_user = True
+    vs._awaiting_user_since = time.monotonic() - 20.0
+    vs._silence_retries = settings.TICKETING_MAX_SILENCE_RETRIES
+    vs._live.send_text = AsyncMock()
+    monkeypatch.setattr(settings, "TICKETING_SILENCE_PROMPT_SECS", 15.0)
+    elapsed = time.monotonic() - vs._awaiting_user_since
+    if elapsed >= settings.TICKETING_SILENCE_PROMPT_SECS:
+        await vs._live.send_text(
+            "[System] The patient did not respond. Leave this item "
+            "blank and ask your next intake question."
+        )
+    vs._live.send_text.assert_called_once()
+    assert "Leave this item blank" in vs._live.send_text.call_args[0][0]

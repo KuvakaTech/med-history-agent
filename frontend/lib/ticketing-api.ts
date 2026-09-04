@@ -13,25 +13,94 @@ const API_V2 = `${BASE}/api/v2`;
 const WS_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001")
   .replace(/^http/, "ws");
 
-// ── Public patient API (no auth) ──────────────────────────────
+const kioskTokenKey = (slug: string) => `kiosk_token:${slug}`;
+
+export function getKioskToken(slug: string): string | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem(kioskTokenKey(slug));
+}
+
+export function setKioskToken(slug: string, token: string): void {
+  sessionStorage.setItem(kioskTokenKey(slug), token);
+}
+
+export function clearKioskToken(slug: string): void {
+  sessionStorage.removeItem(kioskTokenKey(slug));
+}
+
+function kioskAuthHeaders(slug: string): HeadersInit {
+  const token = getKioskToken(slug);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function parseTicketError(res: Response, slug: string): Promise<never> {
+  if (res.status === 401 || res.status === 403) {
+    clearKioskToken(slug);
+    throw new Error("kiosk_locked");
+  }
+  const err = await res.json().catch(() => ({ detail: res.statusText }));
+  const detail = err.detail;
+  throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
+}
+
+// ── Patient check-in API (kiosk JWT after PIN unlock) ─────────
 
 export const ticketApi = {
+  getConfig: async (
+    slug: string
+  ): Promise<{
+    slug: string;
+    name: string;
+    collect_caste: boolean;
+    has_kiosk_pin: boolean;
+  }> => {
+    const res = await fetch(`${API_V2}/t/${slug}/config`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      const detail = err.detail;
+      throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+
+  unlock: async (
+    slug: string,
+    pin: string
+  ): Promise<{
+    access_token: string;
+    expires_in: number;
+    hospital_name: string;
+    collect_caste: boolean;
+  }> => {
+    const res = await fetch(`${API_V2}/t/${slug}/unlock`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      const detail = err.detail;
+      throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    setKioskToken(slug, data.access_token);
+    return data;
+  },
+
   /** Create a new ticket session. */
   startSession: async (
     slug: string,
     phone: string,
     language: string,
-    gender: string
+    gender: string,
+    caste?: string
   ): Promise<StartSessionResponse> => {
     const res = await fetch(`${API_V2}/t/${slug}/session`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, language, gender }),
+      headers: { "Content-Type": "application/json", ...kioskAuthHeaders(slug) },
+      body: JSON.stringify({ phone, language, gender, ...(caste ? { caste } : {}) }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || `HTTP ${res.status}`);
-    }
+    if (!res.ok) return parseTicketError(res, slug);
     return res.json();
   },
 
@@ -40,24 +109,27 @@ export const ticketApi = {
     slug: string,
     sessionId: string
   ): Promise<SessionResultResponse> => {
-    const res = await fetch(`${API_V2}/t/${slug}/session/${sessionId}/result`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || `HTTP ${res.status}`);
-    }
+    const res = await fetch(`${API_V2}/t/${slug}/session/${sessionId}/result`, {
+      headers: kioskAuthHeaders(slug),
+    });
+    if (!res.ok) return parseTicketError(res, slug);
     return res.json();
   },
 
   /** Soft-delete (discard) a session. */
   discard: async (slug: string, sessionId: string): Promise<void> => {
-    await fetch(`${API_V2}/t/${slug}/session/${sessionId}/discard`, {
+    const res = await fetch(`${API_V2}/t/${slug}/session/${sessionId}/discard`, {
       method: "POST",
+      headers: kioskAuthHeaders(slug),
     });
+    if (!res.ok) return parseTicketError(res, slug);
   },
 
   /** Returns the WS URL for the voice call. */
-  voiceWsUrl: (slug: string, sessionId: string): string =>
-    `${WS_BASE}/api/v2/t/${slug}/session/${sessionId}/voice`,
+  voiceWsUrl: (slug: string, sessionId: string): string => {
+    const token = getKioskToken(slug) || "";
+    return `${WS_BASE}/api/v2/t/${slug}/session/${sessionId}/voice?token=${encodeURIComponent(token)}`;
+  },
 };
 
 // ── Admin API (requires JWT Bearer) ──────────────────────────
@@ -95,8 +167,27 @@ export const adminApi = {
 
   createHospital: (
     token: string,
-    data: { slug: string; name: string; default_language?: string }
+    data: { slug: string; name: string; default_language?: string; kiosk_pin?: string }
   ) => adminReq<Hospital>("POST", "/hospitals", token, data),
+
+  setKioskPin: (token: string, pin: string, hospital_id?: string | null) => {
+    const q = hospital_id ? `?hospital_id=${hospital_id}` : "";
+    return adminReq<{ ok: boolean; has_kiosk_pin: boolean }>(
+      "PATCH",
+      `/hospital/pin${q}`,
+      token,
+      { pin }
+    );
+  },
+
+  setHospitalSettings: (
+    token: string,
+    data: { collect_caste: boolean },
+    hospital_id?: string | null
+  ) => {
+    const q = hospital_id ? `?hospital_id=${hospital_id}` : "";
+    return adminReq<Hospital>("PATCH", `/hospital/settings${q}`, token, data);
+  },
 
   getStats: (token: string, hospital_id?: string) => {
     const q = hospital_id ? `?hospital_id=${hospital_id}` : "";
@@ -184,7 +275,13 @@ export const adminApi = {
 
   createAdminUser: (
     token: string,
-    data: { email: string; name: string; password: string; role: "hospital_admin" | "super_admin"; hospital_id?: string }
+    data: {
+      email: string;
+      name: string;
+      password: string;
+      role: "hospital_admin" | "super_admin" | "doctor";
+      hospital_id?: string;
+    }
   ) => adminReq<{ id: string; email: string; name: string; role: string }>(
     "POST", "/users", token, data
   ),

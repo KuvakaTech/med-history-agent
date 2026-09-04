@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { TicketVoiceWS, ticketApi } from "@/lib/ticketing-api";
+import { TicketVoiceWS, getKioskToken, ticketApi } from "@/lib/ticketing-api";
 import type { TicketCategory, TicketFlag, TicketWSEvent } from "@/lib/ticketing-types";
 import clsx from "clsx";
 
@@ -146,7 +146,7 @@ export default function CallPage() {
           break;
 
         case "agent_done_speaking":
-          updateState({ agentSpeaking: false, micOpen: true });
+          updateState({ agentSpeaking: false, micOpen: true, partialTranscript: "" });
           break;
 
         case "interrupt":
@@ -237,6 +237,11 @@ export default function CallPage() {
 
   // ── Connect on mount ──────────────────────────────────────
   useEffect(() => {
+    if (!getKioskToken(slug)) {
+      router.replace(`/checkin/${slug}/start`);
+      return;
+    }
+
     const ws = new TicketVoiceWS({
       onEvent: handleEvent,
       onAudio: enqueueAudio,
@@ -367,6 +372,8 @@ export default function CallPage() {
                 >
                   {state.agentSpeaking
                     ? "Speaking…"
+                    : state.partialTranscript
+                    ? "आपका जवाब संसाधित हो रहा है… (Processing your answer…)"
                     : state.micOpen
                     ? "Listening…"
                     : "कृपया प्रतीक्षा करें (Please wait)"}

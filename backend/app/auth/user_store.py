@@ -80,7 +80,10 @@ async def list_admins(
     """List admin accounts. Scoped by hospital_id or centre_id if provided."""
     db = get_db()
     query: dict = {
-        "role": {"$in": ["hospital_admin", "centre_admin", "super_admin"]},
+        "$or": [
+            {"role": {"$in": ["hospital_admin", "centre_admin", "super_admin"]}},
+            {"role": "doctor", "hospital_id": {"$exists": True, "$nin": [None, ""]}},
+        ]
     }
     if hospital_id:
         query["hospital_id"] = hospital_id

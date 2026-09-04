@@ -50,7 +50,21 @@ export default function AdminDashboard() {
   const [newHospitalSlug, setNewHospitalSlug] = useState("");
   const [newHospitalName, setNewHospitalName] = useState("");
   const [newHospitalLang, setNewHospitalLang] = useState("hi");
+  const [newHospitalPin, setNewHospitalPin] = useState("");
   const [creatingHospital, setCreatingHospital] = useState(false);
+
+  const [kioskPin, setKioskPin] = useState("");
+  const [savingPin, setSavingPin] = useState(false);
+  const [collectCaste, setCollectCaste] = useState(false);
+  const [savingCaste, setSavingCaste] = useState(false);
+
+  const [showNewStaff, setShowNewStaff] = useState(false);
+  const [staffEmail, setStaffEmail] = useState("");
+  const [staffName, setStaffName] = useState("");
+  const [staffPassword, setStaffPassword] = useState("");
+  const [staffRole, setStaffRole] = useState<"doctor" | "hospital_admin">("doctor");
+  const [staffHospitalId, setStaffHospitalId] = useState("");
+  const [creatingStaff, setCreatingStaff] = useState(false);
 
   // ── Initial load ──────────────────────────────────────────
   useEffect(() => {
@@ -75,7 +89,7 @@ export default function AdminDashboard() {
               setSelectedHospital(firstHospitalId);
               
               // Load data with first hospital
-              await loadDataForHospital(t, firstHospitalId);
+              await loadDataForHospital(t, firstHospitalId, role);
             }
           } catch (e) {
             console.error("Failed to load hospitals:", e);
@@ -83,7 +97,7 @@ export default function AdminDashboard() {
           }
         } else {
           // Hospital admin - load data without hospital_id
-          await loadDataForHospital(t, null);
+          await loadDataForHospital(t, null, role);
         }
       })
       .catch((e) => {
@@ -98,16 +112,23 @@ export default function AdminDashboard() {
   }, []);
 
   // Helper function to load data for a specific hospital
-  const loadDataForHospital = async (t: string, hospital_id: string | null) => {
+  const loadDataForHospital = async (t: string, hospital_id: string | null, role?: string) => {
     try {
-      const [s, c, st] = await Promise.all([
+      const roleNow = role || userRole;
+      const [s, st] = await Promise.all([
         adminApi.listSessions(t, { include_deleted: false }, hospital_id),
-        adminApi.listCategories(t, true, hospital_id),
         adminApi.getStats(t, hospital_id || undefined).catch(() => null),
       ]);
       setSessions(s.sessions);
-      setCategories(c.categories);
       if (st) setStats(st);
+      if (roleNow !== "doctor") {
+        const c = await adminApi.listCategories(t, true, hospital_id);
+        setCategories(c.categories);
+        const hospital = await adminApi.getCurrentHospital(t, hospital_id).catch(() => null);
+        setCollectCaste(!!hospital?.collect_caste);
+      } else {
+        setCategories([]);
+      }
     } catch (e) {
       throw e;
     }
@@ -196,17 +217,86 @@ export default function AdminDashboard() {
         slug,
         name,
         default_language: newHospitalLang,
+        ...(newHospitalPin.trim() ? { kiosk_pin: newHospitalPin.trim() } : {}),
       });
       setHospitals((prev) => [...prev, hospital]);
       setSelectedHospital(hospital.hospital_id);
       setNewHospitalSlug("");
       setNewHospitalName("");
       setNewHospitalLang("hi");
+      setNewHospitalPin("");
       setShowNewHospital(false);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "Failed to create hospital");
     } finally {
       setCreatingHospital(false);
+    }
+  };
+
+  const handleSetKioskPin = async () => {
+    const pin = kioskPin.trim();
+    if (!/^\d{4,8}$/.test(pin)) {
+      alert("PIN must be 4–8 digits.");
+      return;
+    }
+    setSavingPin(true);
+    try {
+      const hospital_id = userRole === "super_admin" ? selectedHospital : null;
+      await adminApi.setKioskPin(token, pin, hospital_id);
+      setKioskPin("");
+      setHospitals((prev) =>
+        prev.map((h) =>
+          h.hospital_id === (hospital_id || h.hospital_id)
+            ? { ...h, has_kiosk_pin: true }
+            : h
+        )
+      );
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to set PIN");
+    } finally {
+      setSavingPin(false);
+    }
+  };
+
+  const handleToggleCaste = async () => {
+    setSavingCaste(true);
+    try {
+      const hospital_id = userRole === "super_admin" ? selectedHospital : null;
+      const updated = await adminApi.setHospitalSettings(
+        token,
+        { collect_caste: !collectCaste },
+        hospital_id
+      );
+      setCollectCaste(!!updated.collect_caste);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to update setting");
+    } finally {
+      setSavingCaste(false);
+    }
+  };
+
+  const handleCreateStaff = async () => {
+    if (!staffEmail.trim() || !staffName.trim() || staffPassword.length < 8 || !staffHospitalId) {
+      return;
+    }
+    setCreatingStaff(true);
+    try {
+      await adminApi.createAdminUser(token, {
+        email: staffEmail.trim(),
+        name: staffName.trim(),
+        password: staffPassword,
+        role: staffRole,
+        hospital_id: staffHospitalId,
+      });
+      setStaffEmail("");
+      setStaffName("");
+      setStaffPassword("");
+      setStaffRole("doctor");
+      setShowNewStaff(false);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to create staff");
+    } finally {
+      setCreatingStaff(false);
     }
   };
 
@@ -236,10 +326,17 @@ export default function AdminDashboard() {
       <header className="bg-white border-b border-gray-100 px-6 h-14 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">
           <img src="/kuvaka_logo.png" alt="Kuvaka" className="h-6 w-auto" />
-          <span className="text-sm font-semibold text-gray-700">Admin Dashboard</span>
+          <span className="text-sm font-semibold text-gray-700">
+            {userRole === "doctor" ? "Doctor Dashboard" : "Admin Dashboard"}
+          </span>
           {userRole === "super_admin" && (
             <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
               Super Admin
+            </span>
+          )}
+          {userRole === "doctor" && (
+            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">
+              Doctor
             </span>
           )}
         </div>
@@ -270,6 +367,12 @@ export default function AdminDashboard() {
                 className="btn-secondary text-xs py-1.5 px-3"
               >
                 + New Hospital
+              </button>
+              <button
+                onClick={() => setShowNewStaff((v) => !v)}
+                className="btn-secondary text-xs py-1.5 px-3"
+              >
+                + Staff
               </button>
             </div>
           )}
@@ -313,6 +416,13 @@ export default function AdminDashboard() {
                 <option value="hi">Hindi (default)</option>
                 <option value="en">English</option>
               </select>
+              <input
+                className="input-field text-sm py-2"
+                placeholder="Kiosk PIN (4–8 digits, optional)"
+                inputMode="numeric"
+                value={newHospitalPin}
+                onChange={(e) => setNewHospitalPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+              />
             </div>
             <div className="flex gap-2">
               <button
@@ -332,11 +442,128 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {userRole === "super_admin" && showNewStaff && (
+          <div className="card space-y-3">
+            <h3 className="text-sm font-bold text-gray-700">Create Staff</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input
+                className="input-field text-sm py-2"
+                placeholder="Email"
+                value={staffEmail}
+                onChange={(e) => setStaffEmail(e.target.value)}
+              />
+              <input
+                className="input-field text-sm py-2"
+                placeholder="Name"
+                value={staffName}
+                onChange={(e) => setStaffName(e.target.value)}
+              />
+              <input
+                className="input-field text-sm py-2"
+                type="password"
+                placeholder="Password (8+ characters)"
+                value={staffPassword}
+                onChange={(e) => setStaffPassword(e.target.value)}
+              />
+              <select
+                className="input-field text-sm py-2"
+                value={staffRole}
+                onChange={(e) => setStaffRole(e.target.value as "doctor" | "hospital_admin")}
+              >
+                <option value="doctor">Doctor (view patients)</option>
+                <option value="hospital_admin">Hospital admin</option>
+              </select>
+              <select
+                className="input-field text-sm py-2 sm:col-span-2"
+                value={staffHospitalId}
+                onChange={(e) => setStaffHospitalId(e.target.value)}
+              >
+                <option value="">Select hospital</option>
+                {hospitals.map((h) => (
+                  <option key={h.hospital_id} value={h.hospital_id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCreateStaff}
+                disabled={
+                  creatingStaff ||
+                  !staffEmail.trim() ||
+                  !staffName.trim() ||
+                  staffPassword.length < 8 ||
+                  !staffHospitalId
+                }
+                className="btn-primary text-sm py-2 px-4"
+              >
+                {creatingStaff ? "…" : "Create"}
+              </button>
+              <button
+                onClick={() => setShowNewStaff(false)}
+                className="btn-secondary text-sm py-2 px-4"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {userRole === "super_admin" && !selectedHospital && !showNewHospital && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
             {hospitals.length === 0
               ? "No hospitals yet — click \"+ New Hospital\" above to create one."
               : "Please select a hospital to view data."}
+          </div>
+        )}
+
+        {(userRole !== "super_admin" || selectedHospital) && userRole !== "doctor" && (
+          <div className="card space-y-3">
+            <h3 className="text-sm font-bold text-gray-700">Kiosk PIN</h3>
+            <p className="text-xs text-gray-500">
+              Staff enter this PIN on the check-in screen. 4–8 digits.
+            </p>
+            <div className="flex gap-2">
+              <input
+                className="input-field text-sm py-2 w-40"
+                placeholder="••••"
+                inputMode="numeric"
+                value={kioskPin}
+                onChange={(e) => setKioskPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                onKeyDown={(e) => e.key === "Enter" && handleSetKioskPin()}
+              />
+              <button
+                onClick={handleSetKioskPin}
+                disabled={savingPin || kioskPin.length < 4}
+                className="btn-primary text-sm py-2 px-4"
+              >
+                {savingPin ? "…" : "Set PIN"}
+              </button>
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Ask caste at check-in</p>
+                <p className="text-xs text-gray-500">Shows General, OBC, SC, ST after gender.</p>
+              </div>
+              <button
+                type="button"
+                disabled={savingCaste}
+                onClick={handleToggleCaste}
+                className={clsx(
+                  "relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors",
+                  collectCaste ? "bg-brand" : "bg-gray-200"
+                )}
+                aria-pressed={collectCaste}
+              >
+                <span
+                  className={clsx(
+                    "pointer-events-none inline-block h-6 w-6 mt-0.5 rounded-full bg-white shadow transition-transform",
+                    collectCaste ? "translate-x-5" : "translate-x-0.5"
+                  )}
+                />
+              </button>
+            </div>
           </div>
         )}
 
@@ -361,7 +588,7 @@ export default function AdminDashboard() {
 
             {/* ── Tabs ── */}
             <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-              {(["sessions", "categories"] as const).map((tab) => (
+              {(userRole === "doctor" ? (["sessions"] as const) : (["sessions", "categories"] as const)).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -519,7 +746,7 @@ export default function AdminDashboard() {
         )}
 
         {/* ── Categories tab ── */}
-        {(userRole !== "super_admin" || selectedHospital) && activeTab === "categories" && (
+        {(userRole !== "super_admin" || selectedHospital) && userRole !== "doctor" && activeTab === "categories" && (
           <div className="space-y-4">
             <div className="card space-y-3">
               <h3 className="text-sm font-bold text-gray-700">Add Department</h3>
@@ -679,8 +906,13 @@ function SessionRow({
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
+          {session.opd_number != null && (
+            <span className="text-base font-black font-mono text-brand">
+              OPD {session.opd_number}
+            </span>
+          )}
           {session.ticket_number && (
-            <span className="text-sm font-black font-mono text-brand">
+            <span className="text-xs font-mono text-gray-400">
               {session.ticket_number}
             </span>
           )}

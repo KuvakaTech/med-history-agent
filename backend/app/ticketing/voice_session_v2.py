@@ -4,7 +4,8 @@ Replaces the v1 per-turn Deepgram → Haiku → ElevenLabs loop when
 TICKETING_USE_GEMINI_LIVE=true. Same browser WebSocket; frontend branches on
 ready.voice_mode=gemini_live.
 
-Not copied from v1: mic gate, silence-retry re-ask loop, per-turn TTS.
+Not copied from v1: mic gate, per-turn TTS. Silence nudge / stall recovery
+runs in _stall_monitor (ported from v1 timing).
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from app.ticketing.gemini_live import (
     GeminiLiveSession,
     LiveEvent,
     consultation_tools,
+    sanitize_agent_transcript,
     triage_tools,
 )
 from app.ticketing.models import CategoryInfo, TicketSession, TicketTranscriptEntry
@@ -122,6 +124,18 @@ class TicketVoiceSessionV2:
         self._last_persist = time.monotonic()
         self._valid_keys = {c.key: c.label for c in categories}
         self._triage_ceiling_fired = False
+        self._phase = ""
+        self._awaiting_user = False
+        self._awaiting_user_since = 0.0
+        self._pending_user_text = ""
+        self._last_user_activity = 0.0
+        self._last_agent_activity = 0.0
+        self._last_user_final_at = 0.0
+        self._user_final_pending_agent = False
+        self._silence_nudge_sent = False
+        self._silence_retries = 0
+        self._agent_playing_since = 0.0
+        self._agent_stall_nudge_sent = False
 
     # ── Wire ───────────────────────────────────────────────────
 
@@ -168,7 +182,8 @@ class TicketVoiceSessionV2:
             self._transcript_worker(), name="v2_transcript"
         )
         watchdog = asyncio.create_task(self._watchdog(), name="v2_watchdog")
-        self._tasks = [client_task, transcript_task, watchdog]
+        stall_task = asyncio.create_task(self._stall_monitor(), name="v2_stall")
+        self._tasks = [client_task, transcript_task, watchdog, stall_task]
         try:
             await self._run_triage()
             if not self._stopped.is_set() and self._category_key:
@@ -193,6 +208,20 @@ class TicketVoiceSessionV2:
 
     # ── Phases ─────────────────────────────────────────────────
 
+    def _reset_stall_state(self, phase: str) -> None:
+        self._phase = phase
+        self._awaiting_user = False
+        self._awaiting_user_since = 0.0
+        self._pending_user_text = ""
+        self._last_user_activity = 0.0
+        self._last_agent_activity = 0.0
+        self._last_user_final_at = 0.0
+        self._user_final_pending_agent = False
+        self._silence_nudge_sent = False
+        self._silence_retries = 0
+        self._agent_playing_since = 0.0
+        self._agent_stall_nudge_sent = False
+
     async def _run_triage(self) -> None:
         await self._send(
             ev.triage_started(self.session.session_id, self.session.language)
@@ -202,6 +231,7 @@ class TicketVoiceSessionV2:
         )
         self._phase_done = asyncio.Event()
         self._user_turns_this_phase = 0
+        self._reset_stall_state("triage")
         self._live = self._live_factory()
         await self._live.connect(
             instruction,
@@ -263,6 +293,7 @@ class TicketVoiceSessionV2:
         )
         self._phase_done = asyncio.Event()
         self._user_turns_this_phase = 0
+        self._reset_stall_state("consultation")
         self._drain_audio_q()
         self._live = self._live_factory()
         await self._live.connect(
@@ -345,41 +376,65 @@ class TicketVoiceSessionV2:
             self._stopped.set()
 
     async def _handle_live_event(self, event: LiveEvent, phase: str) -> None:
+        now = time.monotonic()
         if event.kind == "user_speech_started":
             await self._send(ev.user_speech_started())
         elif event.kind == "user_transcript_partial":
+            self._pending_user_text = event.text or ""
+            self._last_user_activity = now
+            self._silence_nudge_sent = False
+            self._silence_retries = 0
             await self._send(ev.partial_transcript(event.text))
         elif event.kind == "user_transcript_final":
-            self._enqueue_transcript("user", event.text)
-            self.session.turn_count += 1
-            self._user_turns_this_phase += 1
-            await self._send(ev.partial_transcript(event.text))
-            if (
-                phase == "triage"
-                and self._user_turns_this_phase >= _TRIAGE_TURN_CEILING
-            ):
-                await self._triage_turn_ceiling()
-            elif (
-                phase == "consultation"
-                and self._user_turns_this_phase >= _CONSULT_TURN_CEILING
-            ):
-                self._phase_done.set()
+            self._pending_user_text = ""
+            self._last_user_activity = now
+            self._silence_nudge_sent = False
+            self._silence_retries = 0
+            await self._record_user_turn(event.text, phase)
         elif event.kind == "agent_audio_chunk":
             self._agent_playing = True
+            if not self._agent_playing_since:
+                self._agent_playing_since = now
+            self._last_agent_activity = now
+            self._user_final_pending_agent = False
+            self._agent_stall_nudge_sent = False
             b64 = base64.b64encode(event.audio).decode("ascii")
             await self._send(ev.agent_audio_chunk(b64))
         elif event.kind == "agent_transcript_partial":
-            await self._send(ev.agent_speaking(event.text, self.session.turn_count))
+            if self._phase_done.is_set():
+                return
+            self._last_agent_activity = now
+            self._user_final_pending_agent = False
+            self._agent_stall_nudge_sent = False
+            text = sanitize_agent_transcript(event.text)
+            if text:
+                await self._send(ev.agent_speaking(text, self.session.turn_count))
         elif event.kind == "agent_transcript_final":
-            self._enqueue_transcript("agent", event.text)
-            await self._send(ev.agent_speaking(event.text, self.session.turn_count))
+            if self._phase_done.is_set():
+                return
+            self._last_agent_activity = now
+            self._user_final_pending_agent = False
+            self._agent_stall_nudge_sent = False
+            text = sanitize_agent_transcript(event.text)
+            if not text:
+                return
+            self._enqueue_transcript("agent", text)
+            await self._send(ev.agent_speaking(text, self.session.turn_count))
         elif event.kind == "interrupted":
             self._agent_playing = False
+            self._agent_playing_since = 0.0
             await self._send(ev.interrupt())
         elif event.kind == "turn_complete":
             self._agent_playing = False
+            self._agent_playing_since = 0.0
+            self._awaiting_user = True
+            self._awaiting_user_since = now
+            self._silence_nudge_sent = False
+            self._last_agent_activity = now
             await self._send(ev.agent_done_speaking(self.session.turn_count))
         elif event.kind == "tool_call":
+            self._last_agent_activity = now
+            self._user_final_pending_agent = False
             await self._handle_tool(event, phase)
         elif event.kind == "error":
             await self._send(
@@ -388,6 +443,127 @@ class TicketVoiceSessionV2:
             self._stopped.set()
         elif event.kind == "go_away":
             log.info("Gemini Live go_away for session %s", self.session.session_id)
+
+    async def _record_user_turn(self, text: str, phase: str) -> None:
+        text = (text or "").strip()
+        if not text:
+            return
+        self._enqueue_transcript("user", text)
+        self.session.turn_count += 1
+        self._user_turns_this_phase += 1
+        self._awaiting_user = False
+        self._user_final_pending_agent = True
+        self._last_user_final_at = time.monotonic()
+        self._agent_stall_nudge_sent = False
+        await self._send(ev.partial_transcript(text))
+        if phase == "triage" and self._user_turns_this_phase >= _TRIAGE_TURN_CEILING:
+            await self._triage_turn_ceiling()
+        elif (
+            phase == "consultation"
+            and self._user_turns_this_phase >= _CONSULT_TURN_CEILING
+        ):
+            self._phase_done.set()
+
+    async def _nudge_gemini_continue(self, patient_text: str) -> None:
+        if self._live is None or self._phase_done.is_set():
+            return
+        await self._live.send_text(
+            f'[System] The patient just said: "{patient_text}". '
+            "Acknowledge briefly and continue the intake with your next question."
+        )
+        self._last_agent_activity = time.monotonic()
+
+    async def _force_finalize_pending_user(self, phase: str) -> None:
+        text = ""
+        if self._live is not None:
+            text = self._live.force_finalize_user()
+        if not text:
+            text = (self._pending_user_text or "").strip()
+        if not text or self._user_final_pending_agent:
+            return
+        self._pending_user_text = ""
+        await self._record_user_turn(text, phase)
+        await self._nudge_gemini_continue(text)
+
+    async def _stall_monitor(self) -> None:
+        while not self._stopped.is_set():
+            await asyncio.sleep(1.0)
+            if self._live is None or self._phase_done.is_set():
+                continue
+            now = time.monotonic()
+            phase = self._phase
+
+            if (
+                self._agent_playing
+                and self._agent_playing_since
+                and now - self._agent_playing_since
+                >= settings.TICKETING_AGENT_PLAYING_MAX_SECS
+            ):
+                log.info(
+                    "stall monitor: clearing stuck agent_playing for session %s",
+                    self.session.session_id,
+                )
+                self._agent_playing = False
+                self._agent_playing_since = 0.0
+
+            pending = (self._pending_user_text or "").strip()
+            if self._live is not None:
+                live_pending = self._live.pending_user_text()
+                if len(live_pending) > len(pending):
+                    pending = live_pending
+                    self._pending_user_text = live_pending
+
+            if (
+                pending
+                and self._last_user_activity
+                and not self._user_final_pending_agent
+                and now - self._last_user_activity
+                >= settings.TICKETING_PARTIAL_FINAL_SECS
+            ):
+                await self._force_finalize_pending_user(phase)
+                continue
+
+            if self._user_final_pending_agent and self._last_user_final_at:
+                if (
+                    not self._agent_stall_nudge_sent
+                    and now - self._last_user_final_at
+                    >= settings.TICKETING_AGENT_STALL_SECS
+                ):
+                    self._agent_stall_nudge_sent = True
+                    if self._live is not None:
+                        await self._live.send_text(
+                            "[System] The patient answered. Continue the conversation "
+                            "and ask your next intake question."
+                        )
+                        self._last_agent_activity = now
+                continue
+
+            if not self._awaiting_user or pending:
+                continue
+
+            elapsed = now - self._awaiting_user_since if self._awaiting_user_since else 0
+            if (
+                elapsed >= settings.TICKETING_SILENCE_NUDGE_SECS
+                and not self._silence_nudge_sent
+            ):
+                await self._send(ev.silence_nudge())
+                self._silence_nudge_sent = True
+            if elapsed >= settings.TICKETING_SILENCE_PROMPT_SECS:
+                if self._live is not None:
+                    if self._silence_retries < settings.TICKETING_MAX_SILENCE_RETRIES:
+                        self._silence_retries += 1
+                        await self._live.send_text(
+                            "[System] The patient did not respond. Repeat your last "
+                            "question briefly and warmly."
+                        )
+                    else:
+                        self._silence_retries = 0
+                        await self._live.send_text(
+                            "[System] The patient did not respond. Leave this item "
+                            "blank and ask your next intake question."
+                        )
+                self._awaiting_user_since = now
+                self._silence_nudge_sent = False
 
     async def _handle_tool(self, event: LiveEvent, phase: str) -> None:
         name = event.tool_name
@@ -418,6 +594,12 @@ class TicketVoiceSessionV2:
             except (TypeError, ValueError):
                 self._patient_age = str(age)
         self._routing_summary = summary
+        addr = str(args.get("address") or "").strip() or None
+        guard = str(args.get("guardian_name") or "").strip() or None
+        if addr:
+            self.session.address = addr
+        if guard:
+            self.session.guardian_name = guard
 
         accepted = key in self._valid_keys and confidence in ("high", "medium")
         if accepted:
@@ -466,6 +648,10 @@ class TicketVoiceSessionV2:
             self._patient_name = meta.patient_name
         if meta.patient_age is not None:
             self._patient_age = str(meta.patient_age)
+        if meta.patient_address:
+            self.session.address = meta.patient_address
+        if meta.guardian_name:
+            self.session.guardian_name = meta.guardian_name
         guess = meta.category_guess
         if guess and guess in self._valid_keys and meta.category_confidence != "none":
             self._category_key = guess
@@ -536,6 +722,12 @@ class TicketVoiceSessionV2:
     def _enqueue_transcript(self, speaker: str, text: str) -> None:
         text = (text or "").strip()
         if not text:
+            return
+        if (
+            self.session.transcript
+            and self.session.transcript[-1].speaker == speaker
+            and self.session.transcript[-1].text == text
+        ):
             return
         entry = TicketTranscriptEntry(speaker=speaker, text=text)  # type: ignore[arg-type]
         try:

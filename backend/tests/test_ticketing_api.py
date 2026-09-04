@@ -63,6 +63,39 @@ def _super_headers() -> dict:
     return {"Authorization": f"Bearer {_token(role='super_admin', hospital_id=None)}"}
 
 
+def _doctor_headers(hospital_id: str) -> dict:
+    return {"Authorization": f"Bearer {_token(role='doctor', hospital_id=hospital_id)}"}
+
+
+def _kiosk_token(hospital) -> str:
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {
+            "role": "kiosk",
+            "hospital_id": hospital.hospital_id,
+            "slug": hospital.slug,
+            "iat": now,
+            "exp": now + timedelta(hours=12),
+        },
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+
+def _kiosk_headers(hospital) -> dict:
+    return {"Authorization": f"Bearer {_kiosk_token(hospital)}"}
+
+
+def _start(client, hospital, phone, **extra):
+    body = {"phone": phone}
+    body.update(extra)
+    return client.post(
+        f"/api/v2/t/{hospital.slug}/session",
+        json=body,
+        headers=_kiosk_headers(hospital),
+    )
+
+
 # ── fixtures ──────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
@@ -91,6 +124,7 @@ def isolate_all_stores(monkeypatch):
     ss._mem.clear()
     ss._mem_by_ticket.clear()
     ss._local_counter = 0
+    ss._local_opd.clear()
     hs._mem_hospitals.clear()
     hs._mem_categories.clear()
 
@@ -98,6 +132,7 @@ def isolate_all_stores(monkeypatch):
 
     ps._mem.clear(); ps._phone_index.clear()
     ss._mem.clear(); ss._mem_by_ticket.clear(); ss._local_counter = 0
+    ss._local_opd.clear()
     hs._mem_hospitals.clear(); hs._mem_categories.clear()
 
 
@@ -126,62 +161,69 @@ def hospital(client):
 # ── POST /api/v2/t/{slug}/session ────────────────────────────
 
 def test_start_session_creates_session(client, hospital):
-    res = client.post(
-        f"/api/v2/t/{hospital.slug}/session",
-        json={"phone": "9876543210", "language": "hi", "gender": "female"},
-    )
+    res = _start(client, hospital, "9876543210", language="hi", gender="female")
     assert res.status_code == 201
     data = res.json()
     assert "session_id" in data
     assert data["ticket_number"] is not None
     assert data["ticket_number"].startswith("TKT-")
+    assert data["opd_number"] == 1
     assert data["language"] == "hi"
     assert data["phase"] == "triage"
 
 
-def test_start_session_phone_required(client, hospital):
+def test_opd_numbers_increment_across_sessions(client, hospital):
+    r1 = _start(client, hospital, "9444444451")
+    r2 = _start(client, hospital, "9444444452")
+    assert r1.json()["opd_number"] == 1
+    assert r2.json()["opd_number"] == 2
+
+
+def test_start_session_requires_kiosk_token(client, hospital):
     res = client.post(
         f"/api/v2/t/{hospital.slug}/session",
-        json={"phone": "", "language": "hi", "gender": "male"},
+        json={"phone": "9876543210"},
     )
+    assert res.status_code == 401
+
+
+def test_start_session_phone_required(client, hospital):
+    res = _start(client, hospital, "", language="hi", gender="male")
     assert res.status_code == 422
 
 
-def test_start_session_unknown_hospital_returns_404(client):
+def test_start_session_unknown_hospital_returns_401_without_token(client):
     res = client.post(
         "/api/v2/t/does-not-exist/session",
         json={"phone": "9000000001"},
     )
-    assert res.status_code == 404
+    assert res.status_code == 401
 
 
 def test_start_session_same_phone_reuses_patient(client, hospital):
-    r1 = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9111111111"})
-    r2 = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9111111111"})
+    r1 = _start(client, hospital, "9111111111")
+    r2 = _start(client, hospital, "9111111111")
     assert r1.status_code == 201
     assert r2.status_code == 201
     assert r1.json()["patient_id"] == r2.json()["patient_id"]
 
 
 def test_start_session_different_phones_different_patients(client, hospital):
-    r1 = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9222222221"})
-    r2 = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9222222222"})
+    r1 = _start(client, hospital, "9222222221")
+    r2 = _start(client, hospital, "9222222222")
     assert r1.json()["patient_id"] != r2.json()["patient_id"]
 
 
 def test_start_session_default_language_from_hospital(client, hospital):
     """When language is not provided, should default to hospital's default_language (hi)."""
-    res = client.post(
-        f"/api/v2/t/{hospital.slug}/session",
-        json={"phone": "9333333333"},
-    )
+    res = _start(client, hospital, "9333333333")
     assert res.status_code == 201
     assert res.json()["language"] == "hi"
 
 
 def test_ticket_numbers_increment_across_sessions(client, hospital):
-    r1 = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9444444441"})
-    r2 = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9444444442"})
+    r1 = _start(client, hospital, "9444444441")
+    r2 = _start(client, hospital, "9444444442")
     n1 = int(r1.json()["ticket_number"].split("-")[1])
     n2 = int(r2.json()["ticket_number"].split("-")[1])
     assert n2 == n1 + 1
@@ -190,44 +232,67 @@ def test_ticket_numbers_increment_across_sessions(client, hospital):
 # ── GET /api/v2/t/{slug}/session/{id}/result ─────────────────
 
 def test_get_result_returns_session(client, hospital):
-    r = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9555555551"})
+    r = _start(client, hospital, "9555555551")
     sid = r.json()["session_id"]
     slug = hospital.slug
-    res = client.get(f"/api/v2/t/{slug}/session/{sid}/result")
+    res = client.get(
+        f"/api/v2/t/{slug}/session/{sid}/result",
+        headers=_kiosk_headers(hospital),
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["session_id"] == sid
     assert data["ticket_number"] is not None
+    assert data["opd_number"] == 1
+    assert data["opd_date_ist"]
+    assert data["collect_caste"] is False
     assert data["hospital_name"] == "Test Hospital"
     assert data["patient"] is not None
     assert data["patient"]["phone"] == "9555555551"
+    assert data["patient"]["address"] is None
+    assert data["patient"]["guardian_name"] is None
 
 
 def test_get_result_unknown_session_returns_404(client, hospital):
-    res = client.get(f"/api/v2/t/{hospital.slug}/session/nonexistent/result")
+    res = client.get(
+        f"/api/v2/t/{hospital.slug}/session/nonexistent/result",
+        headers=_kiosk_headers(hospital),
+    )
     assert res.status_code == 404
 
 
 def test_get_result_discarded_session_hidden_from_patient(client, hospital):
-    r = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9666666661"})
+    r = _start(client, hospital, "9666666661")
     sid = r.json()["session_id"]
-    client.post(f"/api/v2/t/{hospital.slug}/session/{sid}/discard")
-    res = client.get(f"/api/v2/t/{hospital.slug}/session/{sid}/result")
+    client.post(
+        f"/api/v2/t/{hospital.slug}/session/{sid}/discard",
+        headers=_kiosk_headers(hospital),
+    )
+    res = client.get(
+        f"/api/v2/t/{hospital.slug}/session/{sid}/result",
+        headers=_kiosk_headers(hospital),
+    )
     assert res.status_code == 404, "discarded session should be hidden from patient"
 
 
 # ── POST /api/v2/t/{slug}/session/{id}/discard ───────────────
 
 def test_discard_soft_deletes_session(client, hospital):
-    r = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9777777771"})
+    r = _start(client, hospital, "9777777771")
     sid = r.json()["session_id"]
-    res = client.post(f"/api/v2/t/{hospital.slug}/session/{sid}/discard")
+    res = client.post(
+        f"/api/v2/t/{hospital.slug}/session/{sid}/discard",
+        headers=_kiosk_headers(hospital),
+    )
     assert res.status_code == 200
     assert res.json()["discarded"] == sid
 
 
 def test_discard_unknown_session_returns_404(client, hospital):
-    res = client.post(f"/api/v2/t/{hospital.slug}/session/bad-id/discard")
+    res = client.post(
+        f"/api/v2/t/{hospital.slug}/session/bad-id/discard",
+        headers=_kiosk_headers(hospital),
+    )
     assert res.status_code == 404
 
 
@@ -235,8 +300,8 @@ def test_discard_unknown_session_returns_404(client, hospital):
 
 def test_admin_stats_returns_today_counts(client, hospital):
     # Create two sessions for this hospital
-    client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9888888881"})
-    client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9888888882"})
+    _start(client, hospital, "9888888881")
+    _start(client, hospital, "9888888882")
 
     res = client.get(
         f"/api/v2/admin/stats",
@@ -256,11 +321,18 @@ def test_admin_stats_requires_auth(client):
     assert res.status_code == 401
 
 
-def test_admin_stats_doctor_role_forbidden(client, hospital):
-    doctor_token = _token(role="doctor", hospital_id=hospital.hospital_id)
+def test_admin_stats_hospital_doctor_can_view(client, hospital):
     res = client.get(
         "/api/v2/admin/stats",
-        headers={"Authorization": f"Bearer {doctor_token}"},
+        headers=_doctor_headers(hospital.hospital_id),
+    )
+    assert res.status_code == 200
+
+
+def test_admin_stats_clinical_doctor_without_hospital_forbidden(client, hospital):
+    res = client.get(
+        "/api/v2/admin/stats",
+        headers={"Authorization": f"Bearer {_token(role='doctor', hospital_id=None)}"},
     )
     assert res.status_code == 403
 
@@ -268,7 +340,7 @@ def test_admin_stats_doctor_role_forbidden(client, hospital):
 # ── GET /api/v2/admin/sessions ────────────────────────────────
 
 def test_admin_list_sessions_returns_sessions(client, hospital):
-    client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9999999991"})
+    _start(client, hospital, "9999999991")
     res = client.get("/api/v2/admin/sessions", headers=_admin_headers(hospital.hospital_id))
     assert res.status_code == 200
     data = res.json()
@@ -277,16 +349,17 @@ def test_admin_list_sessions_returns_sessions(client, hospital):
 
 
 def test_admin_list_sessions_includes_ticket_number(client, hospital):
-    client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9999999992"})
+    _start(client, hospital, "9999999992")
     res = client.get("/api/v2/admin/sessions", headers=_admin_headers(hospital.hospital_id))
     sessions = res.json()["sessions"]
     assert all("ticket_number" in s for s in sessions)
     assert all(s["ticket_number"].startswith("TKT-") for s in sessions if s["ticket_number"])
+    assert all(s.get("opd_number") == 1 for s in sessions)
 
 
 def test_admin_list_sessions_scoped_to_hospital(client, hospital):
     """hospital_admin for h-other cannot see sessions from test-hosp."""
-    client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9000000010"})
+    _start(client, hospital, "9000000010")
     res = client.get(
         "/api/v2/admin/sessions",
         headers=_admin_headers("h-completely-other"),
@@ -297,7 +370,7 @@ def test_admin_list_sessions_scoped_to_hospital(client, hospital):
 
 
 def test_admin_list_sessions_filter_by_status(client, hospital):
-    client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9000000011"})
+    _start(client, hospital, "9000000011")
     res = client.get(
         "/api/v2/admin/sessions?status=active",
         headers=_admin_headers(hospital.hospital_id),
@@ -308,7 +381,7 @@ def test_admin_list_sessions_filter_by_status(client, hospital):
 
 
 def test_admin_list_sessions_search_by_ticket(client, hospital):
-    r = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9000000012"})
+    r = _start(client, hospital, "9000000012")
     ticket = r.json()["ticket_number"]
     res = client.get(
         f"/api/v2/admin/sessions?ticket={ticket}",
@@ -323,7 +396,7 @@ def test_admin_list_sessions_search_by_ticket(client, hospital):
 # ── GET /api/v2/admin/sessions/{id} ──────────────────────────
 
 def test_admin_get_session_detail_includes_patient(client, hospital):
-    r = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9100000001"})
+    r = _start(client, hospital, "9100000001")
     sid = r.json()["session_id"]
     res = client.get(
         f"/api/v2/admin/sessions/{sid}",
@@ -333,15 +406,23 @@ def test_admin_get_session_detail_includes_patient(client, hospital):
     data = res.json()
     assert data["patient"] is not None
     assert data["patient"]["phone"] == "9100000001"
+    assert data["patient"]["address"] is None
+    assert data["patient"]["guardian_name"] is None
     assert "ticket_number" in data
+    assert data["opd_number"] == 1
+    assert data["address"] is None
+    assert data["guardian_name"] is None
     assert "started_at_ist" in data
 
 
 def test_admin_get_session_detail_includes_discarded(client, hospital):
     """Admin can see discarded sessions."""
-    r = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9100000002"})
+    r = _start(client, hospital, "9100000002")
     sid = r.json()["session_id"]
-    client.post(f"/api/v2/t/{hospital.slug}/session/{sid}/discard")
+    client.post(
+        f"/api/v2/t/{hospital.slug}/session/{sid}/discard",
+        headers=_kiosk_headers(hospital),
+    )
     res = client.get(
         f"/api/v2/admin/sessions/{sid}",
         headers=_admin_headers(hospital.hospital_id),
@@ -351,7 +432,7 @@ def test_admin_get_session_detail_includes_discarded(client, hospital):
 
 
 def test_admin_get_session_wrong_hospital_returns_404(client, hospital):
-    r = client.post(f"/api/v2/t/{hospital.slug}/session", json={"phone": "9100000003"})
+    r = _start(client, hospital, "9100000003")
     sid = r.json()["session_id"]
     res = client.get(
         f"/api/v2/admin/sessions/{sid}",
@@ -528,3 +609,260 @@ def test_duplicate_hospital_slug_returns_409(client, hospital):
         headers=_super_headers(),
     )
     assert res.status_code == 409
+
+
+# ── Kiosk PIN unlock ────────────────────────────────────────
+
+def test_unlock_wrong_pin_returns_401(client, hospital):
+    import asyncio
+    from app.ticketing.hospital_store import hospital_store
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(hospital_store.set_kiosk_pin(hospital.hospital_id, "1234"))
+    finally:
+        loop.close()
+    res = client.post(f"/api/v2/t/{hospital.slug}/unlock", json={"pin": "0000"})
+    assert res.status_code == 401
+
+
+def test_unlock_without_pin_configured_returns_409(client, hospital):
+    res = client.post(f"/api/v2/t/{hospital.slug}/unlock", json={"pin": "1234"})
+    assert res.status_code == 409
+
+
+def test_unlock_success_returns_kiosk_token(client, hospital):
+    import asyncio
+    from app.ticketing.hospital_store import hospital_store
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(hospital_store.set_kiosk_pin(hospital.hospital_id, "1234"))
+    finally:
+        loop.close()
+    res = client.post(f"/api/v2/t/{hospital.slug}/unlock", json={"pin": "1234"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["access_token"]
+    assert data["hospital_name"] == "Test Hospital"
+    assert data["collect_caste"] is False
+    start = client.post(
+        f"/api/v2/t/{hospital.slug}/session",
+        json={"phone": "9111222333"},
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+    )
+    assert start.status_code == 201
+
+
+def test_kiosk_token_cannot_start_session_on_other_hospital(client, hospital):
+    from app.ticketing.hospital_store import hospital_store
+    from app.ticketing.models import Hospital
+    import asyncio
+
+    other = Hospital(slug="other-hosp", name="Other")
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(hospital_store.create(other))
+    finally:
+        loop.close()
+    res = client.post(
+        f"/api/v2/t/{other.slug}/session",
+        json={"phone": "9000111222"},
+        headers=_kiosk_headers(hospital),
+    )
+    assert res.status_code == 403
+
+
+def test_admin_set_kiosk_pin(client, hospital):
+    res = client.patch(
+        "/api/v2/admin/hospital/pin",
+        json={"pin": "5678"},
+        headers=_admin_headers(hospital.hospital_id),
+    )
+    assert res.status_code == 200
+    assert res.json()["has_kiosk_pin"] is True
+
+
+def test_doctor_cannot_set_kiosk_pin(client, hospital):
+    res = client.patch(
+        "/api/v2/admin/hospital/pin",
+        json={"pin": "5678"},
+        headers=_doctor_headers(hospital.hospital_id),
+    )
+    assert res.status_code == 403
+
+
+def test_doctor_cannot_list_hospitals(client, hospital):
+    res = client.get("/api/v2/admin/hospitals", headers=_doctor_headers(hospital.hospital_id))
+    assert res.status_code == 403
+
+
+def test_doctor_cannot_create_category(client, hospital):
+    res = client.post(
+        "/api/v2/admin/categories",
+        json={"key": "nephrology", "label": "Nephrology"},
+        headers=_doctor_headers(hospital.hospital_id),
+    )
+    assert res.status_code == 403
+
+
+def test_doctor_can_list_sessions(client, hospital):
+    _start(client, hospital, "9000999888")
+    res = client.get(
+        "/api/v2/admin/sessions",
+        headers=_doctor_headers(hospital.hospital_id),
+    )
+    assert res.status_code == 200
+    assert res.json()["count"] >= 1
+
+
+def test_super_admin_can_create_doctor(client, hospital):
+    from unittest.mock import AsyncMock, patch
+
+    fake_user = {
+        "_id": "doc-id",
+        "email": "doc@example.com",
+        "name": "Dr User",
+        "role": "doctor",
+        "hospital_id": hospital.hospital_id,
+    }
+
+    with patch("app.api.v2.endpoints.ticketing_admin.user_store.create_admin", new=AsyncMock(return_value=fake_user)), \
+         patch("app.api.v2.endpoints.ticketing_admin.hospital_store.get", new=AsyncMock(return_value=hospital)):
+        res = client.post(
+            "/api/v2/admin/users",
+            json={
+                "email": "doc@example.com",
+                "name": "Dr User",
+                "password": "securepass",
+                "role": "doctor",
+                "hospital_id": hospital.hospital_id,
+            },
+            headers=_super_headers(),
+        )
+    assert res.status_code == 201
+    assert res.json()["role"] == "doctor"
+
+
+def test_create_doctor_without_hospital_id_fails(client):
+    res = client.post(
+        "/api/v2/admin/users",
+        json={
+            "email": "doc2@test.local",
+            "name": "No Hospital Doctor",
+            "password": "password123",
+            "role": "doctor",
+        },
+        headers=_super_headers(),
+    )
+    assert res.status_code == 422
+
+
+def test_create_hospital_does_not_leak_pin_hash(client):
+    res = client.post(
+        "/api/v2/admin/hospitals",
+        json={"slug": "pin-hosp", "name": "Pin Hosp", "kiosk_pin": "1234"},
+        headers=_super_headers(),
+    )
+    assert res.status_code == 201
+    data = res.json()
+    assert "kiosk_pin_hash" not in data
+    assert data["has_kiosk_pin"] is True
+    assert data["collect_caste"] is False
+
+
+# ── Caste collection ─────────────────────────────────────────
+
+def test_hospital_config_collect_caste_defaults_false(client, hospital):
+    res = client.get(f"/api/v2/t/{hospital.slug}/config")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["slug"] == hospital.slug
+    assert data["name"] == "Test Hospital"
+    assert data["collect_caste"] is False
+    assert data["has_kiosk_pin"] is False
+    assert "kiosk_pin_hash" not in data
+
+
+def test_hospital_config_unknown_slug_returns_404(client):
+    res = client.get("/api/v2/t/does-not-exist/config")
+    assert res.status_code == 404
+
+
+def test_admin_can_enable_collect_caste(client, hospital):
+    res = client.patch(
+        "/api/v2/admin/hospital/settings",
+        json={"collect_caste": True},
+        headers=_admin_headers(hospital.hospital_id),
+    )
+    assert res.status_code == 200
+    assert res.json()["collect_caste"] is True
+    cfg = client.get(f"/api/v2/t/{hospital.slug}/config")
+    assert cfg.json()["collect_caste"] is True
+
+
+def test_doctor_cannot_set_hospital_settings(client, hospital):
+    res = client.patch(
+        "/api/v2/admin/hospital/settings",
+        json={"collect_caste": True},
+        headers=_doctor_headers(hospital.hospital_id),
+    )
+    assert res.status_code == 403
+
+
+def test_start_session_requires_caste_when_enabled(client, hospital):
+    import asyncio
+    from app.ticketing.hospital_store import hospital_store
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(hospital_store.set_collect_caste(hospital.hospital_id, True))
+    finally:
+        loop.close()
+    res = _start(client, hospital, "9333444555", gender="male")
+    assert res.status_code == 422
+
+
+def test_start_session_rejects_invalid_caste_when_enabled(client, hospital):
+    import asyncio
+    from app.ticketing.hospital_store import hospital_store
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(hospital_store.set_collect_caste(hospital.hospital_id, True))
+    finally:
+        loop.close()
+    res = _start(client, hospital, "9333444556", gender="male", caste="other")
+    assert res.status_code == 422
+
+
+def test_start_session_accepts_caste_when_enabled(client, hospital):
+    import asyncio
+    from app.ticketing.hospital_store import hospital_store
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(hospital_store.set_collect_caste(hospital.hospital_id, True))
+    finally:
+        loop.close()
+    res = _start(client, hospital, "9333444557", gender="female", caste="obc")
+    assert res.status_code == 201
+    sid = res.json()["session_id"]
+    result = client.get(
+        f"/api/v2/t/{hospital.slug}/session/{sid}/result",
+        headers=_kiosk_headers(hospital),
+    )
+    assert result.status_code == 200
+    assert result.json()["patient"]["caste"] == "obc"
+
+
+def test_start_session_ignores_caste_when_disabled(client, hospital):
+    res = _start(client, hospital, "9333444558", gender="male", caste="sc")
+    assert res.status_code == 201
+    sid = res.json()["session_id"]
+    result = client.get(
+        f"/api/v2/t/{hospital.slug}/session/{sid}/result",
+        headers=_kiosk_headers(hospital),
+    )
+    assert result.status_code == 200
+    assert result.json()["patient"]["caste"] is None

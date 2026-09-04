@@ -82,6 +82,8 @@ async def test_extract_rebuilds_qa_flags_and_persists_patient():
     extracted = PostCallExtract(
         patient_name="Rahul",
         patient_age=34,
+        address="Berasia Road",
+        guardian_name="Suresh",
         category_key="orthopedics",
         category_label="Orthopaedics",
         qa_log=[
@@ -109,6 +111,10 @@ async def test_extract_rebuilds_qa_flags_and_persists_patient():
     assert stored is not None
     assert stored.name == "Rahul"
     assert stored.age == 34
+    assert stored.address == "Berasia Road"
+    assert stored.guardian_name == "Suresh"
+    assert result.address == "Berasia Road"
+    assert result.guardian_name == "Suresh"
 
 
 @pytest.mark.asyncio
@@ -129,3 +135,42 @@ async def test_extract_llm_failure_still_summarizes_when_possible():
     assert result.status == "completed"
     assert result.qa_log == []
     assert result.summary == {"assessment": None}
+
+
+@pytest.mark.asyncio
+async def test_extract_leaves_missing_address_and_guardian_null():
+    patient = await ps.ticket_patient_store.upsert(phone="9123456780", gender="female")
+    session = TicketSession(
+        hospital_id="h1",
+        patient_id=patient.patient_id,
+        gender="female",
+    )
+    session.transcript = [
+        TicketTranscriptEntry(speaker="user", text="Priya, 28 saal, sir dard"),
+    ]
+    extracted = PostCallExtract(
+        patient_name="Priya",
+        patient_age=28,
+        address=None,
+        guardian_name=None,
+        category_key="general_medicine",
+        category_label="General Medicine",
+        qa_log=[ExtractedQA(question="Naam?", answer="Priya, 28 saal, sir dard")],
+        flags=[],
+    )
+    with patch(
+        "app.ticketing.post_call_extract.llm.complete_structured",
+        AsyncMock(return_value=extracted),
+    ):
+        with patch(
+            "app.ticketing.post_call_extract.SummarizationService.summarize",
+            AsyncMock(return_value={"assessment": "headache"}),
+        ):
+            result = await run_post_call_extract(session, _CATEGORIES)
+
+    stored = await ps.ticket_patient_store.get(patient.patient_id)
+    assert stored is not None
+    assert stored.address is None
+    assert stored.guardian_name is None
+    assert result.address is None
+    assert result.guardian_name is None

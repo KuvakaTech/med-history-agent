@@ -238,6 +238,10 @@ class TicketVoiceSession:
             
             if done_data.get("patient_age"):
                 self._patient_age = str(done_data["patient_age"])
+            if done_data.get("patient_address"):
+                self.session.address = done_data["patient_address"]
+            if done_data.get("guardian_name"):
+                self.session.guardian_name = done_data["guardian_name"]
 
             # Handle category result. Accept ANY concrete guess (high or low
             # confidence) as long as it's a real category for this hospital —
@@ -269,12 +273,24 @@ class TicketVoiceSession:
             # we're genuinely on the last allowed turn.
             name_known = self._patient_name not in ("the patient", "", None)
             age_known = self._patient_age != "unknown"
-            info_complete = name_known and age_known and bool(self._category_key)
+            identity_filled = (
+                name_known
+                and age_known
+                and bool((self.session.address or "").strip())
+                and bool((self.session.guardian_name or "").strip())
+            )
+            # Do not trust is_complete on turn 0–1. After identity questions have
+            # had a chance (name, age, address, guardian), allow skip-and-proceed.
+            asked_identity = turn_idx >= 4
+            info_complete = bool(self._category_key) and (
+                identity_filled
+                or (asked_identity and bool(done_data.get("is_complete")))
+            )
             is_last_turn = turn_idx >= MAX_TRIAGE_TURNS - 1
 
             if info_complete or is_last_turn:
                 if not self._category_key:
-                    # Genuinely couldn't identify a category in 3 questions
+                    # Genuinely couldn't identify a category in the allowed turns
                     cats = [{"key": c.key, "label": c.label} for c in self.categories]
                     await self._send(ev.category_manual_required(cats))
                     # Wait for category_selected message while keeping things going
@@ -325,6 +341,8 @@ class TicketVoiceSession:
                     answer,
                     known_name=self._patient_name if self._patient_name not in ["the patient", "declined"] else None,
                     known_age=int(self._patient_age) if self._patient_age != "unknown" and self._patient_age.isdigit() else None,
+                    known_address=self.session.address,
+                    known_guardian=self.session.guardian_name,
                     known_category=self._category_key,
                     known_confidence="high" if self._category_key else "none",
                 ):
@@ -624,8 +642,8 @@ class TicketVoiceSession:
     async def _collect_answer_with_silence_retry(self, question: str, turn: int) -> Optional[str]:
         """Collect an answer, re-asking `question` through silence timeouts.
 
-        Returns None both when the session ended (stop/disconnect) and when
-        silence retries are exhausted -- either way the caller should stop.
+        Returns None when the session ended (stop/disconnect). Returns "" when
+        silence retries are exhausted so the caller can skip the field and proceed.
         """
         for attempt in range(_MAX_SILENCE_RETRIES + 1):
             answer = await self._collect_patient_answer()
@@ -635,12 +653,7 @@ class TicketVoiceSession:
                 return None
             if attempt < _MAX_SILENCE_RETRIES:
                 await self._speak_and_wait(question, turn)
-            else:
-                self._stopped.set()
-                await self._send_fatal(
-                    "We're having trouble hearing you. Please check your microphone and try again."
-                )
-        return None
+        return ""
 
     async def _wait_for_category_selection(self) -> Optional[dict]:
         """Wait for a category_selected control frame from the client."""

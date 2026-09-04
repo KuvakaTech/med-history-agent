@@ -13,6 +13,10 @@ export default function Home() {
       .then(async (token) => {
         try {
           const payload = JSON.parse(atob(token.split(".")[1]));
+          if (payload.role === "doctor") {
+            router.replace(payload.hospital_id ? "/admin" : "/dashboard");
+            return;
+          }
           if (payload.role === "hospital_admin" || payload.role === "super_admin") {
             const hospital = await adminApi.getCurrentHospital(token, payload.hospital_id);
             router.replace(`/checkin/${hospital.slug}/`);

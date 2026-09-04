@@ -8,6 +8,7 @@ export interface TicketCategory {
 export interface StartSessionResponse {
   session_id: string;
   ticket_number: string | null;
+  opd_number?: number | null;
   patient_id: string;
   language: string;
   phase: string;
@@ -16,7 +17,10 @@ export interface StartSessionResponse {
 
 export interface SessionResultResponse {
   session_id: string;
-  ticket_number: string | null;   // e.g. "TKT-000042" — the printable receipt ID
+  ticket_number: string | null;
+  opd_number?: number | null;
+  opd_date_ist?: string | null;
+  collect_caste?: boolean;
   phase: string;
   status: string;
   category: { key: string; label: string; source: "auto" | "manual" } | null;
@@ -29,6 +33,9 @@ export interface SessionResultResponse {
     name: string | null;
     age: number | null;
     gender: string | null;
+    caste: string | null;
+    address?: string | null;
+    guardian_name?: string | null;
     phone: string;
   } | null;
   hospital_name: string | null;
@@ -89,12 +96,15 @@ export type TicketWSEvent =
 export interface AdminSession {
   session_id: string;
   ticket_number: string | null;
+  opd_number?: number | null;
   hospital_id: string;
   patient_id: string;
   phase: string;
   status: string;
   category: { key: string; label: string; source: string } | null;
   language: string;
+  gender?: string;
+  caste?: string | null;
   turn_count: number;
   started_at: string | null;
   ended_at: string | null;
@@ -111,4 +121,6 @@ export interface Hospital {
   name: string;
   default_language: string;
   created_at: string;
+  has_kiosk_pin?: boolean;
+  collect_caste?: boolean;
 }

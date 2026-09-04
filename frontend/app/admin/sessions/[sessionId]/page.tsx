@@ -9,6 +9,7 @@ import clsx from "clsx";
 interface DetailSession {
   session_id: string;
   ticket_number: string | null;
+  opd_number?: number | null;
   hospital_id: string;
   patient_id: string;
   phase: string;
@@ -21,6 +22,8 @@ interface DetailSession {
   ended_at_ist: string | null;
   deleted_at_ist: string | null;
   deleted_at: string | null;
+  address?: string | null;
+  guardian_name?: string | null;
   flags: TicketFlag[];
   qa_log: Array<{ question_id: string; question_text: string; answer: string }>;
   summary: Record<string, unknown> | null;
@@ -29,6 +32,9 @@ interface DetailSession {
     name: string | null;
     age: number | null;
     gender: string | null;
+    caste?: string | null;
+    address?: string | null;
+    guardian_name?: string | null;
     phone: string;
   } | null;
 }
@@ -125,10 +131,24 @@ export default function SessionDetailPage() {
           {/* Ticket number banner */}
           {session.ticket_number && (
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <p className="text-xs text-gray-400 uppercase tracking-wide">Ticket Number</p>
-              <p className="text-2xl font-black font-mono text-brand tracking-tight">
-                {session.ticket_number}
-              </p>
+              <div>
+                {session.opd_number != null && (
+                  <>
+                    <p className="text-xs text-gray-400 uppercase tracking-wide">OPD Number</p>
+                    <p className="text-3xl font-black font-mono text-brand tracking-tight">
+                      {session.opd_number}
+                    </p>
+                  </>
+                )}
+                <p className="text-[11px] text-gray-400 font-mono mt-1">
+                  Ticket {session.ticket_number}
+                </p>
+              </div>
+              {session.started_at_ist && (
+                <p className="text-xs text-gray-500">
+                  {session.started_at_ist.slice(0, 10)}
+                </p>
+              )}
             </div>
           )}
 
@@ -144,9 +164,31 @@ export default function SessionDetailPage() {
                 {session.patient?.gender && (
                   <MetaBadge label="Gender" value={session.patient.gender} />
                 )}
+                {session.patient?.caste && (
+                  <MetaBadge
+                    label="Caste"
+                    value={
+                      session.patient.caste === "obc"
+                        ? "OBC"
+                        : session.patient.caste === "sc"
+                        ? "SC"
+                        : session.patient.caste === "st"
+                        ? "ST"
+                        : "General"
+                    }
+                  />
+                )}
                 {session.patient?.phone && (
                   <MetaBadge label="Phone" value={session.patient.phone} />
                 )}
+                <MetaBadge
+                  label="Address"
+                  value={session.address || session.patient?.address || ""}
+                />
+                <MetaBadge
+                  label="Guardian"
+                  value={session.guardian_name || session.patient?.guardian_name || ""}
+                />
                 {session.category && (
                   <span className="px-2 py-0.5 bg-brand-light text-brand text-xs font-semibold rounded-full">
                     {session.category.label}

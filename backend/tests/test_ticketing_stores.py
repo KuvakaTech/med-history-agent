@@ -49,6 +49,7 @@ def isolate_ticketing_stores(monkeypatch):
     ss._mem_by_ticket.clear()
     ss._mongo_write_failed = True
     ss._local_counter = 0
+    ss._local_opd.clear()
 
     hs._mem_hospitals.clear()
     hs._mem_categories.clear()
@@ -63,6 +64,7 @@ def isolate_ticketing_stores(monkeypatch):
     ss._mem_by_ticket.clear()
     ss._mongo_write_failed = False
     ss._local_counter = 0
+    ss._local_opd.clear()
     hs._mem_hospitals.clear()
     hs._mem_categories.clear()
     hs._mongo_write_failed = False
@@ -150,6 +152,36 @@ async def test_session_create_assigns_ticket_number():
     await ticket_session_store.create(s)
     assert s.ticket_number is not None
     assert s.ticket_number.startswith("TKT-")
+    assert s.opd_number == 1
+
+
+@pytest.mark.asyncio
+async def test_opd_numbers_increment_per_hospital_per_day():
+    from app.ticketing.session_store import ticket_session_store
+    a1 = TicketSession(hospital_id="h1", patient_id="p1")
+    a2 = TicketSession(hospital_id="h1", patient_id="p2")
+    b1 = TicketSession(hospital_id="h2", patient_id="p3")
+    await ticket_session_store.create(a1)
+    await ticket_session_store.create(a2)
+    await ticket_session_store.create(b1)
+    assert a1.opd_number == 1
+    assert a2.opd_number == 2
+    assert b1.opd_number == 1
+
+
+@pytest.mark.asyncio
+async def test_opd_number_resets_on_new_date(monkeypatch):
+    from app.ticketing import session_store as ss
+
+    monkeypatch.setattr(ss, "_ist_date_key", lambda: "20260903")
+    s1 = TicketSession(hospital_id="h1", patient_id="p1")
+    await ss.ticket_session_store.create(s1)
+    assert s1.opd_number == 1
+
+    monkeypatch.setattr(ss, "_ist_date_key", lambda: "20260904")
+    s2 = TicketSession(hospital_id="h1", patient_id="p2")
+    await ss.ticket_session_store.create(s2)
+    assert s2.opd_number == 1
 
 
 @pytest.mark.asyncio
@@ -400,3 +432,39 @@ async def test_list_categories_active_only_excludes_inactive():
     inactive_cats = await hospital_store.list_categories(h.hospital_id, active_only=False)
     assert all(c.active for c in active_cats)
     assert len(inactive_cats) > len(active_cats)
+
+
+@pytest.mark.asyncio
+async def test_set_and_verify_kiosk_pin():
+    from app.ticketing.hospital_store import hospital_store
+    from app.ticketing.models import hospital_public_dict
+
+    h = Hospital(slug="pin-store-test", name="PIN Test")
+    await hospital_store.create(h)
+    assert hospital_store.verify_kiosk_pin(h, "1234") is False
+
+    updated = await hospital_store.set_kiosk_pin(h.hospital_id, "1234")
+    assert updated is not None
+    assert hospital_store.verify_kiosk_pin(updated, "1234") is True
+    assert hospital_store.verify_kiosk_pin(updated, "0000") is False
+
+    public = hospital_public_dict(updated)
+    assert "kiosk_pin_hash" not in public
+    assert public["has_kiosk_pin"] is True
+
+
+@pytest.mark.asyncio
+async def test_set_collect_caste():
+    from app.ticketing.hospital_store import hospital_store
+    from app.ticketing.models import hospital_public_dict
+
+    h = Hospital(slug="caste-store-test", name="Caste Test")
+    await hospital_store.create(h)
+    assert h.collect_caste is False
+
+    updated = await hospital_store.set_collect_caste(h.hospital_id, True)
+    assert updated is not None
+    assert updated.collect_caste is True
+    public = hospital_public_dict(updated)
+    assert public["collect_caste"] is True
+    assert "kiosk_pin_hash" not in public

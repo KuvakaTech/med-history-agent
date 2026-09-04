@@ -59,6 +59,9 @@ def test_ticket_patient_defaults():
     assert p.name is None
     assert p.age is None
     assert p.gender is None
+    assert p.caste is None
+    assert p.address is None
+    assert p.guardian_name is None
     assert p.patient_id  # UUID assigned
 
 
@@ -71,6 +74,7 @@ def test_ticket_session_defaults():
     assert s.status == "active"
     assert s.deleted_at is None
     assert s.ticket_number is None  # assigned by store, not constructor
+    assert s.opd_number is None
     assert s.turn_count == 0
     assert s.qa_log == []
     assert s.flags == []
@@ -126,6 +130,8 @@ def test_hospital_defaults():
     h = Hospital(slug="aiims-delhi", name="AIIMS Delhi")
     assert h.default_language == "hi"
     assert h.hospital_id  # UUID assigned
+    assert h.kiosk_pin_hash is None
+    assert h.collect_caste is False
 
 
 def test_ticket_category_defaults():

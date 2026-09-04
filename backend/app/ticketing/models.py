@@ -24,6 +24,9 @@ def to_ist_str(dt: Optional[datetime]) -> Optional[str]:
     return ist.strftime("%Y-%m-%d %H:%M:%S IST")
 
 
+# Stored on session/patient when the hospital collects caste at check-in.
+CASTE_VALUES = frozenset({"general", "obc", "sc", "st"})
+
 # ── Hospital ───────────────────────────────────────────────────
 
 class Hospital(BaseModel):
@@ -31,7 +34,21 @@ class Hospital(BaseModel):
     slug: str  # unique, URL-facing
     name: str
     default_language: str = "hi"  # Hindi default
+    kiosk_pin_hash: Optional[str] = None  # bcrypt; never returned by APIs
+    collect_caste: bool = False  # show caste step on check-in
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+def hospital_public_dict(hospital: Hospital | dict) -> dict:
+    """API-safe hospital payload — PIN hash stripped, has_kiosk_pin exposed."""
+    if isinstance(hospital, Hospital):
+        data = hospital.model_dump(mode="json", exclude={"kiosk_pin_hash"})
+        data["has_kiosk_pin"] = bool(hospital.kiosk_pin_hash)
+        return data
+    out = {k: v for k, v in hospital.items() if k != "kiosk_pin_hash"}
+    out["has_kiosk_pin"] = bool(hospital.get("kiosk_pin_hash"))
+    out["collect_caste"] = bool(hospital.get("collect_caste"))
+    return out
 
 
 # ── Category ───────────────────────────────────────────────────
@@ -72,6 +89,9 @@ class TicketPatient(BaseModel):
     name: Optional[str] = None
     age: Optional[int] = None
     gender: Optional[str] = None
+    caste: Optional[str] = None  # general | obc | sc | st
+    address: Optional[str] = None
+    guardian_name: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -114,6 +134,8 @@ class TicketSession(BaseModel):
     # Human-readable auto-incremented ticket number, e.g. "TKT-000042".
     # Assigned on creation by the session store. Used as the searchable receipt ID.
     ticket_number: Optional[str] = None
+    # Per-hospital daily OPD sequence (resets to 1 each IST calendar day).
+    opd_number: Optional[int] = None
     hospital_id: str
     patient_id: str
 
@@ -126,6 +148,9 @@ class TicketSession(BaseModel):
     category: Optional[CategoryInfo] = None
     language: str = "hi"   # defaults to hospital default_language
     gender: str = "unknown"
+    caste: Optional[str] = None  # general | obc | sc | st when hospital collects it
+    address: Optional[str] = None
+    guardian_name: Optional[str] = None
 
     qa_log: list[TicketQAEntry] = []
     flags: list[TicketFlag] = []

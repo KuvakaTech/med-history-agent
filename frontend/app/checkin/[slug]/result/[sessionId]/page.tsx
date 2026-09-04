@@ -35,9 +35,15 @@ function ResultPageInner() {
     ticketApi
       .getResult(slug, sessionId)
       .then(setResult)
-      .catch((e) => setError(e.message))
+      .catch((e) => {
+        if (e.message === "kiosk_locked") {
+          router.replace(`/checkin/${slug}/start`);
+          return;
+        }
+        setError(e.message);
+      })
       .finally(() => setLoading(false));
-  }, [slug, sessionId]);
+  }, [slug, sessionId, router]);
 
   // Auto-print the receipt after a 5s countdown, only when landing here fresh
   // from a just-finished consultation (?autoprint=1). On kiosk machines
@@ -155,44 +161,60 @@ function ResultPageInner() {
 
         {/* ── Receipt / ticket header ── */}
         <div className="card print:border-0 print:shadow-none print:p-0">
-          {/* Hospital + ticket number row */}
-          <div className="flex items-start justify-between pb-4 border-b border-gray-100 print:hidden">
+          {/* Hospital + OPD header (print + screen) */}
+          <div className="flex items-start justify-between pb-4 border-b border-gray-100">
             <div>
               <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
                 {result.hospital_name || "Hospital"}
               </p>
-              <p className="text-xs text-gray-500">Pre-Visit Check-In Receipt</p>
-            </div>
-            {result.ticket_number && (
-              <div className="text-right">
-                <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Ticket No.</p>
-                <p className="text-2xl font-black text-brand tracking-tight font-mono">
-                  {result.ticket_number}
+              <p className="text-xs text-gray-500">OPD Slip</p>
+              {(result.opd_date_ist || result.started_at) && (
+                <p className="text-sm text-gray-700 mt-1">
+                  Date: {result.opd_date_ist || result.started_at?.slice(0, 10)}
                 </p>
-              </div>
-            )}
+              )}
+            </div>
+            <div className="text-right">
+              {result.opd_number != null && (
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">OPD No.</p>
+                  <p className="text-4xl font-black text-brand tracking-tight font-mono leading-none">
+                    {result.opd_number}
+                  </p>
+                </div>
+              )}
+              {result.ticket_number && (
+                <p className="text-[11px] text-gray-400 font-mono mt-2">
+                  Ticket {result.ticket_number}
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Patient details — compact single-line fields */}
-          <div className="flex flex-wrap gap-x-8 gap-y-2">
-            {result.ticket_number && (
-              <PatientField label="Ticket No." value={result.ticket_number} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 pt-4">
+            <PatientField label="Patient's Name" value={p?.name ?? ""} />
+            {result.collect_caste && (
+              <PatientField
+                label="Caste"
+                value={
+                  p?.caste === "obc"
+                    ? "OBC"
+                    : p?.caste === "sc"
+                    ? "SC"
+                    : p?.caste === "st"
+                    ? "ST"
+                    : p?.caste === "general"
+                    ? "General"
+                    : ""
+                }
+              />
             )}
-            <PatientField label="Name" value={p?.name || "Not provided"} />
-            <PatientField label="Phone" value={p?.phone || "—"} />
-            <PatientField
-              label="Age"
-              value={p?.age != null ? `${p.age} years` : "Not provided"}
-            />
-            <PatientField
-              label="Gender"
-              value={p?.gender ? capitalize(p.gender) : "Not provided"}
-            />
-            <PatientField label="Department" value={result.category?.label || "Not determined"} />
-            <PatientField
-              label="Category Source"
-              value={result.category?.source === "manual" ? "Selected manually" : "Auto-detected"}
-            />
+            <PatientField label="Age" value={p?.age != null ? String(p.age) : ""} />
+            <PatientField label="Sex" value={p?.gender ? capitalize(p.gender) : ""} />
+            <PatientField label="Address" value={p?.address ?? ""} />
+            <PatientField label="Guardian Name" value={p?.guardian_name ?? ""} />
+            <PatientField label="Phone" value={p?.phone ?? ""} />
+            <PatientField label="Department" value={result.category?.label ?? ""} />
           </div>
         </div>
 
@@ -264,9 +286,11 @@ function PatientField({
   valueClass?: string;
 }) {
   return (
-    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
-      <span className="text-xs text-gray-400 uppercase tracking-wide">{label}:</span>
-      <span className={clsx("text-sm text-gray-800 font-medium", valueClass)}>{value}</span>
+    <span className="inline-flex items-baseline gap-1.5 min-w-0">
+      <span className="text-xs text-gray-400 uppercase tracking-wide shrink-0">{label}:</span>
+      <span className={clsx("text-sm text-gray-800 font-medium min-h-[1.25rem]", valueClass)}>
+        {value}
+      </span>
     </span>
   );
 }
