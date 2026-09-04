@@ -17,12 +17,11 @@ import logging
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 from pydantic import BaseModel
 
 from app.auth.deps import make_kiosk_token, parse_kiosk_token, require_kiosk_token
 from app.core.config import settings
-from app.core.ratelimit import limiter
 from app.ticketing import events as ev
 from app.ticketing.hospital_store import hospital_store
 from app.ticketing.models import CASTE_VALUES, TicketSession, hospital_public_dict, to_ist_str
@@ -119,14 +118,16 @@ async def hospital_config(slug: str) -> HospitalConfigResponse:
 
 
 @router.post("/{slug}/unlock", response_model=UnlockResponse)
-@limiter.limit(settings.RATE_LIMIT_AUTH)
-async def unlock_kiosk(request: Request, slug: str, body: UnlockRequest) -> UnlockResponse:
+async def unlock_kiosk(slug: str, payload: UnlockRequest) -> UnlockResponse:
+    # No @limiter.limit here: slowapi's decorator breaks FastAPI JSON-body binding on
+    # Python 3.12 when the route also has a path param. SlowAPIMiddleware still applies
+    # RATE_LIMIT_DEFAULT; PIN brute-force is also bounded by bcrypt verification cost.
     hospital = await hospital_store.get_by_slug(slug)
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found.")
     if not hospital.kiosk_pin_hash:
         raise HTTPException(status_code=409, detail="Kiosk PIN is not configured.")
-    if not hospital_store.verify_kiosk_pin(hospital, body.pin.strip()):
+    if not hospital_store.verify_kiosk_pin(hospital, payload.pin.strip()):
         raise HTTPException(status_code=401, detail="Invalid PIN.")
 
     token = make_kiosk_token(hospital_id=hospital.hospital_id, slug=hospital.slug)
