@@ -27,9 +27,50 @@ function ResultPageInner() {
   const [discarding, setDiscarding] = useState(false);
   const [discarded, setDiscarded] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [printScale, setPrintScale] = useState(1);
   const printRef = useRef<HTMLDivElement>(null);
+  const printContentRef = useRef<HTMLDivElement>(null);
+  const pageRulerRef = useRef<HTMLDivElement>(null);
   const printTriggeredRef = useRef(false);
   const countdownStartedRef = useRef(false);
+
+  // Shrink the printed content (via CSS transform, since Tailwind's rem-based
+  // text sizes ignore a parent font-size override) so it always occupies at
+  // most half of one printed page — and clamp the page itself to exactly one
+  // page tall so it can never spill onto a second page, no matter how much
+  // clinical data there is. `pageRulerRef` is a hidden 100vh element whose
+  // measured height (only meaningful once @media print is active) tells us
+  // the true pixel height of one physical page.
+  useEffect(() => {
+    const fitToPage = () => {
+      const content = printContentRef.current;
+      const ruler = pageRulerRef.current;
+      if (!content || !ruler) return;
+      content.style.transform = "";
+      content.style.width = "";
+      const naturalHeight = content.scrollHeight;
+      const onePagePx = ruler.getBoundingClientRect().height || window.innerHeight;
+      const targetHeight = onePagePx * 0.5;
+      const scale =
+        naturalHeight > targetHeight
+          ? Math.max(targetHeight / naturalHeight, 0.4)
+          : 1;
+      setPrintScale(scale);
+    };
+    const reset = () => {
+      setPrintScale(1);
+    };
+    const mql = window.matchMedia("print");
+    const handleChange = (e: MediaQueryListEvent) => (e.matches ? fitToPage() : reset());
+    mql.addEventListener("change", handleChange);
+    window.addEventListener("beforeprint", fitToPage);
+    window.addEventListener("afterprint", reset);
+    return () => {
+      mql.removeEventListener("change", handleChange);
+      window.removeEventListener("beforeprint", fitToPage);
+      window.removeEventListener("afterprint", reset);
+    };
+  }, []);
 
   useEffect(() => {
     ticketApi
@@ -159,6 +200,33 @@ function ResultPageInner() {
           </div>
         )}
 
+        {/* Hidden ruler — its rendered height (only meaningful once @media
+            print is active) tells us the true pixel height of one page. */}
+        <div
+          ref={pageRulerRef}
+          className="hidden print:block"
+          style={{ height: "100vh", position: "fixed", top: 0, left: 0, width: 1, visibility: "hidden", pointerEvents: "none" }}
+          aria-hidden="true"
+        />
+
+        {/* Print-only: clamp to exactly one page so content can never spill
+            onto a second page — the shrunk content (see printContentRef)
+            occupies at most half of it, leaving the rest blank. */}
+        <div className="print:h-screen print:overflow-hidden space-y-5">
+        <div
+          ref={printContentRef}
+          className="space-y-5"
+          style={
+            printScale !== 1
+              ? {
+                  transform: `scale(${printScale})`,
+                  transformOrigin: "top left",
+                  width: `${100 / printScale}%`,
+                }
+              : undefined
+          }
+        >
+
         {/* ── Receipt / ticket header ── */}
         <div className="card print:border-0 print:shadow-none print:p-0">
           {/* Hospital + OPD header (print + screen) */}
@@ -269,8 +337,8 @@ function ResultPageInner() {
           </div>
         )}
 
-        {/* ── Blank space for the doctor to write on — print only ── */}
-        <div className="hidden print:block" style={{ height: "50vh" }} />
+        </div>
+        </div>
 
       </div>
     </main>
