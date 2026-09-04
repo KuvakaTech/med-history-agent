@@ -269,6 +269,9 @@ function ResultPageInner() {
           </div>
         )}
 
+        {/* ── Blank space for the doctor to write on — print only ── */}
+        <div className="hidden print:block" style={{ height: "50vh" }} />
+
       </div>
     </main>
   );

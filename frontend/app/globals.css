@@ -61,11 +61,8 @@
   }
 }
 
-/* ── Print pagination — reserve letterhead space on every page ── */
+/* ── Print pagination ── */
 @media print {
-  @page {
-    margin-top: 1.5in;
-  }
   html {
     font-size: 13px;
   }
