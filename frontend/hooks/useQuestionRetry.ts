@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export const MAX_QUESTION_FAILURES = 3;
-export const VOICE_INACTIVITY_MS = 15_000;
+export const VOICE_INACTIVITY_MS = 5_000;
 
 export const SILENCE_RETRY_MESSAGE =
   "We didn't hear a response. Please tap Speak and answer when ready.";
