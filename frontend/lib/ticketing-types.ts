@@ -1,5 +1,27 @@
 // Types for the ticketing (pre-visit) flow
 
+export const VISIT_TYPES = [
+  { value: "opd", label: "ओपीडी", sub: "OPD", fee: 10 },
+  { value: "ipd", label: "आईपीडी", sub: "IPD", fee: 30 },
+] as const;
+
+export function visitTypeFee(type: string | null | undefined): number | null {
+  const match = VISIT_TYPES.find((v) => v.value === type);
+  return match?.fee ?? null;
+}
+
+export function visitTypeLabel(type: string | null | undefined): string {
+  const match = VISIT_TYPES.find((v) => v.value === type);
+  return match?.sub ?? (type ? type.toUpperCase() : "");
+}
+
+export function visitTypeBadge(type: string | null | undefined): string {
+  const label = visitTypeLabel(type);
+  const fee = visitTypeFee(type);
+  if (!label) return "";
+  return fee != null ? `${label} · ₹${fee}` : label;
+}
+
 export interface TicketCategory {
   key: string;
   label: string;
@@ -20,6 +42,7 @@ export interface SessionResultResponse {
   ticket_number: string | null;
   opd_number?: number | null;
   opd_date_ist?: string | null;
+  visit_type?: string | null;
   collect_caste?: boolean;
   phase: string;
   status: string;
@@ -104,6 +127,7 @@ export interface AdminSession {
   category: { key: string; label: string; source: string } | null;
   language: string;
   gender?: string;
+  visit_type?: string | null;
   caste?: string | null;
   turn_count: number;
   started_at: string | null;

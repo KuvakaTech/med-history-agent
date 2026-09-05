@@ -139,8 +139,7 @@ def test_triage_prompt_never_asks_department():
     assert "finish_triage" in text
     assert "orthopedics" in text
     assert "किस विभाग में जाना चाहती हैं?" in text
-    assert "Kya aapke saath koi aaya hai?" in text
-    assert "Never say \"guardian\"" in text
+    assert "Kya aap apne Pita ya अभिभावक ka naam bata sake hai" in text
     assert "dohra sakti" in text
 
 
@@ -149,7 +148,6 @@ def test_triage_prompt_forbids_asking_permission_to_repeat_name():
     text = triage_system_instruction(cats, "hi", "female")
     assert "Aapka naam Priya hai, theek hai?" in text
     assert "NEVER ask permission to repeat" in text
-    assert "Unka naam kya hai?" in text
 
 
 def test_merge_transcript_chunk_handles_cumulative_and_repeats():

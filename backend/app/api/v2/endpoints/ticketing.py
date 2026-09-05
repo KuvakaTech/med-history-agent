@@ -24,7 +24,7 @@ from app.auth.deps import make_kiosk_token, parse_kiosk_token, require_kiosk_tok
 from app.core.config import settings
 from app.ticketing import events as ev
 from app.ticketing.hospital_store import hospital_store
-from app.ticketing.models import CASTE_VALUES, TicketSession, hospital_public_dict, to_ist_str
+from app.ticketing.models import CASTE_VALUES, VISIT_TYPE_VALUES, TicketSession, hospital_public_dict, to_ist_str
 from app.ticketing.patient_store import ticket_patient_store
 from app.ticketing.session_store import ticket_session_store
 from app.ticketing.voice_session import TicketVoiceSession
@@ -39,6 +39,7 @@ log = logging.getLogger(__name__)
 class StartSessionRequest(BaseModel):
     phone: str
     language: Optional[str] = None  # defaults to hospital.default_language
+    visit_type: str
     gender: str = "unknown"
     caste: Optional[str] = None  # required when hospital.collect_caste
 
@@ -88,6 +89,7 @@ class SessionResultResponse(BaseModel):
     ticket_number: Optional[str] = None  # human-readable receipt ID, e.g. TKT-000042
     opd_number: Optional[int] = None
     opd_date_ist: Optional[str] = None  # YYYY-MM-DD IST visit date
+    visit_type: Optional[str] = None
     collect_caste: bool = False
     phase: str
     status: str
@@ -158,6 +160,10 @@ async def start_session(
 
     language = (body.language or hospital.default_language).strip().lower()
 
+    visit_type = body.visit_type.strip().lower()
+    if visit_type not in VISIT_TYPE_VALUES:
+        raise HTTPException(status_code=422, detail="Visit type is required (opd or ipd).")
+
     caste: Optional[str] = None
     if hospital.collect_caste:
         raw = (body.caste or "").strip().lower()
@@ -178,6 +184,7 @@ async def start_session(
         patient_id=patient.patient_id,
         language=language,
         gender=body.gender,
+        visit_type=visit_type,
         caste=caste,
         phase="triage",
         status="active",
@@ -236,6 +243,7 @@ async def get_session_result(
         ticket_number=session.ticket_number,
         opd_number=session.opd_number,
         opd_date_ist=started_ist[:10] if started_ist else None,
+        visit_type=session.visit_type,
         collect_caste=hospital.collect_caste,
         phase=session.phase,
         status=session.status,

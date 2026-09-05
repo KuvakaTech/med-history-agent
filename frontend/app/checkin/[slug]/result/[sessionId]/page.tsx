@@ -3,6 +3,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ticketApi } from "@/lib/ticketing-api";
 import type { SessionResultResponse, SOAPSummary, TicketFlag } from "@/lib/ticketing-types";
+import { visitTypeFee, visitTypeLabel } from "@/lib/ticketing-types";
 import clsx from "clsx";
 
 export default function ResultPage() {
@@ -145,6 +146,9 @@ function ResultPageInner() {
     (f) => f.flag_type !== "CRITICAL_RED_FLAG" && f.flag_type !== "RED_FLAG"
   );
   const p = result.patient;
+  const slipTitle = result.visit_type === "ipd" ? "IPD Slip" : "OPD Slip";
+  const numberLabel = result.visit_type === "ipd" ? "IPD No." : "OPD No.";
+  const fee = visitTypeFee(result.visit_type);
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -235,7 +239,7 @@ function ResultPageInner() {
               <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
                 {result.hospital_name || "Hospital"}
               </p>
-              <p className="text-xs text-gray-500">OPD Slip</p>
+              <p className="text-xs text-gray-500">{slipTitle}</p>
               {(result.opd_date_ist || result.started_at) && (
                 <p className="text-sm text-gray-700 mt-1">
                   Date: {result.opd_date_ist || result.started_at?.slice(0, 10)}
@@ -245,7 +249,7 @@ function ResultPageInner() {
             <div className="text-right">
               {result.opd_number != null && (
                 <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">OPD No.</p>
+                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">{numberLabel}</p>
                   <p className="text-4xl font-black text-brand tracking-tight font-mono leading-none">
                     {result.opd_number}
                   </p>
@@ -279,6 +283,8 @@ function ResultPageInner() {
             )}
             <PatientField label="Age" value={p?.age != null ? String(p.age) : ""} />
             <PatientField label="Sex" value={p?.gender ? capitalize(p.gender) : ""} />
+            <PatientField label="Visit Type" value={visitTypeLabel(result.visit_type)} />
+            <PatientField label="Fee" value={fee != null ? `₹${fee}` : ""} />
             <PatientField label="Address" value={p?.address ?? ""} />
             <PatientField label="Guardian Name" value={p?.guardian_name ?? ""} />
             <PatientField label="Phone" value={p?.phone ?? ""} />

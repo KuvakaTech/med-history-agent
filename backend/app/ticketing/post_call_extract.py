@@ -54,11 +54,11 @@ _EXTRACT_PROMPT = """\
 Extract a structured clinical intake record from this hospital check-in voice transcript.
 
 Rules:
-- Use ONLY what is explicitly said. Do not invent symptoms, names, ages, addresses, companion names, or departments.
+- Use ONLY what is explicitly said. Do not invent symptoms, names, ages, addresses, pita/अभिभावक names, or departments.
 - patient_name: string if clearly shared, null if declined or never given.
 - patient_age: integer years if stated, else null.
 - address: string if clearly shared, else null.
-- guardian_name: the accompanying person's actual name if clearly shared, else null. A relation-only word (bhaiya, didi, mummy) is not a name.
+- guardian_name: father's or अभिभावक's actual name if clearly shared, else null.
 - category_key: one of the allowed keys below that best fits the reason for visit, or null.
 - category_label: matching human-readable label, or null.
 - qa_log: reconstruct agent questions and patient answers as pairs, in order. Skip empty turns.

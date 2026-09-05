@@ -241,8 +241,15 @@ export const api = {
     sessionId: string,
     answer: string,
     onToken: (text: string) => void,
-    onDone: (data: { next_question: string | null; history_complete: boolean; new_flags: unknown[] }) => void,
+    onDone: (data: {
+      next_question: string | null;
+      history_complete: boolean;
+      new_flags: unknown[];
+      retry_same_question?: boolean;
+      retry_message?: string | null;
+    }) => void,
     onError?: (msg: string) => void,
+    onRetry?: (message: string) => void,
   ): (() => void) => {
     const ctrl = new AbortController();
     (async () => {
@@ -268,6 +275,7 @@ export const api = {
             if (!line.startsWith("data: ")) continue;
             const evt = JSON.parse(line.slice(6));
             if (evt.event === "token") onToken(evt.text ?? "");
+            else if (evt.event === "retry") onRetry?.(evt.message ?? "We couldn't understand that. Please try again.");
             else if (evt.event === "done") onDone(evt);
             else if (evt.event === "error") onError?.(evt.message ?? "Stream error");
           }

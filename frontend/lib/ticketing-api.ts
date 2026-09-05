@@ -92,13 +92,20 @@ export const ticketApi = {
     slug: string,
     phone: string,
     language: string,
+    visitType: string,
     gender: string,
     caste?: string
   ): Promise<StartSessionResponse> => {
     const res = await fetch(`${API_V2}/t/${slug}/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...kioskAuthHeaders(slug) },
-      body: JSON.stringify({ phone, language, gender, ...(caste ? { caste } : {}) }),
+      body: JSON.stringify({
+        phone,
+        language,
+        visit_type: visitType,
+        gender,
+        ...(caste ? { caste } : {}),
+      }),
     });
     if (!res.ok) return parseTicketError(res, slug);
     return res.json();

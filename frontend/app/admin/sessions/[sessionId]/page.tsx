@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { adminApi } from "@/lib/ticketing-api";
 import type { Hospital, TicketFlag } from "@/lib/ticketing-types";
+import { visitTypeBadge } from "@/lib/ticketing-types";
 import { getToken } from "@/lib/api";
 import clsx from "clsx";
 
@@ -17,6 +18,7 @@ interface DetailSession {
   category: { key: string; label: string; source: string } | null;
   language: string;
   gender: string;
+  visit_type?: string | null;
   turn_count: number;
   started_at_ist: string | null;
   ended_at_ist: string | null;
@@ -184,6 +186,9 @@ export default function SessionDetailPage() {
                 )}
                 {session.patient?.gender && (
                   <MetaBadge label="Gender" value={session.patient.gender} />
+                )}
+                {session.visit_type && (
+                  <MetaBadge label="Visit" value={visitTypeBadge(session.visit_type)} />
                 )}
                 {session.patient?.caste && (
                   <MetaBadge

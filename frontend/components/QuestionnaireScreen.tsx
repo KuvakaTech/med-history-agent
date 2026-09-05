@@ -6,6 +6,12 @@ import { api } from "@/lib/api";
 import VoiceRecorder from "./VoiceRecorder";
 import FlagBadge from "./FlagBadge";
 import AIAvatar, { SiriWaveform } from "./AIAvatar";
+import {
+  SILENCE_RETRY_MESSAGE,
+  UNCLEAR_RETRY_MESSAGE,
+  useQuestionRetry,
+  VOICE_INACTIVITY_MS,
+} from "@/hooks/useQuestionRetry";
 import clsx from "clsx";
 
 interface Props {
@@ -144,10 +150,22 @@ export default function QuestionnaireScreen({
   const [streamingQuestion, setStreamingQuestion] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [muted, setMuted] = useState(false);
+  const [voiceStage, setVoiceStage] = useState<"idle" | "connecting" | "recording" | "transcribing" | "thinking" | "error">("idle");
   const abortRef = useRef<(() => void) | null>(null);
+  const autoSkippingRef = useRef(false);
 
   const tts = useSentenceTTS(muted);
   const skipNextTTSRef = useRef(false);
+  const submitTextRef = useRef<(answer: string) => void>(() => {});
+
+  const { retryMessage, autoSkipNotice, handleFailure, handleSuccess } = useQuestionRetry(
+    question,
+    () => {
+      autoSkippingRef.current = true;
+      submitTextRef.current("I'd prefer to skip this question.");
+    },
+    (text) => tts.replay(text),
+  );
 
   useEffect(() => {
     if (streamingQuestion !== null) return;
@@ -176,6 +194,18 @@ export default function QuestionnaireScreen({
         tts.onToken(token);
       },
       (data) => {
+        if (data.retry_same_question) {
+          setStreamingQuestion(null);
+          setSubmitting(false);
+          if (!autoSkippingRef.current) {
+            handleFailure(data.retry_message ?? UNCLEAR_RETRY_MESSAGE);
+          } else {
+            autoSkippingRef.current = false;
+          }
+          return;
+        }
+        handleSuccess();
+        autoSkippingRef.current = false;
         if (data.history_complete) {
           tts.stopAll();
         } else {
@@ -197,19 +227,38 @@ export default function QuestionnaireScreen({
         setSubmitting(false);
         setStreamingQuestion(null);
       },
+      (message) => {
+        setStreamingQuestion(null);
+        setSubmitting(false);
+        if (!autoSkippingRef.current) {
+          handleFailure(message);
+        } else {
+          autoSkippingRef.current = false;
+        }
+      },
     );
     abortRef.current = abort;
-  }, [submitting, sessionId, tts, onStreamedAnswer]);
+  }, [submitting, sessionId, tts, onStreamedAnswer, handleFailure, handleSuccess]);
+
+  submitTextRef.current = submitText;
 
   const skipQuestion = useCallback(() => {
+    autoSkippingRef.current = false;
     submitText("I'd prefer to skip this question.");
   }, [submitText]);
 
   const handleVoiceAnswer = useCallback((resp: AnswerResponse & { transcript: string }) => {
+    handleSuccess();
+    autoSkippingRef.current = false;
     if (resp.history_complete) tts.stopAll();
     else skipNextTTSRef.current = true;
     onVoiceAnswer(resp);
-  }, [tts, onVoiceAnswer]);
+  }, [tts, onVoiceAnswer, handleSuccess]);
+
+  const handleVoiceRetry = useCallback((message: string) => {
+    setSubmitting(false);
+    handleFailure(message);
+  }, [handleFailure]);
 
   const handleVoiceToken = useCallback((token: string) => { tts.onToken(token); }, [tts]);
 
@@ -217,6 +266,14 @@ export default function QuestionnaireScreen({
     if (!historyComplete) tts.onStreamEnd(fullText);
     else tts.stopAll();
   }, [tts]);
+
+  useEffect(() => {
+    if (voiceStage !== "idle" || submitting || tts.speaking || !question) return;
+    const timer = setTimeout(() => {
+      handleFailure(SILENCE_RETRY_MESSAGE);
+    }, VOICE_INACTIVITY_MS);
+    return () => clearTimeout(timer);
+  }, [voiceStage, submitting, tts.speaking, question, handleFailure]);
 
   useEffect(() => () => { abortRef.current?.(); }, []);
 
@@ -292,6 +349,9 @@ export default function QuestionnaireScreen({
           onAnswer={handleVoiceAnswer}
           onToken={handleVoiceToken}
           onStreamEnd={(text, done) => handleVoiceStreamEnd(text, done)}
+          onRecordingStart={() => setVoiceStage("recording")}
+          onStageChange={setVoiceStage}
+          onRetry={handleVoiceRetry}
           disabled={submitting || tts.speaking}
         />
       </div>
@@ -343,6 +403,18 @@ export default function QuestionnaireScreen({
       {recentFlags.length > 0 && (
         <div className="space-y-2">
           {recentFlags.map((f, i) => <FlagBadge key={i} flag={f} />)}
+        </div>
+      )}
+
+      {autoSkipNotice && (
+        <div className="bg-gray-50 border border-gray-200 text-gray-600 rounded-lg px-4 py-3 text-sm font-medium">
+          Skipping this question…
+        </div>
+      )}
+
+      {retryMessage && !autoSkipNotice && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm font-medium">
+          {retryMessage}
         </div>
       )}
 

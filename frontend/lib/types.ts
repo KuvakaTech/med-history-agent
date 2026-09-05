@@ -57,6 +57,8 @@ export interface AnswerResponse {
   new_flags: ClinicalFlag[];
   next_question: string | null;
   history_complete: boolean;
+  retry_same_question?: boolean;
+  retry_message?: string | null;
 }
 
 export interface QALogResponse {
@@ -83,7 +85,7 @@ export interface PipelineEvent {
 }
 
 export interface VoiceStreamEvent {
-  type: "ready" | "ack" | "processing" | "transcript" | "token" | "done" | "answer" | "error";
+  type: "ready" | "ack" | "processing" | "transcript" | "token" | "done" | "answer" | "error" | "retry";
   bytes?: number;
   stage?: string;
   text?: string;

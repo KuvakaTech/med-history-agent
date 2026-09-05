@@ -148,12 +148,12 @@ def triage_tools() -> list[Tool]:
                     name="finish_triage",
                     description=(
                         "Call once identity fields have been asked or skipped "
-                        "(name confirmed or given up, age, address, who came with them) "
+                        "(name confirmed or given up, age, address, "
+                        "father's / अभिभावक's name) "
                         "AND you have enough of their reason for visiting to route "
                         "them to a department. Do not call before asking about why "
                         "they came in. Never ask the patient which department they want. "
-                        "Never invent missing identity fields. Never say the word guardian "
-                        "to the patient."
+                        "Never invent missing identity fields."
                     ),
                     parameters=Schema(
                         type=Type.OBJECT,
@@ -173,9 +173,8 @@ def triage_tools() -> list[Tool]:
                             "guardian_name": Schema(
                                 type=Type.STRING,
                                 description=(
-                                    "Name of the person who came with the patient "
-                                    "(not a relation-only word like bhaiya/didi). "
-                                    "Omit if they came alone or skipped."
+                                    "Father's or अभिभावक's actual name if clearly given. "
+                                    "Omit if skipped."
                                 ),
                             ),
                             "routing_summary": Schema(
