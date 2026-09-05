@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { adminApi } from "@/lib/ticketing-api";
 import type { Hospital, TicketFlag } from "@/lib/ticketing-types";
@@ -51,7 +51,11 @@ export default function SessionDetailPage() {
   const [error, setError] = useState("");
   const [userRole, setUserRole] = useState("");
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
-  const [hospitalSlug, setHospitalSlug] = useState("");
+  const [hospitalName, setHospitalName] = useState("");
+
+  const [printScale, setPrintScale] = useState(1);
+  const printContentRef = useRef<HTMLDivElement>(null);
+  const pageRulerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getToken()
@@ -71,11 +75,10 @@ export default function SessionDetailPage() {
         ]);
         setSession(sessionData as unknown as DetailSession);
 
-        // Resolve the hospital's public slug so we can link to the same
-        // printable OPD slip patients see right after their consultation.
+        // Resolve the hospital's name for the printed report header.
         adminApi
           .getCurrentHospital(t, sessionData.hospital_id)
-          .then((h) => setHospitalSlug(h.slug))
+          .then((h) => setHospitalName(h.name))
           .catch(() => {});
       })
       .catch((e) => {
@@ -91,6 +94,42 @@ export default function SessionDetailPage() {
 
   const sessionHospital = hospitals.find((h) => h.hospital_id === session?.hospital_id);
 
+  // Shrink the printed report (via CSS transform, since Tailwind's rem-based
+  // text sizes ignore a parent font-size override) so it always occupies at
+  // most half of one printed page — and clamp the page itself to exactly one
+  // page tall so it can never spill onto a second page, no matter how much
+  // clinical data there is. `pageRulerRef` is a hidden 100vh element whose
+  // measured height (only meaningful once @media print is active) tells us
+  // the true pixel height of one physical page.
+  useEffect(() => {
+    const fitToPage = () => {
+      const content = printContentRef.current;
+      const ruler = pageRulerRef.current;
+      if (!content || !ruler) return;
+      content.style.transform = "";
+      content.style.width = "";
+      const naturalHeight = content.scrollHeight;
+      const onePagePx = ruler.getBoundingClientRect().height || window.innerHeight;
+      const targetHeight = onePagePx * 0.5;
+      const scale =
+        naturalHeight > targetHeight
+          ? Math.max(targetHeight / naturalHeight, 0.4)
+          : 1;
+      setPrintScale(scale);
+    };
+    const reset = () => setPrintScale(1);
+    const mql = window.matchMedia("print");
+    const handleChange = (e: MediaQueryListEvent) => (e.matches ? fitToPage() : reset());
+    mql.addEventListener("change", handleChange);
+    window.addEventListener("beforeprint", fitToPage);
+    window.addEventListener("afterprint", reset);
+    return () => {
+      mql.removeEventListener("change", handleChange);
+      window.removeEventListener("beforeprint", fitToPage);
+      window.removeEventListener("afterprint", reset);
+    };
+  }, []);
+
   if (loading) return <Spinner />;
   if (error) return <p className="p-8 text-red-600 text-sm">{error}</p>;
   if (!session) return null;
@@ -103,7 +142,7 @@ export default function SessionDetailPage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-100 px-6 h-14 flex items-center justify-between sticky top-0 z-50">
+      <header className="bg-white border-b border-gray-100 px-6 h-14 flex items-center justify-between sticky top-0 z-50 print:hidden">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/admin")}
@@ -126,21 +165,106 @@ export default function SessionDetailPage() {
               {sessionHospital.name}
             </span>
           )}
-          {hospitalSlug && (
-            <button
-              type="button"
-              onClick={() =>
-                window.open(`/checkin/${hospitalSlug}/result/${sessionId}`, "_blank", "noopener,noreferrer")
-              }
-              className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
-            >
-              <span>🖨️</span> Print Report
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
+          >
+            <span>🖨️</span> Print Report
+          </button>
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6 fade-up">
+      {/* Hidden ruler — its rendered height (only meaningful once @media
+          print is active) tells us the true pixel height of one page. */}
+      <div
+        ref={pageRulerRef}
+        className="hidden print:block"
+        style={{ height: "100vh", position: "fixed", top: 0, left: 0, width: 1, visibility: "hidden", pointerEvents: "none" }}
+        aria-hidden="true"
+      />
+
+      {/* ── Printable OPD-style report — print only ── */}
+      <div className="hidden print:block print:h-screen print:overflow-hidden">
+        <div
+          ref={printContentRef}
+          className="max-w-2xl mx-auto px-4 py-8 space-y-5"
+          style={
+            printScale !== 1
+              ? {
+                  transform: `scale(${printScale})`,
+                  transformOrigin: "top left",
+                  width: `${100 / printScale}%`,
+                }
+              : undefined
+          }
+        >
+          <div className="pb-3 border-b border-gray-100">
+            <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold">
+              {hospitalName || sessionHospital?.name || "Hospital"}
+            </p>
+            <p className="text-xs text-gray-500">OPD Slip</p>
+            {session.started_at_ist && (
+              <p className="text-sm text-gray-700 mt-1">
+                Date: {session.started_at_ist.slice(0, 10)}
+              </p>
+            )}
+            {session.opd_number != null && (
+              <p className="text-2xl font-black text-brand tracking-tight font-mono mt-1">
+                OPD No. {session.opd_number}
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+            <PrintField label="Patient's Name" value={session.patient?.name ?? ""} />
+            <PrintField label="Age" value={session.patient?.age != null ? String(session.patient.age) : ""} />
+            <PrintField label="Sex" value={session.patient?.gender ?? ""} />
+            <PrintField label="Address" value={session.address || session.patient?.address || ""} />
+            <PrintField label="Guardian Name" value={session.guardian_name || session.patient?.guardian_name || ""} />
+            <PrintField label="Phone" value={session.patient?.phone ?? ""} />
+            <PrintField label="Department" value={session.category?.label ?? ""} />
+          </div>
+
+          {critical.length > 0 && (
+            <div className="space-y-2">
+              <div className="bg-red-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl">
+                🚨 Critical Alerts — Immediate Physician Review Required
+              </div>
+              {critical.map((f, i) => (
+                <div key={i} className="flag-critical">{f.description}</div>
+              ))}
+            </div>
+          )}
+
+          {redFlags.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">⚠️ Red Flags</h3>
+              {redFlags.map((f, i) => (
+                <div key={i} className="flag-red">{f.description}</div>
+              ))}
+            </div>
+          )}
+
+          {session.summary && (
+            <div className="space-y-4">
+              <h3 className="text-base font-bold text-gray-900">Clinical Summary</h3>
+              <SummaryView summary={session.summary} printMode />
+            </div>
+          )}
+
+          {others.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Notes</h3>
+              {others.map((f, i) => (
+                <div key={i} className="text-sm text-gray-800">{f.description}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6 fade-up print:hidden">
 
         {/* Discarded banner */}
         {session.deleted_at && (
@@ -326,7 +450,22 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function SummaryView({ summary }: { summary: Record<string, unknown> }) {
+function PrintField({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 min-w-0">
+      <span className="text-xs text-gray-400 uppercase tracking-wide shrink-0">{label}:</span>
+      <span className="text-sm text-gray-800 font-medium min-h-[1.25rem]">{value}</span>
+    </span>
+  );
+}
+
+function SummaryView({
+  summary,
+  printMode = false,
+}: {
+  summary: Record<string, unknown>;
+  printMode?: boolean;
+}) {
   const s = (summary.subjective || {}) as Record<string, string | null>;
   const fields = [
     ["Chief Complaint", s.chief_complaint],
@@ -337,11 +476,11 @@ function SummaryView({ summary }: { summary: Record<string, unknown> }) {
     ["Assessment", summary.assessment as string],
     ["Plan", summary.plan as string],
   ];
-  
-  const hasTranscript = Boolean(
+
+  const hasTranscript = !printMode && Boolean(
     summary.full_transcript && typeof summary.full_transcript === "string" && summary.full_transcript.trim()
   );
-  
+
   return (
     <div className="space-y-4">
       {/* SOAP Fields */}
@@ -357,7 +496,7 @@ function SummaryView({ summary }: { summary: Record<string, unknown> }) {
           ) : null
         )}
       </div>
-      
+
       {/* Full Transcript from Summary */}
       {hasTranscript && (
         <div className="border-t pt-4">
