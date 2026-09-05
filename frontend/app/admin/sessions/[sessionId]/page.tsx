@@ -49,6 +49,7 @@ export default function SessionDetailPage() {
   const [error, setError] = useState("");
   const [userRole, setUserRole] = useState("");
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
+  const [hospitalSlug, setHospitalSlug] = useState("");
 
   useEffect(() => {
     getToken()
@@ -67,6 +68,13 @@ export default function SessionDetailPage() {
             : Promise.resolve(),
         ]);
         setSession(sessionData as unknown as DetailSession);
+
+        // Resolve the hospital's public slug so we can link to the same
+        // printable OPD slip patients see right after their consultation.
+        adminApi
+          .getCurrentHospital(t, sessionData.hospital_id)
+          .then((h) => setHospitalSlug(h.slug))
+          .catch(() => {});
       })
       .catch((e) => {
         if (e.message?.includes("401") || e.message === "refresh_failed") {
@@ -110,11 +118,24 @@ export default function SessionDetailPage() {
           )}
         </div>
 
-        {userRole === "super_admin" && sessionHospital && (
-          <span className="text-xs font-semibold text-gray-500">
-            {sessionHospital.name}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {userRole === "super_admin" && sessionHospital && (
+            <span className="text-xs font-semibold text-gray-500">
+              {sessionHospital.name}
+            </span>
+          )}
+          {hospitalSlug && (
+            <button
+              type="button"
+              onClick={() =>
+                window.open(`/checkin/${hospitalSlug}/result/${sessionId}`, "_blank", "noopener,noreferrer")
+              }
+              className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5"
+            >
+              <span>🖨️</span> Print Report
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-6 fade-up">
