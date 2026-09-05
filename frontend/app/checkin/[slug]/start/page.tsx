@@ -6,6 +6,7 @@ import {
   getKioskToken,
   ticketApi,
 } from "@/lib/ticketing-api";
+import { VISIT_TYPES } from "@/lib/ticketing-types";
 import clsx from "clsx";
 
 // const LANGUAGES = [
@@ -34,7 +35,7 @@ const PIN_MIN_LEN = 4;
 const PIN_MAX_LEN = 8;
 const PIN_BOXES = 6; // visual slots; extra boxes appear if the PIN is longer
 
-type Step = "phone" | "gender" | "caste";
+type Step = "phone" | "visit_type" | "gender" | "caste";
 
 export default function StartPage() {
   const params = useParams();
@@ -51,12 +52,15 @@ export default function StartPage() {
 
   const [phone, setPhone] = useState("");
   const [language] = useState("hi");
+  const [visitType, setVisitType] = useState("");
   const [gender, setGender] = useState("");
   const [caste, setCaste] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const steps: Step[] = collectCaste ? ["phone", "gender", "caste"] : ["phone", "gender"];
+  const steps: Step[] = collectCaste
+    ? ["phone", "visit_type", "gender", "caste"]
+    : ["phone", "visit_type", "gender"];
   const step: Step = steps[Math.min(stepIndex, steps.length - 1)];
 
   useEffect(() => {
@@ -121,6 +125,7 @@ export default function StartPage() {
     setUnlocked(false);
     setPin("");
     setPhone("");
+    setVisitType("");
     setGender("");
     setCaste("");
     setStepIndex(0);
@@ -160,7 +165,7 @@ export default function StartPage() {
     return () => window.removeEventListener("keydown", handler);
   }, [step, phone, unlocked]);
 
-  const handleStart = async (finalGender: string, finalCaste?: string) => {
+  const handleStart = async (finalVisitType: string, finalGender: string, finalCaste?: string) => {
     const cleaned = phone.replace(/\D/g, "");
     setError("");
     setLoading(true);
@@ -169,6 +174,7 @@ export default function StartPage() {
         slug,
         cleaned,
         language,
+        finalVisitType,
         finalGender,
         collectCaste ? finalCaste : undefined
       );
@@ -378,7 +384,57 @@ export default function StartPage() {
             </div>
           )}
 
-          {/* STEP 2: Gender */}
+          {/* STEP 2: Visit type (OPD / IPD) */}
+          {unlocked && step === "visit_type" && (
+            <div className="space-y-6">
+              <div className="text-center space-y-1">
+                <h2 className="text-xl font-semibold text-gray-900">विज़िट प्रकार चुनें</h2>
+                <p className="text-sm text-gray-500">Select OPD or IPD</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {VISIT_TYPES.map((v) => (
+                  <button
+                    key={v.value}
+                    type="button"
+                    onClick={() => setVisitType(v.value)}
+                    className={clsx(
+                      "flex flex-col items-center justify-center gap-2 rounded-2xl border-2 py-10 transition-all active:scale-95",
+                      visitType === v.value
+                        ? "bg-brand text-white border-brand shadow-md"
+                        : "bg-white text-gray-700 border-gray-200 hover:border-brand/40"
+                    )}
+                  >
+                    <span className="text-lg font-semibold">{v.label}</span>
+                    <span className="text-xs font-normal opacity-70">{v.sub}</span>
+                    <span className="text-sm font-bold">₹{v.fee}</span>
+                  </button>
+                ))}
+              </div>
+
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2.5 border border-red-100">
+                  {error}
+                </p>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={goBack} className="btn-secondary flex-1 !py-4 text-base">
+                  ← Back
+                </button>
+                <button
+                  type="button"
+                  disabled={!visitType}
+                  onClick={goNext}
+                  className="btn-primary flex-1 !py-4 text-base"
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: Gender */}
           {unlocked && step === "gender" && (
             <div className="space-y-6">
               <div className="text-center space-y-1">
@@ -419,7 +475,7 @@ export default function StartPage() {
                 <button
                   type="button"
                   disabled={loading || !gender}
-                  onClick={() => (collectCaste ? goNext() : handleStart(gender))}
+                  onClick={() => (collectCaste ? goNext() : handleStart(visitType, gender))}
                   className="btn-primary flex-1 !py-4 text-base flex items-center justify-center gap-2"
                 >
                   {loading && !collectCaste ? (
@@ -483,7 +539,7 @@ export default function StartPage() {
                 <button
                   type="button"
                   disabled={loading || !caste}
-                  onClick={() => handleStart(gender, caste)}
+                  onClick={() => handleStart(visitType, gender, caste)}
                   className="btn-primary flex-1 !py-4 text-base flex items-center justify-center gap-2"
                 >
                   {loading ? (

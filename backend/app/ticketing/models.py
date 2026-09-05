@@ -27,6 +27,9 @@ def to_ist_str(dt: Optional[datetime]) -> Optional[str]:
 # Stored on session/patient when the hospital collects caste at check-in.
 CASTE_VALUES = frozenset({"general", "obc", "sc", "st"})
 
+# OPD vs IPD visit type selected at check-in.
+VISIT_TYPE_VALUES = frozenset({"opd", "ipd"})
+
 # ── Hospital ───────────────────────────────────────────────────
 
 class Hospital(BaseModel):
@@ -148,6 +151,7 @@ class TicketSession(BaseModel):
     category: Optional[CategoryInfo] = None
     language: str = "hi"   # defaults to hospital default_language
     gender: str = "unknown"
+    visit_type: Optional[str] = None  # opd | ipd
     caste: Optional[str] = None  # general | obc | sc | st when hospital collects it
     address: Optional[str] = None
     guardian_name: Optional[str] = None

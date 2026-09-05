@@ -26,6 +26,7 @@ from app.clinical.context import (
     QAEntry,
     Specialty,
 )
+from app.clinical.questionnaire.answer_validation import is_valid_answer
 from app.clinical.questionnaire.engine import LLMHistoryEngine
 from app.clinical.services.completeness import CompletenessService
 from app.clinical.services.diagnosis import DiagnosisService
@@ -40,6 +41,7 @@ log = logging.getLogger(__name__)
 # Generic message shown to patients when an LLM/provider call fails — never leak raw
 # provider errors (rate limits, auth, etc.) into the UI.
 GENERIC_LLM_ERROR = "Something went wrong generating the next question. Please try again."
+RETRY_UNCLEAR_MESSAGE = "We couldn't understand that. Please try again."
 
 # ─────────────────────────────────────────────
 # Request / Response models
@@ -72,9 +74,11 @@ class AnswerRequest(BaseModel):
 
 
 class AnswerResponse(BaseModel):
-    new_flags: list[ClinicalFlag]
+    new_flags: list[ClinicalFlag] = []
     next_question: Optional[str] = None
-    history_complete: bool
+    history_complete: bool = False
+    retry_same_question: bool = False
+    retry_message: Optional[str] = None
 
 
 class SessionStateResponse(BaseModel):
@@ -124,6 +128,15 @@ async def _get_session(session_id: str, user_id: str) -> ConsultationContext:
     return ctx
 
 
+def _retry_response(ctx: ConsultationContext, message: str = RETRY_UNCLEAR_MESSAGE) -> AnswerResponse:
+    return AnswerResponse(
+        retry_same_question=True,
+        retry_message=message,
+        next_question=ctx.current_question,
+        history_complete=False,
+    )
+
+
 def _record_answer(ctx: ConsultationContext, answer_text: str) -> None:
     """Append the patient's answer to the session log before calling LLM."""
     ctx.qa_log.append(
@@ -159,6 +172,9 @@ def _resolve_completion(
 async def _process_answer(
     ctx: ConsultationContext, answer_text: str
 ) -> AnswerResponse:
+    if not is_valid_answer(answer_text):
+        return _retry_response(ctx)
+
     _record_answer(ctx, answer_text)
 
     engine = LLMHistoryEngine(ctx.specialty, language=ctx.patient_language)
@@ -178,6 +194,10 @@ async def _stream_answer_generator(
     SSE generator: streams question tokens then sends a done event.
     Two concurrent calls: token stream + meta (flags/completion).
     """
+    if not is_valid_answer(answer_text):
+        yield _sse("retry", {"message": RETRY_UNCLEAR_MESSAGE})
+        return
+
     _record_answer(ctx, answer_text)
 
     engine = LLMHistoryEngine(ctx.specialty, language=ctx.patient_language)
@@ -565,7 +585,8 @@ async def voice_stream(
         return
 
     if not audio_chunks:
-        await websocket.send_json({"type": "error", "message": "No audio received"})
+        await websocket.send_json({"type": "retry", "message": RETRY_UNCLEAR_MESSAGE})
+        await websocket.close()
         return
 
     full_audio = b"".join(audio_chunks)
@@ -580,7 +601,8 @@ async def voice_stream(
 
     if isinstance(transcript, Exception):
         log.error("voice-stream transcription failed for session %s: %s", session_id, transcript, exc_info=transcript)
-        await websocket.send_json({"type": "error", "message": "Could not transcribe your answer. Please try again."})
+        await websocket.send_json({"type": "retry", "message": RETRY_UNCLEAR_MESSAGE})
+        await websocket.close()
         return
 
     if isinstance(r2_key, str):
@@ -598,6 +620,11 @@ async def voice_stream(
         )
     else:
         answer_text = transcript
+
+    if not is_valid_answer(answer_text):
+        await websocket.send_json({"type": "retry", "message": RETRY_UNCLEAR_MESSAGE})
+        await websocket.close()
+        return
 
     # Stream question tokens over the same WS connection
     _record_answer(ctx, answer_text)

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminApi } from "@/lib/ticketing-api";
 import type { AdminSession, Hospital, TicketCategory } from "@/lib/ticketing-types";
+import { visitTypeBadge } from "@/lib/ticketing-types";
 import { getToken } from "@/lib/api";
 import clsx from "clsx";
 
@@ -924,6 +925,11 @@ function SessionRow({
           >
             {session.status}
           </span>
+          {session.visit_type && (
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+              {visitTypeBadge(session.visit_type)}
+            </span>
+          )}
           {session.category && (
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-brand-light text-brand">
               {session.category.label}

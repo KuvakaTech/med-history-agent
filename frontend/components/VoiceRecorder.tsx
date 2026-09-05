@@ -5,15 +5,18 @@ import type { AnswerResponse, VoiceStreamEvent } from "@/lib/types";
 import { api } from "@/lib/api";
 import clsx from "clsx";
 
+type Stage = "idle" | "connecting" | "recording" | "transcribing" | "thinking" | "error";
+
 interface Props {
   sessionId: string;
   onAnswer: (resp: AnswerResponse & { transcript: string }) => void;
   onToken?: (token: string) => void;
   onStreamEnd?: (fullText: string, historyComplete: boolean) => void;
+  onRecordingStart?: () => void;
+  onStageChange?: (stage: Stage) => void;
+  onRetry?: (message: string) => void;
   disabled?: boolean;
 }
-
-type Stage = "idle" | "connecting" | "recording" | "transcribing" | "thinking" | "error";
 
 function detectMime(): string {
   for (const m of [
@@ -191,13 +194,20 @@ function LiveMicWaveform({ analyser }: { analyser: AnalyserNode | null }) {
   );
 }
 
-export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEnd, disabled }: Props) {
+export default function VoiceRecorder({
+  sessionId, onAnswer, onToken, onStreamEnd, onRecordingStart, onStageChange, onRetry, disabled,
+}: Props) {
   const [stage, setStage] = useState<Stage>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [transcript, setTranscript] = useState("");
   const [streamedQuestion, setStreamedQuestion] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [displayAnalyser, setDisplayAnalyser] = useState<AnalyserNode | null>(null);
+
+  const setStageAndNotify = useCallback((next: Stage) => {
+    setStage(next);
+    onStageChange?.(next);
+  }, [onStageChange]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -249,7 +259,7 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
     setStreamedQuestion("");
     questionBufRef.current = "";
     setElapsed(0);
-    setStage("connecting");
+    setStageAndNotify("connecting");
 
     let stream: MediaStream;
     try {
@@ -262,7 +272,7 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
       });
     } catch {
       setErrorMsg("Microphone access denied.");
-      setStage("error");
+      setStageAndNotify("error");
       return;
     }
     streamRef.current = stream;
@@ -295,16 +305,17 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
       const msg: VoiceStreamEvent = JSON.parse(ev.data);
 
       if (msg.type === "ready") {
-        setStage("recording");
+        setStageAndNotify("recording");
+        onRecordingStart?.();
         timerRef.current = setInterval(() => setElapsed((n) => n + 1), 1000);
         mr.start(250);
       } else if (msg.type === "transcript") {
         setTranscript(msg.text || "");
-        setStage("thinking");
+        setStageAndNotify("thinking");
         stopAnalyser(); // stop mic visualizer once transcription done
       } else if (msg.type === "processing") {
-        if (msg.stage === "transcribing") setStage("transcribing");
-        else if (msg.stage === "thinking") setStage("thinking");
+        if (msg.stage === "transcribing") setStageAndNotify("transcribing");
+        else if (msg.stage === "thinking") setStageAndNotify("thinking");
       } else if (msg.type === "token") {
         const tok = msg.text || "";
         questionBufRef.current += tok;
@@ -315,7 +326,7 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
         const histComplete = msg.history_complete ?? false;
         onStreamEnd?.(fullQuestion, histComplete);
         cleanup();
-        setStage("idle");
+        setStageAndNotify("idle");
         setTranscript("");
         setStreamedQuestion("");
         questionBufRef.current = "";
@@ -326,22 +337,30 @@ export default function VoiceRecorder({ sessionId, onAnswer, onToken, onStreamEn
           history_complete: msg.history_complete ?? false,
           new_flags: (msg.new_flags as AnswerResponse["new_flags"]) ?? [],
         });
+      } else if (msg.type === "retry") {
+        cleanup();
+        setStageAndNotify("idle");
+        setTranscript("");
+        setStreamedQuestion("");
+        questionBufRef.current = "";
+        setElapsed(0);
+        onRetry?.(msg.message ?? "We couldn't understand that. Please try again.");
       } else if (msg.type === "error") {
         if (msg.message) console.error("voice-stream error:", msg.message);
         setErrorMsg("Voice processing failed. Please try again.");
-        setStage("error");
+        setStageAndNotify("error");
         cleanup();
       }
     };
 
-    ws.onerror = () => { setErrorMsg("Connection to server failed."); setStage("error"); cleanup(); };
+    ws.onerror = () => { setErrorMsg("Connection to server failed."); setStageAndNotify("error"); cleanup(); };
     ws.onclose = (ev) => {
       if (ev.code !== 1000 && (stage === "recording" || stage === "connecting")) {
         setErrorMsg("Connection closed unexpectedly.");
-        setStage("error");
+        setStageAndNotify("error");
       }
     };
-  }, [sessionId, onAnswer, onToken, onStreamEnd, cleanup, setupAnalyser, stopAnalyser, stage]);
+  }, [sessionId, onAnswer, onToken, onStreamEnd, onRecordingStart, onRetry, cleanup, setupAnalyser, stopAnalyser, stage, setStageAndNotify]);
 
   const stop = useCallback(() => {
     timerRef.current && clearInterval(timerRef.current);
