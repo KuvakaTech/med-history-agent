@@ -87,7 +87,7 @@ def _kiosk_headers(hospital) -> dict:
 
 
 def _start(client, hospital, phone, **extra):
-    body = {"phone": phone}
+    body = {"phone": phone, "visit_type": "opd"}
     body.update(extra)
     return client.post(
         f"/api/v2/t/{hospital.slug}/session",
@@ -182,7 +182,7 @@ def test_opd_numbers_increment_across_sessions(client, hospital):
 def test_start_session_requires_kiosk_token(client, hospital):
     res = client.post(
         f"/api/v2/t/{hospital.slug}/session",
-        json={"phone": "9876543210"},
+        json={"phone": "9876543210", "visit_type": "opd"},
     )
     assert res.status_code == 401
 
@@ -190,6 +190,32 @@ def test_start_session_requires_kiosk_token(client, hospital):
 def test_start_session_phone_required(client, hospital):
     res = _start(client, hospital, "", language="hi", gender="male")
     assert res.status_code == 422
+
+
+def test_start_session_requires_visit_type(client, hospital):
+    res = client.post(
+        f"/api/v2/t/{hospital.slug}/session",
+        json={"phone": "9876543210"},
+        headers=_kiosk_headers(hospital),
+    )
+    assert res.status_code == 422
+
+
+def test_start_session_rejects_invalid_visit_type(client, hospital):
+    res = _start(client, hospital, "9876543210", visit_type="emergency")
+    assert res.status_code == 422
+
+
+def test_start_session_accepts_ipd_visit_type(client, hospital):
+    res = _start(client, hospital, "9876543299", visit_type="ipd")
+    assert res.status_code == 201
+    sid = res.json()["session_id"]
+    result = client.get(
+        f"/api/v2/t/{hospital.slug}/session/{sid}/result",
+        headers=_kiosk_headers(hospital),
+    )
+    assert result.status_code == 200
+    assert result.json()["visit_type"] == "ipd"
 
 
 def test_start_session_unknown_hospital_returns_401_without_token(client):
@@ -245,6 +271,7 @@ def test_get_result_returns_session(client, hospital):
     assert data["ticket_number"] is not None
     assert data["opd_number"] == 1
     assert data["opd_date_ist"]
+    assert data["visit_type"] == "opd"
     assert data["collect_caste"] is False
     assert data["hospital_name"] == "Test Hospital"
     assert data["patient"] is not None
@@ -648,7 +675,7 @@ def test_unlock_success_returns_kiosk_token(client, hospital):
     assert data["collect_caste"] is False
     start = client.post(
         f"/api/v2/t/{hospital.slug}/session",
-        json={"phone": "9111222333"},
+        json={"phone": "9111222333", "visit_type": "opd"},
         headers={"Authorization": f"Bearer {data['access_token']}"},
     )
     assert start.status_code == 201
@@ -667,7 +694,7 @@ def test_kiosk_token_cannot_start_session_on_other_hospital(client, hospital):
         loop.close()
     res = client.post(
         f"/api/v2/t/{other.slug}/session",
-        json={"phone": "9000111222"},
+        json={"phone": "9000111222", "visit_type": "opd"},
         headers=_kiosk_headers(hospital),
     )
     assert res.status_code == 403
