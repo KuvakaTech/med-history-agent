@@ -1,4 +1,4 @@
-"""Kiosk voice session — single-phase Gemini Live for Jan Sunwai."""
+"""Kiosk voice session — Gemini Live for grievance and learning centres."""
 from __future__ import annotations
 
 import array
@@ -15,18 +15,34 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from app.core.config import settings
 from app.kiosk import events as ev
-from app.kiosk.gemini_live import GeminiLiveSession, LiveEvent, complaint_tools
+from app.kiosk.gemini_live import (
+    GeminiLiveSession,
+    LiveEvent,
+    complaint_tools,
+    lesson_tools,
+)
 from app.kiosk.hindi_display import to_devanagari_display
-from app.kiosk.models import KioskCentre, KioskSession, KioskTranscriptEntry
+from app.kiosk.learning_engine import LearningEngine, agent_invites_repeat
+from app.kiosk.learning_extract import run_learning_extract
+from app.kiosk.models import KioskCentre, KioskSession, KioskTranscriptEntry, centre_kind_for
 from app.kiosk.post_call_extract import run_post_call_extract
-from app.kiosk.prompts import kickoff_text, system_instruction
+from app.kiosk.prompts import (
+    kickoff_text,
+    kickoff_text_learning,
+    system_instruction,
+    system_instruction_learning,
+)
 from app.kiosk.session_store import kiosk_session_store
+from app.kiosk.vocabulary import get_word_for_lesson
+from app.kiosk.word_detect import detect_word_in_speech
+from app.kiosk.word_matcher import answer_hint, match_answer
 
 log = logging.getLogger(__name__)
 
 _MAX_AUDIO_FRAME_BYTES = 64 * 1024
 _SEND_TIMEOUT = 8.0
 _DUCK_RMS_THRESHOLD = 600.0
+_MAX_ANSWER_ATTEMPTS = 2
 
 _live_counts: dict[str, int] = {}
 _live_lock = asyncio.Lock()
@@ -79,6 +95,8 @@ class KioskVoiceSession:
         self.centre = centre
         self.ws = ws
         self._live_factory = live_factory or GeminiLiveSession
+        self._is_learning = centre_kind_for(centre) == "learning"
+        self._finish_tool = "finish_lesson" if self._is_learning else "finish_complaint"
         self._stopped = asyncio.Event()
         self._audio_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self._transcript_q: asyncio.Queue[KioskTranscriptEntry] = asyncio.Queue()
@@ -87,6 +105,16 @@ class KioskVoiceSession:
         self._phase_done = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
         self._last_persist = time.monotonic()
+        self._displayed_card: Optional[dict[str, str]] = None
+        self._awaiting_user = False
+        self._awaiting_child_answer = False
+        self._answer_attempts = 0
+        self._last_answer_result: Optional[str] = None
+        self._agent_turn_id = 0
+        self._last_answer_turn_id = -1
+        self._learning_engine: Optional[LearningEngine] = None
+        if self._is_learning:
+            self._learning_engine = LearningEngine(session.lesson_topic)
 
     async def _send(self, payload: dict) -> None:
         payload.setdefault("ts", time.time())
@@ -131,7 +159,7 @@ class KioskVoiceSession:
         watchdog = asyncio.create_task(self._watchdog(), name="kiosk_watchdog")
         self._tasks = [client_task, transcript_task, watchdog]
         try:
-            await self._run_complaint()
+            await self._run_voice_phase()
             await self._finalize()
         except Exception as exc:
             log.error(
@@ -149,26 +177,46 @@ class KioskVoiceSession:
                 t.cancel()
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
-    async def _run_complaint(self) -> None:
-        await self._send(
-            ev.complaint_started(self.session.session_id, self.session.language)
-        )
-        instruction = system_instruction(
-            self.centre,
-            self.session.language,
-            phone_on_record=self.session.phone,
-        )
+    async def _run_voice_phase(self) -> None:
+        if self._is_learning:
+            await self._send(ev.lesson_started(self.session.session_id, self.session.language))
+            instruction = system_instruction_learning(
+                self.centre,
+                self.session.language,
+                self.session.learner_name,
+                self.session.lesson_topic,
+            )
+            tools = lesson_tools()
+            kickoff = kickoff_text_learning(
+                self.centre,
+                self.session.language,
+                self.session.learner_name,
+                self.session.lesson_topic,
+            )
+        else:
+            await self._send(
+                ev.complaint_started(self.session.session_id, self.session.language)
+            )
+            instruction = system_instruction(
+                self.centre,
+                self.session.language,
+                phone_on_record=self.session.phone,
+            )
+            tools = complaint_tools()
+            kickoff = kickoff_text(self.centre, self.session.language)
+
         self._phase_done = asyncio.Event()
         self._live = self._live_factory()
         await self._live.connect(
             instruction,
             language=self.session.language,
-            tools=complaint_tools(),
+            tools=tools,
+            learning=self._is_learning,
         )
         up = asyncio.create_task(self._relay_client_to_gemini(), name="kiosk_up")
         down = asyncio.create_task(self._relay_gemini_to_client(), name="kiosk_down")
         try:
-            await self._live.send_text(kickoff_text(self.centre, self.session.language))
+            await self._live.send_text(kickoff)
             await self._wait_phase()
         finally:
             up.cancel()
@@ -202,7 +250,11 @@ class KioskVoiceSession:
                 continue
             if self._live is None:
                 continue
-            if self._agent_playing and pcm16_rms(frame) < _DUCK_RMS_THRESHOLD:
+            if (
+                not self._is_learning
+                and self._agent_playing
+                and pcm16_rms(frame) < _DUCK_RMS_THRESHOLD
+            ):
                 continue
             try:
                 await self._live.send_audio(frame)
@@ -231,9 +283,7 @@ class KioskVoiceSession:
         elif event.kind == "user_transcript_partial":
             await self._send(ev.partial_transcript(to_devanagari_display(event.text)))
         elif event.kind == "user_transcript_final":
-            self._enqueue_transcript("user", event.text)
-            self.session.turn_count += 1
-            await self._send(ev.partial_transcript(to_devanagari_display(event.text)))
+            await self._handle_user_transcript_final(event.text)
         elif event.kind == "agent_audio_chunk":
             self._agent_playing = True
             b64 = base64.b64encode(event.audio).decode("ascii")
@@ -245,21 +295,20 @@ class KioskVoiceSession:
             self._enqueue_transcript("agent", event.text)
             display = to_devanagari_display(event.text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
+            await self._on_agent_transcript_final(event.text)
         elif event.kind == "interrupted":
             self._agent_playing = False
             await self._send(ev.interrupt())
         elif event.kind == "turn_complete":
             self._agent_playing = False
+            self._agent_turn_id += 1
+            self._awaiting_user = True
             await self._send(ev.agent_done_speaking(self.session.turn_count))
         elif event.kind == "tool_call":
-            if event.tool_name == "finish_complaint":
-                if self._live is not None:
-                    await self._live.send_tool_response(
-                        "finish_complaint",
-                        event.tool_call_id,
-                        {"result": "ok", "status": "closing"},
-                    )
-                self._phase_done.set()
+            if event.tool_name == self._finish_tool:
+                await self._handle_finish_tool(event)
+            elif event.tool_name == "show_word_card" and self._is_learning:
+                await self._handle_show_word_card(event)
             elif self._live is not None:
                 await self._live.send_tool_response(
                     event.tool_name,
@@ -273,6 +322,247 @@ class KioskVoiceSession:
             self._stopped.set()
         elif event.kind == "go_away":
             log.info("Kiosk Gemini go_away for %s", self.session.session_id)
+
+    async def _handle_user_transcript_final(self, text: str) -> None:
+        display = to_devanagari_display(text)
+        self._enqueue_transcript("user", text)
+        self.session.turn_count += 1
+        await self._send(ev.partial_transcript(display))
+
+        if self._is_learning and self._learning_engine and self.session.turn_count == 1:
+            self._learning_engine.on_intro_complete()
+            await self._engine_emit_expected_card()
+            self._persist_lesson_snapshot()
+            if self._live is not None:
+                hint = self._learning_engine.next_word_private_hint()
+                if hint:
+                    await self._live.send_text(hint)
+
+        if not self._awaiting_user:
+            return
+
+        if self._last_answer_turn_id == self._agent_turn_id:
+            return
+
+        self._awaiting_user = False
+        await self._process_child_answer(text)
+
+    async def _on_agent_transcript_final(self, text: str) -> None:
+        if not self._is_learning:
+            return
+        await self._maybe_auto_show_card(text)
+        if self._displayed_card and agent_invites_repeat(text):
+            self._awaiting_child_answer = True
+            self._answer_attempts = 0
+            self._last_answer_result = None
+
+    async def _process_child_answer(self, transcript: str) -> None:
+        """Unified teach + quiz verification against the displayed card."""
+        if not self._is_learning or not self._awaiting_child_answer:
+            return
+        if not self._displayed_card:
+            return
+
+        text = (transcript or "").strip()
+        if not text:
+            return
+
+        word_id = self._displayed_card["word_id"]
+        word = get_word_for_lesson(word_id, self.session.lesson_topic)
+        if word is None:
+            return
+
+        self._last_answer_turn_id = self._agent_turn_id
+        result = match_answer(text, word_id)
+        self._last_answer_result = result
+        await self._send(
+            ev.word_answer_result(word_id, text, result, word.hindi)
+        )
+        if self._live is not None:
+            await self._live.send_text(answer_hint(result, word, text))
+
+        self._answer_attempts += 1
+        word_done = result in ("clear", "close") or self._answer_attempts >= _MAX_ANSWER_ATTEMPTS
+
+        if self._learning_engine and word_done:
+            engine = self._learning_engine
+            if engine.phase == "recall":
+                if engine.record_answer(word_id, result):
+                    engine.advance_recall()
+                    self._awaiting_child_answer = False
+                    self._answer_attempts = 0
+                    self._persist_lesson_snapshot()
+                    await self._engine_emit_expected_card()
+                    if self._live is not None:
+                        hint = engine.next_word_private_hint()
+                        if hint:
+                            await self._live.send_text(hint)
+            elif engine.record_answer(word_id, result):
+                engine.advance_word()
+                self._awaiting_child_answer = False
+                self._answer_attempts = 0
+                self._persist_lesson_snapshot()
+                await self._engine_emit_expected_card()
+                if self._live is not None:
+                    hint = engine.next_word_private_hint()
+                    if hint:
+                        await self._live.send_text(hint)
+        elif word_done:
+            self._awaiting_child_answer = False
+            self._answer_attempts = 0
+
+    async def _emit_word_card(self, word_id: str, mode: str) -> bool:
+        word = get_word_for_lesson(word_id, self.session.lesson_topic)
+        if word is None:
+            return False
+        self._displayed_card = {"word_id": word.word_id, "mode": mode}
+        self._answer_attempts = 0
+        self._last_answer_result = None
+        if mode == "quiz":
+            self._awaiting_child_answer = True
+        else:
+            self._awaiting_child_answer = False
+        await self._send(
+            ev.show_word_card(word.word_id, word.hindi, word.image, mode)
+        )
+        return True
+
+    def _persist_lesson_snapshot(self) -> None:
+        if self._learning_engine is not None:
+            self.session.lesson_state = self._learning_engine.to_snapshot()
+
+    async def _engine_emit_expected_card(self) -> None:
+        engine = self._learning_engine
+        if engine is None or engine.phase == "intro":
+            return
+        word_id = engine.expected_word_id()
+        if not word_id:
+            return
+        mode = engine.expected_card_mode()
+        await self._emit_word_card(word_id, mode)
+
+    async def _maybe_auto_show_card(self, text: str) -> None:
+        if not self._is_learning:
+            return
+        if self.session.turn_count < 1:
+            return
+
+        detected = detect_word_in_speech(text, self.session.lesson_topic)
+        if not detected:
+            return
+        word_id, default_mode = detected
+        displayed_id = (self._displayed_card or {}).get("word_id")
+        if displayed_id == word_id:
+            return
+
+        if (
+            self._awaiting_child_answer
+            and displayed_id
+            and word_id != displayed_id
+            and self._last_answer_result == "wrong"
+            and self._answer_attempts < _MAX_ANSWER_ATTEMPTS
+        ):
+            return
+
+        engine = self._learning_engine
+        mode = default_mode
+        if engine:
+            if engine.phase == "intro" and self.session.turn_count >= 1:
+                engine.on_intro_complete()
+            if engine.phase == "recall":
+                expected = engine.current_recall_word()
+                if word_id != expected:
+                    return
+                mode = "quiz"
+            elif not engine.sync_to_word(word_id):
+                return
+            else:
+                mode = engine.expected_card_mode()
+        elif self._awaiting_child_answer:
+            return
+
+        await self._emit_word_card(word_id, mode)
+        self._persist_lesson_snapshot()
+
+    async def _handle_show_word_card(self, event: LiveEvent) -> None:
+        word_id = str((event.tool_args or {}).get("word_id") or "").strip().lower()
+        mode = str((event.tool_args or {}).get("mode") or "teach").strip().lower()
+        if mode not in ("teach", "quiz"):
+            mode = "teach"
+
+        if self._learning_engine is not None:
+            validation_err = self._learning_engine.validate_show_word_card(word_id, mode)
+            if validation_err:
+                if self._live is not None:
+                    await self._live.send_tool_response(
+                        "show_word_card",
+                        event.tool_call_id,
+                        {"error": validation_err},
+                    )
+                    expected = self._learning_engine.expected_word_id()
+                    await self._live.send_text(
+                        f"[SYSTEM — private] show_word_card rejected: {validation_err}. "
+                        f"Use word_id={expected} mode={self._learning_engine.expected_card_mode()}."
+                    )
+                return
+            if self._learning_engine.phase not in ("intro", "recall", "close"):
+                self._learning_engine.sync_to_word(word_id)
+
+        ok = await self._emit_word_card(word_id, mode)
+        if ok:
+            self._persist_lesson_snapshot()
+        if not ok:
+            if self._live is not None:
+                await self._live.send_tool_response(
+                    "show_word_card",
+                    event.tool_call_id,
+                    {"error": f"unknown word_id: {word_id}"},
+                )
+            return
+
+        word = get_word_for_lesson(word_id, self.session.lesson_topic)
+        if self._live is not None and word is not None:
+            await self._live.send_tool_response(
+                "show_word_card",
+                event.tool_call_id,
+                {"result": "ok", "hindi": word.hindi, "word_id": word.word_id},
+            )
+
+    async def _handle_finish_tool(self, event: LiveEvent) -> None:
+        if (
+            self._is_learning
+            and self._learning_engine
+            and not self._learning_engine.can_finish_lesson()
+        ):
+            if self._live is not None:
+                await self._live.send_tool_response(
+                    self._finish_tool,
+                    event.tool_call_id,
+                    {"error": "lesson not complete — teach more words first"},
+                )
+                await self._live.send_text(self._learning_engine.finish_rejected_hint())
+            return
+
+        if self._live is not None:
+            await self._live.send_tool_response(
+                self._finish_tool,
+                event.tool_call_id,
+                {"result": "ok", "status": "closing"},
+            )
+        self._phase_done.set()
+
+    def _enqueue_audio_frame(self, frame: bytes) -> None:
+        try:
+            self._audio_q.put_nowait(frame)
+        except asyncio.QueueFull:
+            try:
+                self._audio_q.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                self._audio_q.put_nowait(frame)
+            except asyncio.QueueFull:
+                log.warning("kiosk audio queue full — dropping frame")
 
     async def _client_reader(self) -> None:
         while not self._stopped.is_set():
@@ -292,10 +582,7 @@ class KioskVoiceSession:
             if msg.get("bytes"):
                 frame = msg["bytes"]
                 if len(frame) <= _MAX_AUDIO_FRAME_BYTES:
-                    try:
-                        self._audio_q.put_nowait(frame)
-                    except asyncio.QueueFull:
-                        pass
+                    self._enqueue_audio_frame(frame)
             elif msg.get("text"):
                 try:
                     data = json.loads(msg["text"])
@@ -355,8 +642,13 @@ class KioskVoiceSession:
                 self.session.transcript.append(self._transcript_q.get_nowait())
             except asyncio.QueueEmpty:
                 break
+        if self._learning_engine is not None:
+            self._persist_lesson_snapshot()
         try:
-            await run_post_call_extract(self.session, self.centre)
+            if self._is_learning:
+                await run_learning_extract(self.session, self.centre)
+            else:
+                await run_post_call_extract(self.session, self.centre)
         except Exception as exc:
             log.error("kiosk post-call failed: %s", exc, exc_info=True)
             self.session.status = "partial"
@@ -366,14 +658,23 @@ class KioskVoiceSession:
         if self.session.status == "partial":
             await self._send(ev.session_partial(self.session.session_id))
             return
-        grievance = (
-            self.session.grievance.model_dump(mode="json")
-            if self.session.grievance
-            else {}
-        )
-        await self._send(
-            ev.result_ready(self.session.complaint_number or "", grievance)
-        )
+
+        if self._is_learning:
+            record = (
+                self.session.learning_record.model_dump(mode="json")
+                if self.session.learning_record
+                else {}
+            )
+            await self._send(ev.result_ready(learning_record=record))
+        else:
+            grievance = (
+                self.session.grievance.model_dump(mode="json")
+                if self.session.grievance
+                else {}
+            )
+            await self._send(
+                ev.result_ready(self.session.complaint_number or "", grievance)
+            )
 
     async def _teardown(self) -> None:
         await self._close_live()

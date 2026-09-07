@@ -17,7 +17,7 @@ from app.auth import user_store
 from app.auth.deps import require_centre_admin, require_super_admin
 from app.kiosk.centre_store import centre_store
 from app.kiosk.hindi_display import to_devanagari_display
-from app.kiosk.models import KioskCentre, to_ist_str
+from app.kiosk.models import KioskCentre, centre_kind_for, to_ist_str
 from app.kiosk.post_call_extract import format_transcript
 from app.kiosk.session_store import kiosk_session_store
 
@@ -29,6 +29,7 @@ class CreateCentreRequest(BaseModel):
     slug: str
     name: str
     default_language: str = "hi"
+    centre_kind: Literal["grievance", "learning"] = "grievance"
     prompt_file: Optional[str] = None
     complaint_prefix: Optional[str] = None
 
@@ -64,13 +65,19 @@ def _format_session(s: dict) -> dict:
     s["started_at_ist"] = to_ist_str(_parse_dt(s.get("started_at")))
     s["ended_at_ist"] = to_ist_str(_parse_dt(s.get("ended_at")))
     s["deleted_at_ist"] = to_ist_str(_parse_dt(s.get("deleted_at")))
-    grievance = s.get("grievance") or {}
-    if isinstance(grievance, dict):
-        s["grievance_summary"] = (
-            grievance.get("confirmed_summary")
-            or grievance.get("verbatim_problem")
-            or grievance.get("category")
-        )
+    learning = s.get("learning_record") or {}
+    if isinstance(learning, dict) and learning:
+        s["grievance_summary"] = learning.get("friendly_summary")
+        s["session_summary"] = learning.get("friendly_summary")
+    else:
+        grievance = s.get("grievance") or {}
+        if isinstance(grievance, dict):
+            s["grievance_summary"] = (
+                grievance.get("confirmed_summary")
+                or grievance.get("verbatim_problem")
+                or grievance.get("category")
+            )
+            s["session_summary"] = s.get("grievance_summary")
     return s
 
 
@@ -109,6 +116,7 @@ async def create_centre(
         slug=body.slug.strip().lower(),
         name=body.name.strip(),
         default_language=body.default_language,
+        centre_kind=body.centre_kind,
         prompt_file=body.prompt_file,
         complaint_prefix=body.complaint_prefix,
     )
@@ -216,6 +224,8 @@ async def list_sessions(
     status: Optional[str] = Query(None),
     complaint: Optional[str] = Query(None),
     phone: Optional[str] = Query(None),
+    learner_name: Optional[str] = Query(None),
+    topic: Optional[str] = Query(None),
     include_deleted: bool = Query(False),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -254,6 +264,21 @@ async def list_sessions(
 
         sessions = [s for s in sessions if _in_range(s)]
 
+    if learner_name:
+        needle = learner_name.strip().lower()
+        sessions = [
+            s
+            for s in sessions
+            if needle in (s.get("learner_name") or "").lower()
+        ]
+    if topic:
+        needle = topic.strip().lower()
+        sessions = [
+            s
+            for s in sessions
+            if needle in (s.get("lesson_topic") or "").lower()
+        ]
+
     return {"sessions": [_format_session(s) for s in sessions], "count": len(sessions)}
 
 
@@ -269,15 +294,19 @@ async def get_session_detail(
         raise HTTPException(status_code=404, detail="Session not found.")
 
     centre = await centre_store.get(session.centre_id)
+    kind = centre_kind_for(centre) if centre else "grievance"
+    agent_label = "गुड्डी" if kind == "learning" else "AI सहायक"
+    user_label = "बच्चा" if kind == "learning" else "आप"
     transcript_lines = _transcript_lines(session)
     full_transcript = format_transcript(session.transcript).strip() or None
     if full_transcript:
         full_transcript = "\n".join(
-            f"{'आप' if line['speaker'] == 'user' else 'AI सहायक'}: {line['text']}"
+            f"{user_label if line['speaker'] == 'user' else agent_label}: {line['text']}"
             for line in transcript_lines
         )
 
     doc = session.model_dump(mode="json")
+    doc["centre_kind"] = kind
     doc["started_at_ist"] = to_ist_str(session.started_at)
     doc["ended_at_ist"] = to_ist_str(session.ended_at)
     doc["deleted_at_ist"] = to_ist_str(session.deleted_at)

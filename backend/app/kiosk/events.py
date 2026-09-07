@@ -27,12 +27,26 @@ def complaint_started(session_id: str, language: str) -> dict:
     }
 
 
-def result_ready(complaint_number: str, grievance: dict) -> dict:
+def lesson_started(session_id: str, language: str) -> dict:
     return {
-        "type": "result_ready",
-        "complaint_number": complaint_number,
-        "grievance": grievance,
+        "type": "lesson_started",
+        "session_id": session_id,
+        "language": language,
     }
+
+
+def result_ready(
+    complaint_number: str = "",
+    grievance: Optional[dict] = None,
+    learning_record: Optional[dict] = None,
+) -> dict:
+    payload: dict[str, Any] = {"type": "result_ready"}
+    if learning_record is not None:
+        payload["learning_record"] = learning_record
+    else:
+        payload["complaint_number"] = complaint_number
+        payload["grievance"] = grievance or {}
+    return payload
 
 
 def session_partial(session_id: str) -> dict:
@@ -65,6 +79,36 @@ def agent_audio_chunk(audio_b64: str) -> dict:
 
 def interrupt() -> dict:
     return {"type": "interrupt"}
+
+
+def show_word_card(
+    word_id: str,
+    hindi: str,
+    image_url: str,
+    mode: str,
+) -> dict:
+    return {
+        "type": "show_word_card",
+        "word_id": word_id,
+        "hindi": hindi,
+        "image_url": image_url,
+        "mode": mode,
+    }
+
+
+def word_answer_result(
+    word_id: str,
+    child_said: str,
+    result: str,
+    expected_hindi: str,
+) -> dict:
+    return {
+        "type": "word_answer_result",
+        "word_id": word_id,
+        "child_said": child_said,
+        "result": result,
+        "expected_hindi": expected_hindi,
+    }
 
 
 def user_speech_started() -> dict:

@@ -44,6 +44,30 @@ LANGUAGE_TO_BCP47: dict[str, str] = {
     "te": "te-IN",
 }
 
+# Children pause more between words — longer end-of-speech for learning kiosk.
+_LEARNING_SILENCE_MS = 750
+_DEFAULT_SILENCE_MS = 400
+
+
+def merge_transcript_chunk(buf: str, chunk: str) -> str:
+    """Merge Gemini transcription chunks (incremental or cumulative)."""
+    chunk = chunk or ""
+    if not chunk:
+        return buf
+    if not buf:
+        return chunk
+    if chunk == buf:
+        return buf
+    if chunk.startswith(buf):
+        return chunk
+    if buf.endswith(chunk):
+        return buf
+    overlap = min(len(buf), len(chunk))
+    for n in range(overlap, 0, -1):
+        if buf.endswith(chunk[:n]):
+            return buf + chunk[n:]
+    return buf + chunk
+
 
 def bcp47_language(code: str) -> str:
     return LANGUAGE_TO_BCP47.get((code or "").lower().strip(), "hi-IN")
@@ -54,7 +78,9 @@ def hindi_transcription_config() -> AudioTranscriptionConfig:
     return AudioTranscriptionConfig()
 
 
-def kiosk_voice_name() -> str:
+def kiosk_voice_name(learning: bool = False) -> str:
+    if learning:
+        return settings.GUDDI_GEMINI_LIVE_VOICE or settings.KIOSK_GEMINI_LIVE_VOICE or "Kore"
     return settings.KIOSK_GEMINI_LIVE_VOICE or "Kore"
 
 
@@ -73,6 +99,58 @@ class LiveEvent:
     tool_call_id: Optional[str] = None
     error: str = ""
     handle: str = ""
+
+
+def lesson_tools() -> list[Tool]:
+    return [
+        Tool(
+            function_declarations=[
+                FunctionDeclaration(
+                    name="show_word_card",
+                    description=(
+                        "Show a vocabulary picture on the kiosk screen for the child. "
+                        "Call BEFORE naming or quizzing a word. mode=teach when introducing; "
+                        "mode=quiz when asking the child to name the picture (system checks answer)."
+                    ),
+                    parameters=Schema(
+                        type=Type.OBJECT,
+                        properties={
+                            "word_id": Schema(
+                                type=Type.STRING,
+                                description=(
+                                    "Vocabulary id, e.g. aam, roti, bakri, laal, ek, aankh"
+                                ),
+                            ),
+                            "mode": Schema(
+                                type=Type.STRING,
+                                description="teach or quiz",
+                                enum=["teach", "quiz"],
+                            ),
+                        },
+                        required=["word_id", "mode"],
+                    ),
+                ),
+                FunctionDeclaration(
+                    name="finish_lesson",
+                    description=(
+                        "Call when the Hindi lesson is complete: words taught, "
+                        "child celebrated, and warm close done. Also call if the "
+                        "child wants to stop early."
+                    ),
+                    parameters=Schema(
+                        type=Type.OBJECT,
+                        properties={
+                            "reason": Schema(
+                                type=Type.STRING,
+                                description="Why the session is ending",
+                            ),
+                        },
+                        required=["reason"],
+                    ),
+                )
+            ]
+        )
+    ]
 
 
 def complaint_tools() -> list[Tool]:
@@ -111,9 +189,11 @@ def build_live_config(
     tools: Optional[list[Tool]] = None,
     session_handle: Optional[str] = None,
     model: Optional[str] = None,
+    learning: bool = False,
 ) -> LiveConnectConfig:
     model_id = model or settings.GEMINI_LIVE_MODEL
     transcription = hindi_transcription_config()
+    silence_ms = _LEARNING_SILENCE_MS if learning else _DEFAULT_SILENCE_MS
     config = LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=system_instruction,
@@ -131,7 +211,7 @@ def build_live_config(
                 start_of_speech_sensitivity=StartSensitivity.START_SENSITIVITY_HIGH,
                 end_of_speech_sensitivity=EndSensitivity.END_SENSITIVITY_HIGH,
                 prefix_padding_ms=20,
-                silence_duration_ms=400,
+                silence_duration_ms=silence_ms,
             )
         ),
         session_resumption=SessionResumptionConfig(handle=session_handle),
@@ -154,6 +234,7 @@ class GeminiLiveSession:
         self._user_buf = ""
         self._agent_buf = ""
         self._user_speaking = False
+        self._user_final_emitted = False
 
     async def connect(
         self,
@@ -162,6 +243,7 @@ class GeminiLiveSession:
         language: str = "hi",
         tools: Optional[list[Tool]] = None,
         session_handle: Optional[str] = None,
+        learning: bool = False,
     ) -> None:
         api_key = settings.GOOGLE_API_KEY
         if not api_key:
@@ -170,14 +252,16 @@ class GeminiLiveSession:
         self._user_buf = ""
         self._agent_buf = ""
         self._user_speaking = False
+        self._user_final_emitted = False
         handle = session_handle if session_handle is not None else self._session_handle
         config = build_live_config(
             system_instruction,
             language_code=bcp47_language(language),
-            voice=kiosk_voice_name(),
+            voice=kiosk_voice_name(learning=learning),
             tools=tools,
             session_handle=handle,
             model=settings.GEMINI_LIVE_MODEL,
+            learning=learning,
         )
         self._client = genai.Client(api_key=api_key)
         self._cm = self._client.aio.live.connect(
@@ -186,9 +270,10 @@ class GeminiLiveSession:
         )
         self._session = await self._cm.__aenter__()
         log.info(
-            "Kiosk Gemini Live connected model=%s lang=%s",
+            "Kiosk Gemini Live connected model=%s lang=%s learning=%s",
             settings.GEMINI_LIVE_MODEL,
             bcp47_language(language),
+            learning,
         )
 
     async def send_audio(self, pcm16: bytes) -> None:
@@ -202,6 +287,17 @@ class GeminiLiveSession:
         if self._closed or not self._session or not text:
             return
         await self._session.send_realtime_input(text=text)
+
+    def force_finalize_user(self) -> str:
+        """Finalize buffered user speech; return text or empty string."""
+        if self._user_final_emitted:
+            return ""
+        text = self._user_buf.strip()
+        self._user_buf = ""
+        self._user_speaking = False
+        if text:
+            self._user_final_emitted = True
+        return text
 
     async def send_tool_response(
         self,
@@ -273,15 +369,20 @@ class GeminiLiveSession:
         if interim is not None and interim.text:
             if not self._user_speaking:
                 self._user_speaking = True
+                self._user_final_emitted = False
                 events.append(LiveEvent(kind="user_speech_started"))
-            events.append(LiveEvent(kind="user_transcript_partial", text=interim.text))
+            self._user_buf = merge_transcript_chunk(self._user_buf, interim.text)
+            events.append(
+                LiveEvent(kind="user_transcript_partial", text=self._user_buf)
+            )
 
         inp = getattr(content, "input_transcription", None)
         if inp is not None and inp.text:
             if not self._user_speaking:
                 self._user_speaking = True
+                self._user_final_emitted = False
                 events.append(LiveEvent(kind="user_speech_started"))
-            self._user_buf += inp.text
+            self._user_buf = merge_transcript_chunk(self._user_buf, inp.text)
             events.append(
                 LiveEvent(kind="user_transcript_partial", text=self._user_buf)
             )
@@ -289,12 +390,13 @@ class GeminiLiveSession:
                 text = self._user_buf.strip()
                 self._user_buf = ""
                 self._user_speaking = False
-                if text:
+                if text and not self._user_final_emitted:
+                    self._user_final_emitted = True
                     events.append(LiveEvent(kind="user_transcript_final", text=text))
 
         out = getattr(content, "output_transcription", None)
         if out is not None and out.text:
-            self._agent_buf += out.text
+            self._agent_buf = merge_transcript_chunk(self._agent_buf, out.text)
             events.append(
                 LiveEvent(kind="agent_transcript_partial", text=self._agent_buf)
             )
@@ -306,7 +408,8 @@ class GeminiLiveSession:
 
         model_turn = getattr(content, "model_turn", None)
         if model_turn is not None:
-            if self._user_buf.strip():
+            if self._user_buf.strip() and not self._user_final_emitted:
+                self._user_final_emitted = True
                 events.append(
                     LiveEvent(kind="user_transcript_final", text=self._user_buf.strip())
                 )
@@ -327,6 +430,17 @@ class GeminiLiveSession:
                     )
                 )
                 self._agent_buf = ""
+            if self._user_buf.strip() and not self._user_final_emitted:
+                self._user_final_emitted = True
+                events.append(
+                    LiveEvent(
+                        kind="user_transcript_final",
+                        text=self._user_buf.strip(),
+                    )
+                )
+                self._user_buf = ""
+                self._user_speaking = False
+            self._user_final_emitted = False
             events.append(LiveEvent(kind="turn_complete"))
 
         return events

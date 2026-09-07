@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#ffffff" rx="24"/>
+  <rect x="60" y="60" width="280" height="240" rx="20" fill="#FAFAFA" stroke="#BBBBBB" stroke-width="3"/>
+  <text x="200" y="350" text-anchor="middle" font-size="36" font-family="sans-serif" fill="#333">सफ़ेद</text>
+</svg>

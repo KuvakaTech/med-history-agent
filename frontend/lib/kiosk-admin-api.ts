@@ -44,6 +44,7 @@ export const kioskAdminApi = {
       slug: string;
       name: string;
       default_language?: string;
+      centre_kind?: "grievance" | "learning";
       prompt_file?: string;
       complaint_prefix?: string;
     }
@@ -65,6 +66,8 @@ export const kioskAdminApi = {
       status?: string;
       complaint?: string;
       phone?: string;
+      learner_name?: string;
+      topic?: string;
       include_deleted?: boolean;
       date_from?: string;
       date_to?: string;
@@ -76,6 +79,8 @@ export const kioskAdminApi = {
     if (params?.status) qs.set("status", params.status);
     if (params?.complaint) qs.set("complaint", params.complaint);
     if (params?.phone) qs.set("phone", params.phone);
+    if (params?.learner_name) qs.set("learner_name", params.learner_name);
+    if (params?.topic) qs.set("topic", params.topic);
     if (params?.include_deleted) qs.set("include_deleted", "true");
     if (params?.date_from) qs.set("date_from", params.date_from);
     if (params?.date_to) qs.set("date_to", params.date_to);

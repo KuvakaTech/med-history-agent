@@ -66,12 +66,65 @@ _COMMON_ROMAN: dict[str, str] = {
 }
 
 
+_ENGLISH_HINTS = frozenset(
+    {
+        "the",
+        "is",
+        "are",
+        "you",
+        "your",
+        "please",
+        "tell",
+        "me",
+        "name",
+        "what",
+        "this",
+        "that",
+        "problem",
+        "want",
+        "to",
+        "register",
+        "can",
+        "i",
+        "we",
+        "will",
+        "how",
+        "for",
+        "of",
+        "and",
+        "or",
+        "a",
+        "an",
+        "my",
+        "would",
+        "like",
+        "help",
+        "with",
+        "have",
+        "from",
+        "complaint",
+    }
+)
+
+
 def _is_mostly_devanagari(text: str) -> bool:
     letters = [c for c in text if c.isalpha()]
     if not letters:
         return False
     dev = sum(1 for c in letters if _DEVANAGARI_RE.match(c))
     return dev / len(letters) >= 0.4
+
+
+def _looks_english(text: str) -> bool:
+    """Leave longer English captions unchanged; keep short Hindi roman converting."""
+    words = [w.lower() for w in _WORD_RE.findall(text)]
+    if len(words) < 5:
+        return False
+    hindi_hits = sum(1 for w in words if w in _COMMON_ROMAN)
+    if hindi_hits / len(words) >= 0.25:
+        return False
+    english_hits = sum(1 for w in words if w in _ENGLISH_HINTS)
+    return english_hits / len(words) >= 0.25
 
 
 def _roman_word_to_dev(word: str) -> str:
@@ -89,6 +142,8 @@ def to_devanagari_display(text: str) -> str:
     if not text or not text.strip():
         return text
     if _is_mostly_devanagari(text):
+        return text
+    if _looks_english(text):
         return text
 
     def replace_word(match: re.Match[str]) -> str:

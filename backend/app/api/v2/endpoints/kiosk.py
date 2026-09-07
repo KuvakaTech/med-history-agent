@@ -1,4 +1,4 @@
-"""Public kiosk endpoints (Jan Sunwai) — no auth."""
+"""Public kiosk endpoints — grievance and learning centres (no auth)."""
 from __future__ import annotations
 
 import logging
@@ -6,13 +6,17 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from app.core.config import settings
 from app.kiosk import events as ev
 from app.kiosk.centre_store import centre_store
 from app.kiosk.hindi_display import to_devanagari_display
-from app.kiosk.models import KioskSession, to_ist_str
+from app.kiosk.models import (
+    KioskSession,
+    VALID_LESSON_TOPICS,
+    centre_kind_for,
+    to_ist_str,
+)
 from app.kiosk.post_call_extract import format_transcript
 from app.kiosk.session_store import kiosk_session_store
 from app.kiosk.voice_session import (
@@ -26,23 +30,60 @@ log = logging.getLogger(__name__)
 
 
 class StartSessionRequest(BaseModel):
-    phone: str
+    phone: Optional[str] = None
     language: Optional[str] = None
     gender: str = "unknown"
+    learner_name: Optional[str] = None
+    lesson_topic: Optional[str] = None
+
+    @field_validator("lesson_topic")
+    @classmethod
+    def normalize_topic(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return v.strip()
 
 
 class StartSessionResponse(BaseModel):
     session_id: str
-    phone: str
+    phone: Optional[str] = None
     language: str
     phase: str
     status: str
+    learner_name: Optional[str] = None
+    lesson_topic: Optional[str] = None
 
 
 class CentreResponse(BaseModel):
     slug: str
     name: str
     default_language: str
+    centre_kind: str = "grievance"
+
+
+class KioskTranscriptLine(BaseModel):
+    speaker: str
+    text: str
+
+
+class SessionResultResponse(BaseModel):
+    session_id: str
+    centre_kind: str = "grievance"
+    complaint_number: Optional[str] = None
+    phase: str
+    status: str
+    phone: Optional[str] = None
+    language: str
+    gender: str = "unknown"
+    learner_name: Optional[str] = None
+    lesson_topic: Optional[str] = None
+    grievance: Optional[dict] = None
+    learning_record: Optional[dict] = None
+    full_transcript: Optional[str] = None
+    transcript: list[KioskTranscriptLine] = []
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+    centre_name: Optional[str] = None
 
 
 @router.get("/{slug}", response_model=CentreResponse)
@@ -54,28 +95,8 @@ async def get_centre(slug: str) -> CentreResponse:
         slug=centre.slug,
         name=centre.name,
         default_language=centre.default_language,
+        centre_kind=centre_kind_for(centre),
     )
-
-
-class KioskTranscriptLine(BaseModel):
-    speaker: str
-    text: str
-
-
-class GrievanceResultResponse(BaseModel):
-    session_id: str
-    complaint_number: Optional[str] = None
-    phase: str
-    status: str
-    phone: str
-    language: str
-    gender: str
-    grievance: Optional[dict] = None
-    full_transcript: Optional[str] = None
-    transcript: list[KioskTranscriptLine] = []
-    started_at: Optional[str] = None
-    ended_at: Optional[str] = None
-    centre_name: Optional[str] = None
 
 
 @router.post("/{slug}/session", response_model=StartSessionResponse, status_code=201)
@@ -84,34 +105,57 @@ async def start_session(slug: str, body: StartSessionRequest) -> StartSessionRes
     if not centre:
         raise HTTPException(status_code=404, detail="Kiosk centre not found.")
 
-    phone = body.phone.strip()
-    if not phone:
-        raise HTTPException(status_code=422, detail="Phone number is required.")
-
     language = (body.language or centre.default_language).strip().lower()
+    kind = centre_kind_for(centre)
 
-    session = KioskSession(
-        session_id=str(uuid.uuid4()),
-        centre_id=centre.centre_id,
-        phone=phone,
-        language=language,
-        gender=body.gender,
-        phase="complaint",
-        status="active",
-    )
+    if kind == "learning":
+        topic = body.lesson_topic
+        if not topic:
+            raise HTTPException(status_code=422, detail="Lesson topic is required.")
+        if topic not in VALID_LESSON_TOPICS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid lesson topic. Choose one of: {', '.join(sorted(VALID_LESSON_TOPICS))}",
+            )
+        learner_name = (body.learner_name or "").strip() or None
+        session = KioskSession(
+            session_id=str(uuid.uuid4()),
+            centre_id=centre.centre_id,
+            language=language,
+            learner_name=learner_name,
+            lesson_topic=topic,
+            phase="lesson",
+            status="active",
+        )
+    else:
+        phone = (body.phone or "").strip()
+        if not phone:
+            raise HTTPException(status_code=422, detail="Phone number is required.")
+        session = KioskSession(
+            session_id=str(uuid.uuid4()),
+            centre_id=centre.centre_id,
+            phone=phone,
+            language=language,
+            gender=body.gender,
+            phase="complaint",
+            status="active",
+        )
+
     await kiosk_session_store.create(session)
 
     return StartSessionResponse(
         session_id=session.session_id,
-        phone=phone,
+        phone=session.phone,
         language=language,
         phase=session.phase,
         status=session.status,
+        learner_name=session.learner_name,
+        lesson_topic=session.lesson_topic,
     )
 
 
-@router.get("/{slug}/session/{session_id}/result", response_model=GrievanceResultResponse)
-async def get_session_result(slug: str, session_id: str) -> GrievanceResultResponse:
+@router.get("/{slug}/session/{session_id}/result", response_model=SessionResultResponse)
+async def get_session_result(slug: str, session_id: str) -> SessionResultResponse:
     centre = await centre_store.get_by_slug(slug)
     if not centre:
         raise HTTPException(status_code=404, detail="Kiosk centre not found.")
@@ -122,8 +166,14 @@ async def get_session_result(slug: str, session_id: str) -> GrievanceResultRespo
     if session.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Session not found.")
 
+    kind = centre_kind_for(centre)
     grievance = (
         session.grievance.model_dump(mode="json") if session.grievance else None
+    )
+    learning_record = (
+        session.learning_record.model_dump(mode="json")
+        if session.learning_record
+        else None
     )
     transcript_lines = [
         KioskTranscriptLine(
@@ -133,22 +183,27 @@ async def get_session_result(slug: str, session_id: str) -> GrievanceResultRespo
         for e in session.transcript
         if (e.text or "").strip()
     ]
+    agent_label = "गुड्डी" if kind == "learning" else "AI सहायक"
     full_transcript = format_transcript(session.transcript).strip() or None
     if full_transcript:
         full_transcript = "\n".join(
-            f"{'आप' if line.speaker == 'user' else 'AI सहायक'}: {line.text}"
+            f"{'बच्चा' if line.speaker == 'user' else agent_label}: {line.text}"
             for line in transcript_lines
         )
 
-    return GrievanceResultResponse(
+    return SessionResultResponse(
         session_id=session.session_id,
+        centre_kind=kind,
         complaint_number=session.complaint_number,
         phase=session.phase,
         status=session.status,
         phone=session.phone,
         language=session.language,
         gender=session.gender,
+        learner_name=session.learner_name,
+        lesson_topic=session.lesson_topic,
         grievance=grievance,
+        learning_record=learning_record,
         full_transcript=full_transcript,
         transcript=transcript_lines,
         started_at=to_ist_str(session.started_at),
@@ -205,12 +260,12 @@ async def voice_stream(ws: WebSocket, slug: str, session_id: str) -> None:
 
     try:
         if not await acquire_live_slot(centre.centre_id):
-            await ws.send_json(
-                ev.error(
-                    "सभी कियोस्क लाइन व्यस्त हैं। कृपया कुछ क्षण बाद दोबारा प्रयास करें।",
-                    fatal=True,
-                )
+            busy_msg = (
+                "सभी लाइन व्यस्त हैं। कृपया कुछ क्षण बाद दोबारा प्रयास करें।"
+                if centre_kind_for(centre) == "learning"
+                else "सभी कियोस्क लाइन व्यस्त हैं। कृपया कुछ क्षण बाद दोबारा प्रयास करें।"
             )
+            await ws.send_json(ev.error(busy_msg, fatal=True))
             await ws.close(code=1013)
             return
         try:

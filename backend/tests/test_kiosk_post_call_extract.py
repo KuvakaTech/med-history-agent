@@ -107,3 +107,15 @@ def test_nagar_nigam_extract_prompt():
     assert "route_to" in prompt
     assert "service_request" in prompt
     assert "pvvnl_electricity_bill" in prompt
+
+
+def test_jan_sunwai_v2_uses_jan_sunwai_extract():
+    centre = KioskCentre(
+        slug="varanasi-jan-sunwai-v2",
+        name="Varanasi Jan Sunwai (New)",
+        prompt_file="jan_sunwai_v2_system.txt",
+    )
+    prompt = _extract_prompt_for_centre(centre)
+    assert "Jan Sunwai" in prompt
+    assert "land_revenue" in prompt
+    assert "khasra" in prompt

@@ -10,6 +10,12 @@ const CARDS = [
     icon: "🗣️",
   },
   {
+    title: "Jan Sunwai (New)",
+    sub: "Public grievance kiosk v2",
+    href: "/kiosk/varanasi-jan-sunwai-v2/start",
+    icon: "🗣️",
+  },
+  {
     title: "Nagar Nigam",
     sub: "Municipal corporation kiosk",
     href: "/kiosk/varanasi-nagar-nigam/start",
@@ -45,7 +51,7 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-500">Choose where you&apos;d like to go</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {CARDS.map((c) => (
               <Link
                 key={c.href}

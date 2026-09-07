@@ -146,6 +146,7 @@ class Settings(BaseSettings):
     # ── Kiosk (Jan Sunwai) ──────────────────────────────────────
     KIOSK_ENABLED: bool = False
     KIOSK_GEMINI_LIVE_VOICE: str = "Kore"  # female prebuilt voice (Jan Sunwai persona)
+    GUDDI_GEMINI_LIVE_VOICE: str = "Kore"  # young-girl voice for Guddi learning kiosk
     KIOSK_MAX_SESSION_MINUTES: int = 20
     KIOSK_MAX_CONCURRENT_LIVE_SESSIONS_PER_CENTRE: int = 3
     KIOSK_PERSIST_INTERVAL_SECS: float = 15.0

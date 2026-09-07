@@ -12,15 +12,32 @@ CENTRES = [
         "slug": "varanasi-jan-sunwai",
         "name": "Varanasi Jan Sunwai",
         "default_language": "hi",
+        "centre_kind": "grievance",
         "prompt_file": "jan_sunwai_system.txt",
         "complaint_prefix": "JS-VNS",
+    },
+    {
+        "slug": "varanasi-jan-sunwai-v2",
+        "name": "Varanasi Jan Sunwai (New)",
+        "default_language": "hi",
+        "centre_kind": "grievance",
+        "prompt_file": "jan_sunwai_v2_system.txt",
+        "complaint_prefix": "JS-V2",
     },
     {
         "slug": "varanasi-nagar-nigam",
         "name": "Varanasi Nagar Nigam",
         "default_language": "hi",
+        "centre_kind": "grievance",
         "prompt_file": "nagar_nigam_system.txt",
         "complaint_prefix": "NN-VNS",
+    },
+    {
+        "slug": "barwani-guddi",
+        "name": "Guddi Learning",
+        "default_language": "hi",
+        "centre_kind": "learning",
+        "prompt_file": "guddi_learning_system.txt",
     },
 ]
 

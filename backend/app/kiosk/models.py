@@ -1,4 +1,4 @@
-"""Kiosk (Jan Sunwai) data models."""
+"""Kiosk data models — grievance (Jan Sunwai) and learning (Guddi) centres."""
 from __future__ import annotations
 
 import uuid
@@ -8,6 +8,31 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 _IST_OFFSET_HOURS = 5.5
+
+CentreKind = Literal["grievance", "learning"]
+LessonTopic = Literal[
+    "Ghar",
+    "Khana",
+    "Jaanwar",
+    "Rang",
+    "Ginti",
+    "Shareer",
+    "Guddi-choose",
+]
+WordResult = Literal["clear", "emerging", "not_yet"]
+LearningMode = Literal["calm", "lively", "extra-gentle", "full-play"]
+LearningMood = Literal["happy", "tired", "shy", "excited", "unclear"]
+LearningFlag = Literal[
+    "none",
+    "needs-a-grown-up",
+    "very-shy",
+    "distress-noted",
+]
+EngagementLevel = Literal["high", "medium", "low"]
+
+VALID_LESSON_TOPICS: frozenset[str] = frozenset(
+    {"Ghar", "Khana", "Jaanwar", "Rang", "Ginti", "Shareer", "Guddi-choose"}
+)
 
 
 def to_ist_str(dt: Optional[datetime]) -> Optional[str]:
@@ -23,10 +48,21 @@ _SLUG_DEFAULTS: dict[str, dict[str, str]] = {
     "varanasi-jan-sunwai": {
         "prompt_file": "jan_sunwai_system.txt",
         "complaint_prefix": "JS-VNS",
+        "centre_kind": "grievance",
+    },
+    "varanasi-jan-sunwai-v2": {
+        "prompt_file": "jan_sunwai_v2_system.txt",
+        "complaint_prefix": "JS-V2",
+        "centre_kind": "grievance",
     },
     "varanasi-nagar-nigam": {
         "prompt_file": "nagar_nigam_system.txt",
         "complaint_prefix": "NN-VNS",
+        "centre_kind": "grievance",
+    },
+    "barwani-guddi": {
+        "prompt_file": "guddi_learning_system.txt",
+        "centre_kind": "learning",
     },
 }
 
@@ -40,9 +76,14 @@ class KioskCentre(BaseModel):
     slug: str
     name: str
     default_language: str = "hi"
+    centre_kind: CentreKind = "grievance"
     prompt_file: Optional[str] = None
     complaint_prefix: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+def centre_kind_for(centre: KioskCentre) -> CentreKind:
+    return centre.centre_kind
 
 
 def prompt_file_for_centre(centre: KioskCentre) -> str:
@@ -54,7 +95,7 @@ def prompt_file_for_centre(centre: KioskCentre) -> str:
 def complaint_prefix_for_centre(centre: KioskCentre) -> str:
     if centre.complaint_prefix:
         return centre.complaint_prefix
-    return defaults_for_slug(centre.slug)["complaint_prefix"]
+    return defaults_for_slug(centre.slug).get("complaint_prefix", "JS-VNS")
 
 
 class KioskTranscriptEntry(BaseModel):
@@ -100,16 +141,50 @@ class GrievanceRecord(BaseModel):
     category_details: dict[str, Any] = Field(default_factory=dict)
 
 
+class WordPracticeResult(BaseModel):
+    word: str
+    result: WordResult
+    said_in_dialect: bool = False
+
+
+class DialectBridge(BaseModel):
+    child_word: str
+    hindi_word: str
+
+
+class LearningRecord(BaseModel):
+    learner_name: Optional[str] = None
+    date: Optional[str] = None
+    duration_est: Optional[int] = None
+    mode_used: Optional[LearningMode] = None
+    mood_start: Optional[LearningMood] = None
+    topic: Optional[str] = None
+    words_practiced: list[WordPracticeResult] = Field(default_factory=list)
+    new_words_clear: Optional[int] = None
+    emerging_words: Optional[int] = None
+    pronunciation_note: Optional[str] = None
+    dialect_bridges: list[DialectBridge] = Field(default_factory=list)
+    milestone_signal: Optional[str] = None
+    engagement: Optional[str] = None
+    flags: Optional[LearningFlag] = "none"
+    next_focus: list[str] = Field(default_factory=list)
+    friendly_summary: Optional[str] = None
+
+
 class KioskSession(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     centre_id: str
-    phone: str
+    phone: Optional[str] = None
     language: str = "hi"
     gender: str = "unknown"
-    phase: Literal["complaint", "result"] = "complaint"
+    learner_name: Optional[str] = None
+    lesson_topic: Optional[str] = None
+    phase: Literal["complaint", "lesson", "result"] = "complaint"
     status: Literal["active", "partial", "completed"] = "active"
     complaint_number: Optional[str] = None
     grievance: Optional[GrievanceRecord] = None
+    learning_record: Optional[LearningRecord] = None
+    lesson_state: Optional[dict[str, Any]] = None
     transcript: list[KioskTranscriptEntry] = []
     turn_count: int = 0
     deleted_at: Optional[datetime] = None

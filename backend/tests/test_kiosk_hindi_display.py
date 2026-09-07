@@ -18,3 +18,8 @@ def test_roman_greeting_becomes_devanagari():
 def test_already_devanagari_passthrough():
     text = "नमस्ते जी, आप क्या समस्या दर्ज करना चाहते हैं?"
     assert to_devanagari_display(text) == text
+
+
+def test_english_caption_passthrough():
+    text = "Please tell me your name and the problem you want to register."
+    assert to_devanagari_display(text) == text

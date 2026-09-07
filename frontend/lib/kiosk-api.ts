@@ -1,8 +1,9 @@
 "use client";
 import type {
   CentreResponse,
-  GrievanceResultResponse,
+  SessionResultResponse,
   KioskWSEvent,
+  StartSessionBody,
   StartSessionResponse,
 } from "./kiosk-types";
 
@@ -23,14 +24,12 @@ export const kioskApi = {
 
   startSession: async (
     slug: string,
-    phone: string,
-    language: string,
-    gender: string
+    body: StartSessionBody
   ): Promise<StartSessionResponse> => {
     const res = await fetch(`${API_V2}/kiosk/${slug}/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, language, gender }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -39,7 +38,7 @@ export const kioskApi = {
     return res.json();
   },
 
-  getResult: async (slug: string, sessionId: string): Promise<GrievanceResultResponse> => {
+  getResult: async (slug: string, sessionId: string): Promise<SessionResultResponse> => {
     const res = await fetch(`${API_V2}/kiosk/${slug}/session/${sessionId}/result`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -106,13 +105,17 @@ export class KioskVoiceWS {
   private pcmNextTime = 0;
   private onEvent: (e: KioskWSEvent) => void;
   private onMicOpen: () => void;
+  private alwaysOpenMic = false;
 
   constructor(opts: {
     onEvent: (e: KioskWSEvent) => void;
     onMicOpen: () => void;
+    /** Learning kiosk: always stream mic so children are heard while Guddi speaks */
+    alwaysOpenMic?: boolean;
   }) {
     this.onEvent = opts.onEvent;
     this.onMicOpen = opts.onMicOpen;
+    this.alwaysOpenMic = opts.alwaysOpenMic ?? false;
   }
 
   async connect(url: string): Promise<void> {
@@ -168,6 +171,13 @@ export class KioskVoiceWS {
       return;
     }
 
+    if (msg.type === "user_speech_started") {
+      this._interruptPcm();
+      this.agentPlaying = false;
+      this.onEvent(msg);
+      return;
+    }
+
     if (msg.type === "interrupt") {
       this._interruptPcm();
       this.agentPlaying = false;
@@ -204,6 +214,7 @@ export class KioskVoiceWS {
       this.processor.onaudioprocess = (e) => {
         if (!this.micOpen || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
         const float32 = e.inputBuffer.getChannelData(0);
+        // Duck mic while Guddi speaks — barge-in via user_speech_started re-opens the mic.
         if (this.agentPlaying && floatRms(float32) < DUCK_RMS) return;
         const fromRate = this.audioCtx?.sampleRate ?? TARGET_CAPTURE_HZ;
         const pcm16 = downsampleToPcm16(float32, fromRate, TARGET_CAPTURE_HZ);

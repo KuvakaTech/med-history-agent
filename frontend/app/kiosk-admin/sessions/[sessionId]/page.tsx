@@ -66,7 +66,9 @@ export default function KioskAdminSessionPage() {
   }, [sessionId, router]);
 
   const sessionCentre = centres.find((c) => c.centre_id === session?.centre_id);
+  const isLearning = session?.centre_kind === "learning" || sessionCentre?.centre_kind === "learning";
   const g = session?.grievance as Record<string, unknown> | null | undefined;
+  const lr = session?.learning_record;
 
   if (loading) {
     return (
@@ -87,7 +89,7 @@ export default function KioskAdminSessionPage() {
             onClick={() => router.push("/kiosk-admin")}
             className="text-sm text-gray-500 hover:text-amber-700"
           >
-            ← Grievances
+            ← Sessions
           </button>
           {userRole === "super_admin" && (
             <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
@@ -104,13 +106,20 @@ export default function KioskAdminSessionPage() {
 
       <div className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         <div className="text-center space-y-2">
-          {session.complaint_number && (
-            <p className="text-3xl font-mono font-bold text-amber-700 tracking-wide">
-              {session.complaint_number}
-            </p>
+          {isLearning ? (
+            <p className="text-2xl font-bold text-pink-600">गुड्डी 🌸</p>
+          ) : (
+            session.complaint_number && (
+              <p className="text-3xl font-mono font-bold text-amber-700 tracking-wide">
+                {session.complaint_number}
+              </p>
+            )
           )}
           <p className="text-sm text-gray-500">
-            {session.started_at_ist || "—"} · Phone: {session.phone}
+            {session.started_at_ist || "—"}
+            {isLearning
+              ? ` · ${session.learner_name || "—"} · ${session.lesson_topic || "—"}`
+              : ` · Phone: ${session.phone || "—"}`}
           </p>
           <span
             className={clsx(
@@ -123,6 +132,42 @@ export default function KioskAdminSessionPage() {
             {session.status}
           </span>
         </div>
+
+        {lr && (
+          <div className="bg-white rounded-2xl border border-pink-100 shadow-sm divide-y divide-gray-100">
+            {[
+              ["Summary", lr.friendly_summary],
+              ["Topic", lr.topic || session.lesson_topic],
+              ["Mood", lr.mood_start],
+              ["Mode", lr.mode_used],
+              ["Engagement", lr.engagement],
+              ["Milestone", lr.milestone_signal],
+              ["Flags", lr.flags !== "none" ? lr.flags : null],
+              ["Next focus", lr.next_focus?.join(", ")],
+              ["Note", lr.pronunciation_note],
+            ].map(([label, value]) =>
+              value ? (
+                <div key={label as string} className="px-5 py-4">
+                  <p className="text-xs font-semibold text-gray-400 uppercase">{label}</p>
+                  <p className="text-gray-900 mt-1">{String(value)}</p>
+                </div>
+              ) : null
+            )}
+            {(lr.words_practiced?.length ?? 0) > 0 && (
+              <div className="px-5 py-4">
+                <p className="text-xs font-semibold text-gray-400 uppercase mb-2">Words</p>
+                <div className="space-y-1">
+                  {lr.words_practiced!.map((w, i) => (
+                    <p key={i} className="text-sm text-gray-800">
+                      {w.word} — {w.result}
+                      {w.said_in_dialect ? " (dialect)" : ""}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {g && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-100">
@@ -163,7 +208,7 @@ export default function KioskAdminSessionPage() {
                     )}
                   >
                     <p className={clsx("text-xs font-medium mb-1", isUser ? "text-amber-700" : "text-gray-400")}>
-                      {isUser ? "आप" : "AI सहायक"}
+                      {isUser ? (isLearning ? "बच्चा" : "आप") : isLearning ? "गुड्डी" : "AI सहायक"}
                     </p>
                     <p className="text-gray-800 leading-relaxed">{entry.text}</p>
                   </div>

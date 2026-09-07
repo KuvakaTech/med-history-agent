@@ -35,18 +35,68 @@ export interface GrievanceRecord {
   category_details?: Record<string, unknown>;
 }
 
+export type LessonTopic =
+  | "Ghar"
+  | "Khana"
+  | "Jaanwar"
+  | "Rang"
+  | "Ginti"
+  | "Shareer"
+  | "Guddi-choose";
+
+export interface WordPracticeResult {
+  word: string;
+  result: "clear" | "emerging" | "not_yet";
+  said_in_dialect: boolean;
+}
+
+export interface DialectBridge {
+  child_word: string;
+  hindi_word: string;
+}
+
+export interface LearningRecord {
+  learner_name?: string | null;
+  date?: string | null;
+  duration_est?: number | null;
+  mode_used?: string | null;
+  mood_start?: string | null;
+  topic?: string | null;
+  words_practiced?: WordPracticeResult[];
+  new_words_clear?: number | null;
+  emerging_words?: number | null;
+  pronunciation_note?: string | null;
+  dialect_bridges?: DialectBridge[];
+  milestone_signal?: string | null;
+  engagement?: string | null;
+  flags?: string | null;
+  next_focus?: string[];
+  friendly_summary?: string | null;
+}
+
+export interface StartSessionBody {
+  phone?: string;
+  language?: string;
+  gender?: string;
+  learner_name?: string;
+  lesson_topic?: LessonTopic;
+}
+
 export interface StartSessionResponse {
   session_id: string;
-  phone: string;
+  phone?: string | null;
   language: string;
   phase: string;
   status: string;
+  learner_name?: string | null;
+  lesson_topic?: string | null;
 }
 
 export interface CentreResponse {
   slug: string;
   name: string;
   default_language: string;
+  centre_kind: "grievance" | "learning";
 }
 
 export interface KioskTranscriptEntry {
@@ -54,21 +104,28 @@ export interface KioskTranscriptEntry {
   text: string;
 }
 
-export interface GrievanceResultResponse {
+export interface SessionResultResponse {
   session_id: string;
+  centre_kind: "grievance" | "learning";
   complaint_number?: string | null;
   phase: string;
   status: string;
-  phone: string;
+  phone?: string | null;
   language: string;
-  gender: string;
+  gender?: string;
+  learner_name?: string | null;
+  lesson_topic?: string | null;
   grievance?: GrievanceRecord | null;
+  learning_record?: LearningRecord | null;
   full_transcript?: string | null;
   transcript?: KioskTranscriptEntry[];
   started_at?: string | null;
   ended_at?: string | null;
   centre_name?: string | null;
 }
+
+/** @deprecated use SessionResultResponse */
+export type GrievanceResultResponse = SessionResultResponse;
 
 export type KioskWSEvent = {
   type: string;
@@ -84,4 +141,38 @@ export type KioskWSEvent = {
   audio_b64?: string;
   complaint_number?: string;
   grievance?: GrievanceRecord;
+  learning_record?: LearningRecord;
+  word_id?: string;
+  hindi?: string;
+  image_url?: string;
+  mode?: "teach" | "quiz";
+  child_said?: string;
+  result?: "clear" | "close" | "wrong";
+  expected_hindi?: string;
 };
+
+export const LESSON_TOPICS: {
+  value: LessonTopic;
+  label: string;
+  coverImage: string;
+}[] = [
+  { value: "Ghar", label: "घर", coverImage: "/kiosk/vocabulary/ghar/ghar.jpg" },
+  { value: "Khana", label: "खाना", coverImage: "/kiosk/vocabulary/khana/aam.jpg" },
+  { value: "Jaanwar", label: "जानवर", coverImage: "/kiosk/vocabulary/jaanwar/bakri.jpg" },
+  { value: "Rang", label: "रंग", coverImage: "/kiosk/vocabulary/rang/laal.svg" },
+  { value: "Ginti", label: "गिनती", coverImage: "/kiosk/vocabulary/ginti/ek.svg" },
+  { value: "Shareer", label: "शरीर", coverImage: "/kiosk/vocabulary/shareer/aankh.jpg" },
+  {
+    value: "Guddi-choose",
+    label: "गुड्डी चुनें",
+    coverImage: "/kiosk/vocabulary/topics/guddi.svg",
+  },
+];
+
+export function isLearningSlug(slug: string): boolean {
+  return slug === "barwani-guddi";
+}
+
+export function isJanSunwaiSlug(slug: string): boolean {
+  return slug === "varanasi-jan-sunwai" || slug === "varanasi-jan-sunwai-v2";
+}

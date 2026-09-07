@@ -56,6 +56,8 @@ export default function KioskAdminDashboard() {
 
   const [complaintSearch, setComplaintSearch] = useState("");
   const [phoneSearch, setPhoneSearch] = useState("");
+  const [learnerSearch, setLearnerSearch] = useState("");
+  const [topicSearch, setTopicSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -63,11 +65,15 @@ export default function KioskAdminDashboard() {
   const [showNewCentre, setShowNewCentre] = useState(false);
   const [newCentreSlug, setNewCentreSlug] = useState("");
   const [newCentreName, setNewCentreName] = useState("");
+  const [newCentreKind, setNewCentreKind] = useState<"grievance" | "learning">("grievance");
   const [creatingCentre, setCreatingCentre] = useState(false);
 
   useEffect(() => {
     document.title = "Admin Panel";
   }, []);
+
+  const selectedCentreMeta = centres.find((c) => c.centre_id === selectedCentre);
+  const isLearningCentre = selectedCentreMeta?.centre_kind === "learning";
 
   const loadData = useCallback(
     async (t: string, centreId?: string, isSuperAdmin = false) => {
@@ -80,8 +86,10 @@ export default function KioskAdminDashboard() {
           kioskAdminApi.listSessions(t, {
             centre_id: cid || undefined,
             status: statusFilter || undefined,
-            complaint: complaintSearch || undefined,
-            phone: phoneSearch || undefined,
+            complaint: !isLearningCentre && complaintSearch ? complaintSearch : undefined,
+            phone: !isLearningCentre && phoneSearch ? phoneSearch : undefined,
+            learner_name: isLearningCentre && learnerSearch ? learnerSearch : undefined,
+            topic: isLearningCentre && topicSearch ? topicSearch : undefined,
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             limit: 200,
@@ -97,7 +105,7 @@ export default function KioskAdminDashboard() {
         setFetching(false);
       }
     },
-    [statusFilter, complaintSearch, phoneSearch, dateFrom, dateTo]
+    [statusFilter, complaintSearch, phoneSearch, learnerSearch, topicSearch, dateFrom, dateTo, isLearningCentre]
   );
 
   useEffect(() => {
@@ -144,6 +152,7 @@ export default function KioskAdminDashboard() {
       const c = await kioskAdminApi.createCentre(token, {
         slug: newCentreSlug.trim().toLowerCase(),
         name: newCentreName.trim(),
+        centre_kind: newCentreKind,
       });
       setCentres((prev) => [...prev, c]);
       setSelectedCentre(c.centre_id);
@@ -226,6 +235,14 @@ export default function KioskAdminDashboard() {
                 value={newCentreName}
                 onChange={(e) => setNewCentreName(e.target.value)}
               />
+              <select
+                className="input-field text-sm py-2 sm:col-span-2"
+                value={newCentreKind}
+                onChange={(e) => setNewCentreKind(e.target.value as "grievance" | "learning")}
+              >
+                <option value="grievance">Grievance kiosk</option>
+                <option value="learning">Learning kiosk (Guddi)</option>
+              </select>
             </div>
             <div className="flex gap-2">
               <button
@@ -249,13 +266,13 @@ export default function KioskAdminDashboard() {
 
         {userRole === "super_admin" && !selectedCentre && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
-            Select a kiosk centre to view grievances.
+            Select a kiosk centre to view sessions.
           </div>
         )}
 
         {(userRole !== "super_admin" || selectedCentre) && stats && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="Today" value={stats.today.total} sub="grievances" />
+            <StatCard label="Today" value={stats.today.total} sub="sessions" />
             <StatCard label="Completed" value={stats.today.completed} color="green" />
             <StatCard label="Partial" value={stats.today.partial} color="amber" />
             <StatCard label="Active" value={stats.today.active} color="blue" />
@@ -265,26 +282,53 @@ export default function KioskAdminDashboard() {
         {(userRole !== "super_admin" || selectedCentre) && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-3 items-end">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase">Complaint No.</label>
-                <input
-                  className="input-field w-44 text-sm py-2 font-mono"
-                  placeholder="JS-VNS-…"
-                  value={complaintSearch}
-                  onChange={(e) => setComplaintSearch(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && refetch()}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase">Phone</label>
-                <input
-                  className="input-field w-36 text-sm py-2 font-mono"
-                  placeholder="9876543210"
-                  value={phoneSearch}
-                  onChange={(e) => setPhoneSearch(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && refetch()}
-                />
-              </div>
+              {isLearningCentre ? (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-500 uppercase">Learner</label>
+                    <input
+                      className="input-field w-44 text-sm py-2"
+                      placeholder="Name"
+                      value={learnerSearch}
+                      onChange={(e) => setLearnerSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && refetch()}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-500 uppercase">Topic</label>
+                    <input
+                      className="input-field w-36 text-sm py-2"
+                      placeholder="Ghar"
+                      value={topicSearch}
+                      onChange={(e) => setTopicSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && refetch()}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-500 uppercase">Complaint No.</label>
+                    <input
+                      className="input-field w-44 text-sm py-2 font-mono"
+                      placeholder="JS-VNS-…"
+                      value={complaintSearch}
+                      onChange={(e) => setComplaintSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && refetch()}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-500 uppercase">Phone</label>
+                    <input
+                      className="input-field w-36 text-sm py-2 font-mono"
+                      placeholder="9876543210"
+                      value={phoneSearch}
+                      onChange={(e) => setPhoneSearch(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && refetch()}
+                    />
+                  </div>
+                </>
+              )}
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-500 uppercase">Status</label>
                 <select
@@ -307,8 +351,17 @@ export default function KioskAdminDashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-500">Complaint</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-500">Phone</th>
+                    {isLearningCentre ? (
+                      <>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500">Learner</th>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500">Topic</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500">Complaint</th>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500">Phone</th>
+                      </>
+                    )}
                     <th className="text-left px-4 py-3 font-semibold text-gray-500">Summary</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-500">Status</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-500">Started</th>
@@ -318,7 +371,7 @@ export default function KioskAdminDashboard() {
                   {sessions.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                        No grievances found.
+                        No sessions found.
                       </td>
                     </tr>
                   ) : (
@@ -328,12 +381,23 @@ export default function KioskAdminDashboard() {
                         className="border-b border-gray-50 hover:bg-amber-50/50 cursor-pointer"
                         onClick={() => router.push(`/kiosk-admin/sessions/${s.session_id}`)}
                       >
-                        <td className="px-4 py-3 font-mono text-amber-800">
-                          {s.complaint_number || "—"}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-gray-600">{s.phone}</td>
+                        {isLearningCentre ? (
+                          <>
+                            <td className="px-4 py-3 text-gray-800">
+                              {s.learner_name || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{s.lesson_topic || "—"}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3 font-mono text-amber-800">
+                              {s.complaint_number || "—"}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-gray-600">{s.phone || "—"}</td>
+                          </>
+                        )}
                         <td className="px-4 py-3 text-gray-700 max-w-xs truncate">
-                          {s.grievance_summary || "—"}
+                          {s.session_summary || s.grievance_summary || "—"}
                         </td>
                         <td className="px-4 py-3">
                           <span

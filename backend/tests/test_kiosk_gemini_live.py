@@ -5,7 +5,15 @@ import os
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
-from app.kiosk.gemini_live import complaint_tools, build_live_config
+from app.kiosk.gemini_live import complaint_tools, lesson_tools, build_live_config
+
+
+def test_lesson_tool_name():
+    tools = lesson_tools()
+    decl = tools[0].function_declarations
+    names = [d.name for d in decl]
+    assert "show_word_card" in names
+    assert "finish_lesson" in names
 
 
 def test_complaint_tool_name():

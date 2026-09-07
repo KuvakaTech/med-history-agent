@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#FFF8FA" rx="24"/>
+  <text x="200" y="170" text-anchor="middle" font-size="120" font-family="sans-serif" fill="#C2185B">५</text>
+  <circle cx="56" cy="280" r="22" fill="#F48FB1" stroke="#E91E63" stroke-width="2"/>
+  <circle cx="128" cy="280" r="22" fill="#F48FB1" stroke="#E91E63" stroke-width="2"/>
+  <circle cx="200" cy="280" r="22" fill="#F48FB1" stroke="#E91E63" stroke-width="2"/>
+  <circle cx="272" cy="280" r="22" fill="#F48FB1" stroke="#E91E63" stroke-width="2"/>
+  <circle cx="344" cy="280" r="22" fill="#F48FB1" stroke="#E91E63" stroke-width="2"/>
+  <text x="200" y="350" text-anchor="middle" font-size="36" font-family="sans-serif" fill="#333">पाँच</text>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <rect width="200" height="200" fill="#FFF0F5" rx="24"/>
+  <circle cx="100" cy="90" r="14" fill="#F8BBD9"/>
+  <ellipse cx="100" cy="58" rx="16" ry="22" fill="#F48FB1"/>
+  <ellipse cx="128" cy="78" rx="16" ry="22" fill="#F48FB1" transform="rotate(72 100 90)"/>
+  <ellipse cx="115" cy="112" rx="16" ry="22" fill="#F48FB1" transform="rotate(144 100 90)"/>
+  <ellipse cx="85" cy="112" rx="16" ry="22" fill="#F48FB1" transform="rotate(216 100 90)"/>
+  <ellipse cx="72" cy="78" rx="16" ry="22" fill="#F48FB1" transform="rotate(288 100 90)"/>
+  <text x="100" y="168" text-anchor="middle" font-size="18" font-family="sans-serif" fill="#C2185B">गुड्डी</text>
+</svg>
