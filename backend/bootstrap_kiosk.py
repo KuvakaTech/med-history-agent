@@ -17,12 +17,12 @@ CENTRES = [
         "complaint_prefix": "JS-VNS",
     },
     {
-        "slug": "varanasi-jan-sunwai-v2",
-        "name": "Varanasi Jan Sunwai (New)",
+        "slug": "barwani-jan-sunwai",
+        "name": "Barwani Jan Sunwai",
         "default_language": "hi",
         "centre_kind": "grievance",
-        "prompt_file": "jan_sunwai_v2_system.txt",
-        "complaint_prefix": "JS-V2",
+        "prompt_file": "barwani_jan_sunwai",
+        "complaint_prefix": "JS-BWN",
     },
     {
         "slug": "varanasi-nagar-nigam",

@@ -10,9 +10,9 @@ const CARDS = [
     icon: "🗣️",
   },
   {
-    title: "Jan Sunwai (New)",
-    sub: "Public grievance kiosk v2",
-    href: "/kiosk/varanasi-jan-sunwai-v2/start",
+    title: "Barwani Jan Sunwai",
+    sub: "District grievance kiosk",
+    href: "/kiosk/barwani-jan-sunwai/start",
     icon: "🗣️",
   },
   {

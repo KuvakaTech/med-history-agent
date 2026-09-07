@@ -31,24 +31,25 @@ def test_jan_sunwai_prompt_loads():
     assert "NEVER ask which language" in text
 
 
-def test_jan_sunwai_v2_prompt_loads_bilingual():
+def test_barwani_jan_sunwai_prompt_loads_bilingual():
     centre = KioskCentre(
-        slug="varanasi-jan-sunwai-v2",
-        name="Varanasi Jan Sunwai (New)",
-        prompt_file="jan_sunwai_v2_system.txt",
-        complaint_prefix="JS-V2",
+        slug="barwani-jan-sunwai",
+        name="Barwani Jan Sunwai",
+        prompt_file="barwani_jan_sunwai",
+        complaint_prefix="JS-BWN",
     )
-    assert prompt_file_for_centre(centre) == "jan_sunwai_v2_system.txt"
+    assert prompt_file_for_centre(centre) == "barwani_jan_sunwai"
     text = system_instruction(centre, "hi")
-    assert "JAN SUNWAI" in text.upper()
+    assert "BARWANI" in text.upper()
     assert "English mein" in text
     assert "3.1 NEVER REVEAL" in text
-    assert "9A" in text
-    assert "11.4 HOW TO FOLLOW UP" in text
-    assert "parchi" in text.lower()
+    assert "tribal-majority" in text.lower() or "Scheduled Tribes" in text
+    assert "Sendhwa" in text
+    assert "MPPKVVCL" in text
+    assert "punarvas" in text.lower()
     assert "NEVER ask which language" not in text
     assert "This kiosk is Hindi-only" not in text
-    assert "JS-V2-" in text
+    assert "JS-BWN-" in text
     kick = kickoff_text(centre, "hi")
     assert "offer Hindi or English" in kick
     assert "Do NOT ask Hindi or English" not in kick
@@ -81,5 +82,5 @@ def test_nagar_nigam_prompt_loads():
 def test_slug_defaults_without_explicit_fields():
     centre = KioskCentre(slug="varanasi-nagar-nigam", name="Varanasi Nagar Nigam")
     assert prompt_file_for_centre(centre) == "nagar_nigam_system.txt"
-    v2 = KioskCentre(slug="varanasi-jan-sunwai-v2", name="Varanasi Jan Sunwai (New)")
-    assert prompt_file_for_centre(v2) == "jan_sunwai_v2_system.txt"
+    v2 = KioskCentre(slug="barwani-jan-sunwai", name="Barwani Jan Sunwai")
+    assert prompt_file_for_centre(v2) == "barwani_jan_sunwai"

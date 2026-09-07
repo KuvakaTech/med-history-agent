@@ -123,10 +123,42 @@ Transcript:
 {transcript}
 """
 
+_BARWANI_JAN_SUNWAI_EXTRACT_PROMPT = """\
+Extract a structured Barwani Jan Sunwai district grievance record from this kiosk voice transcript.
+
+Rules:
+- Use ONLY what is explicitly said. Do not invent facts.
+- Phone was captured at kiosk intake — do not extract phone from transcript.
+- Never extract Aadhaar, bank account, OTP, or passwords.
+- urgency: "urgent" for emergencies, safety threats, live electrical danger, land grab/threat,
+  Narmada/punarvas distress, self-harm/distress, rapidly worsening health; else "normal".
+- department_tag: one of health, water, electricity, road, ration, land_revenue, pension_welfare,
+  sanitation, education, police_safety, employment, agriculture, certificates, out_of_scope,
+  other, to_be_assigned.
+- category_details (dict) — populate when mentioned:
+  - tehsil, block: Barwani, Sendhwa, Pansemal, Warla/Varla, Niwali, Thikri/Thikari, Pati, Anjad, Rajpur
+  - sub_division: Barwani or Sendhwa SDM
+  - out_of_scope: true for RTI, civil sub-judice only matters, govt employee transfer, etc.
+  - out_of_scope_reason: e.g. rti, sub_judice, govt_employee_service
+  - route_to: e.g. MPPKVVCL, Tehsil, Nagar_Palika, PWD, DSO, CMHO, SP_Barwani, NVDA,
+    Zila_Panchayat, Lok_Seva_Kendra, Janpad_Panchayat
+  - revenue/land (9A): khasra, gata, khatauni, rakba, namantaran_type (purchase/inheritance),
+    vaad_case_number, sub_judice (court matter), opposite_party
+  - punarvas: true for Narmada/Sardar Sarovar rehabilitation matters; nvda_route if stated
+  - billing (8.1): current_amount, previous_amount, consumer_number, connection_type
+- out_of_scope matters → department_tag out_of_scope + category_details.out_of_scope=true + route_to.
+
+Transcript:
+{transcript}
+"""
+
 
 def _extract_prompt_for_centre(centre: KioskCentre) -> str:
-    if prompt_file_for_centre(centre) == "nagar_nigam_system.txt":
+    key = prompt_file_for_centre(centre)
+    if key == "nagar_nigam_system.txt":
         return _NAGAR_NIGAM_EXTRACT_PROMPT
+    if key == "barwani_jan_sunwai":
+        return _BARWANI_JAN_SUNWAI_EXTRACT_PROMPT
     return _JAN_SUNWAI_EXTRACT_PROMPT
 
 

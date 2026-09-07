@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { KioskVoiceWS, kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, KioskWSEvent } from "@/lib/kiosk-types";
-import { isJanSunwaiSlug, isLearningSlug } from "@/lib/kiosk-types";
+import { isBarwaniJanSunwaiSlug, isJanSunwaiSlug, isLearningSlug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 type Phase = "connecting" | "active" | "processing" | "done" | "error";
@@ -121,6 +121,8 @@ export default function KioskCallPage() {
       document.title = "Varanasi Nagar Nigam";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
+    } else if (isBarwaniJanSunwaiSlug(slug)) {
+      document.title = "बड़वानी जन सुनवाई";
     } else if (slug === "barwani-guddi") {
       document.title = "गुड्डी";
     } else {
@@ -207,6 +209,8 @@ export default function KioskCallPage() {
             <span className="text-sm font-extrabold text-orange-600">वाराणसी नगर निगम</span>
           ) : isJanSunwaiSlug(slug) ? (
             <span className="text-sm font-extrabold text-orange-600">वाराणसी जन सुनवाई</span>
+          ) : isBarwaniJanSunwaiSlug(slug) ? (
+            <span className="text-sm font-extrabold text-orange-600">बड़वानी जन सुनवाई</span>
           ) : (
             <span className="text-sm font-semibold text-amber-800">
               {centre?.name || "शिकायत कियोस्क"}

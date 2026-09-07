@@ -174,5 +174,9 @@ export function isLearningSlug(slug: string): boolean {
 }
 
 export function isJanSunwaiSlug(slug: string): boolean {
-  return slug === "varanasi-jan-sunwai" || slug === "varanasi-jan-sunwai-v2";
+  return slug === "varanasi-jan-sunwai";
+}
+
+export function isBarwaniJanSunwaiSlug(slug: string): boolean {
+  return slug === "barwani-jan-sunwai";
 }

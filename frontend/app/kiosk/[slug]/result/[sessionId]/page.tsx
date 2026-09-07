@@ -7,7 +7,7 @@ import type {
   KioskTranscriptEntry,
   SessionResultResponse,
 } from "@/lib/kiosk-types";
-import { isJanSunwaiSlug } from "@/lib/kiosk-types";
+import { isBarwaniJanSunwaiSlug, isJanSunwaiSlug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 function formatAddress(addr: GrievanceAddress | null | undefined): string {
@@ -100,6 +100,8 @@ function KioskResultPageInner() {
       document.title = "Varanasi Nagar Nigam";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
+    } else if (isBarwaniJanSunwaiSlug(slug)) {
+      document.title = "बड़वानी जन सुनवाई";
     } else if (slug === "barwani-guddi") {
       document.title = "गुड्डी";
     } else {
@@ -188,6 +190,8 @@ function KioskResultPageInner() {
             <p className="text-lg font-extrabold text-orange-600">वाराणसी नगर निगम</p>
           ) : isJanSunwaiSlug(slug) ? (
             <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
+          ) : isBarwaniJanSunwaiSlug(slug) ? (
+            <p className="text-lg font-extrabold text-orange-600">बड़वानी जन सुनवाई</p>
           ) : (
             <p className="text-sm text-gray-500">{result.centre_name || "Jan Sunwai"}</p>
           )}

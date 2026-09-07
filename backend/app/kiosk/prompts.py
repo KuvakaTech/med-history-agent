@@ -1,6 +1,7 @@
 """Kiosk system prompt loader — centre kind selects voice agent context."""
 from __future__ import annotations
 
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Optional
 
@@ -8,15 +9,33 @@ from app.kiosk.models import KioskCentre, prompt_file_for_centre
 from app.kiosk.vocabulary import words_for_topic
 
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
-_V2_PROMPT_FILE = "jan_sunwai_v2_system.txt"
+_BARWANI_PROMPT_KEY = "barwani_jan_sunwai"
 
 
-def _is_jan_sunwai_v2(centre: KioskCentre) -> bool:
-    return prompt_file_for_centre(centre) == _V2_PROMPT_FILE
+def _load_embedded_prompt(module_name: str, attr: str) -> str:
+    path = _PROMPTS_DIR / f"{module_name}.py"
+    spec = spec_from_file_location(f"kiosk_embedded_{module_name}", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load embedded kiosk prompt: {path}")
+    mod = module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return str(getattr(mod, attr)).strip()
+
+
+_PROMPT_REGISTRY: dict[str, str] = {
+    _BARWANI_PROMPT_KEY: _load_embedded_prompt("barwani", "BARWANI_JAN_SUNWAI_SYSTEM"),
+}
+
+
+def _is_barwani_jan_sunwai(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _BARWANI_PROMPT_KEY
 
 
 def _load_base_prompt(centre: KioskCentre) -> str:
-    path = _PROMPTS_DIR / prompt_file_for_centre(centre)
+    key = prompt_file_for_centre(centre)
+    if key in _PROMPT_REGISTRY:
+        return _PROMPT_REGISTRY[key]
+    path = _PROMPTS_DIR / key
     if path.is_file():
         return path.read_text(encoding="utf-8").strip()
     return f"You are the kiosk AI assistant for {centre.name}."
@@ -38,7 +57,7 @@ def _language_name(code: str) -> str:
 
 
 def _grievance_runtime(centre: KioskCentre, language: str) -> str:
-    if _is_jan_sunwai_v2(centre):
+    if _is_barwani_jan_sunwai(centre):
         return (
             "\n\nAsk exactly ONE question per turn, then wait for the answer. "
             "Greet in Hindi first, then offer Hindi or English (section 2.1). "
@@ -47,7 +66,7 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
             "When speaking English, use English on screen (do not transliterate). "
             "CRITICAL — COMPLAINT NUMBER: You do NOT know the complaint number during this call. "
             "NEVER invent, guess, or speak any complaint number "
-            "(no JS-V2-, JS-VNS-, NN-VNS-, NNVNS-, or random digits). "
+            "(no JS-BWN-, JS-VNS-, NN-VNS-, NNVNS-, or random digits). "
             "The system assigns the official number only after the citizen ends the call; "
             "it appears on the acknowledgement slip and at the counter. "
             "Never voice the ID — tell the citizen they can get it from the parchi or counter."
@@ -120,7 +139,7 @@ def system_instruction_learning(
 
 
 def kickoff_text(centre: KioskCentre, language: str) -> str:
-    if _is_jan_sunwai_v2(centre):
+    if _is_barwani_jan_sunwai(centre):
         return (
             f"The citizen is now at the kiosk for {centre.name}. "
             "Greet them warmly in Hindi first (section 2.1): disclose you are AI, "

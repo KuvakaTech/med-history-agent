@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, LessonTopic } from "@/lib/kiosk-types";
-import { LESSON_TOPICS, isJanSunwaiSlug } from "@/lib/kiosk-types";
+import { LESSON_TOPICS, isBarwaniJanSunwaiSlug, isJanSunwaiSlug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 const GENDERS = [
@@ -33,6 +33,8 @@ function usePageTitle(slug: string) {
       document.title = "Varanasi Nagar Nigam";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
+    } else if (isBarwaniJanSunwaiSlug(slug)) {
+      document.title = "बड़वानी जन सुनवाई";
     } else if (slug === "barwani-guddi") {
       document.title = "गुड्डी";
     } else {
@@ -315,6 +317,11 @@ function GrievanceStart({
           <span className="text-xl font-extrabold text-orange-600">वाराणसी जन सुनवाई</span>
           <span className="text-xs font-bold text-orange-500 tracking-widest">VARANASI JAN SUNWAI</span>
         </div>
+      ) : isBarwaniJanSunwaiSlug(slug) ? (
+        <div className="flex flex-col self-start leading-tight">
+          <span className="text-xl font-extrabold text-orange-600">बड़वानी जन सुनवाई</span>
+          <span className="text-xs font-bold text-orange-500 tracking-widest">BARWANI JAN SUNWAI</span>
+        </div>
       ) : (
         <div className="flex items-center gap-3 self-start">
           <div className="h-10 w-10 rounded-full bg-amber-600 text-white flex items-center justify-center text-sm font-bold">
@@ -322,7 +329,7 @@ function GrievanceStart({
           </div>
           <div>
             <p className="text-sm font-semibold text-gray-900">{centre.name}</p>
-            <p className="text-xs text-gray-500">Varanasi</p>
+            <p className="text-xs text-gray-500">{centre.name}</p>
           </div>
         </div>
       )}

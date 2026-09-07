@@ -50,9 +50,9 @@ _SLUG_DEFAULTS: dict[str, dict[str, str]] = {
         "complaint_prefix": "JS-VNS",
         "centre_kind": "grievance",
     },
-    "varanasi-jan-sunwai-v2": {
-        "prompt_file": "jan_sunwai_v2_system.txt",
-        "complaint_prefix": "JS-V2",
+    "barwani-jan-sunwai": {
+        "prompt_file": "barwani_jan_sunwai",
+        "complaint_prefix": "JS-BWN",
         "centre_kind": "grievance",
     },
     "varanasi-nagar-nigam": {
