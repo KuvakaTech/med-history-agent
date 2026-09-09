@@ -8,9 +8,13 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
 import pytest
 
+from app.kiosk import events as ev
 from app.kiosk.gemini_live import LiveEvent, merge_transcript_chunk
 from app.kiosk.models import KioskCentre, KioskSession
-from app.kiosk.voice_session import KioskVoiceSession
+from app.kiosk.voice_session import (
+    KioskVoiceSession,
+    _looks_like_grievance_closing,
+)
 
 
 @pytest.mark.asyncio
@@ -539,3 +543,49 @@ async def test_tool_rejected_for_earlier_engine_word():
 
     voice._live.send_tool_response.assert_awaited_once()
     assert "error" in voice._live.send_tool_response.await_args.args[2]
+
+
+def test_session_processing_event():
+    payload = ev.session_processing("sess-abc")
+    assert payload == {"type": "session_processing", "session_id": "sess-abc"}
+
+
+def test_looks_like_grievance_closing():
+    closing = (
+        "कोई बात नहीं जी। जितनी जानकारी आपने दी है, मैं उसे नोट कर लेती हूँ। "
+        "जन सुनवाई में आने के लिए धन्यवाद। आपका दिन शुभ हो।"
+    )
+    assert _looks_like_grievance_closing(closing)
+    assert not _looks_like_grievance_closing("आपका नाम क्या है?")
+
+
+@pytest.mark.asyncio
+async def test_auto_finish_on_closing_transcript():
+    session = KioskSession(centre_id="c1", phone="9999999999", language="hi")
+    centre = KioskCentre(slug="barwani-jan-sunwai", name="Barwani Jan Sunwai")
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
+
+    closing = (
+        "कोई बात नहीं जी। जन सुनवाई में आने के लिए धन्यवाद। आपका दिन शुभ हो।"
+    )
+    event = LiveEvent(kind="agent_transcript_final", text=closing)
+    await voice._handle_live_event(event)
+
+    assert voice._phase_done.is_set()
+
+
+@pytest.mark.asyncio
+async def test_ignores_agent_events_after_phase_done():
+    session = KioskSession(centre_id="c1", phone="9999999999", language="hi")
+    centre = KioskCentre(slug="barwani-jan-sunwai", name="Barwani Jan Sunwai")
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
+    voice._phase_done.set()
+
+    event = LiveEvent(kind="agent_transcript_partial", text="धन्यवाद। आपका दिन शुभ हो।")
+    await voice._handle_live_event(event)
+
+    ws.send_json.assert_not_awaited()

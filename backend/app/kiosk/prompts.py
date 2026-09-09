@@ -10,6 +10,11 @@ from app.kiosk.vocabulary import words_for_topic
 
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 _BARWANI_PROMPT_KEY = "barwani_jan_sunwai"
+_JAN_SUNWAI_V3_PROMPT_KEY = "jan_sunwai_v3_system.txt"
+
+
+def is_jan_sunwai_v3(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _JAN_SUNWAI_V3_PROMPT_KEY
 
 
 def _load_embedded_prompt(module_name: str, attr: str) -> str:
@@ -56,7 +61,40 @@ def _language_name(code: str) -> str:
     return mapping.get((code or "hi").lower(), "Hindi")
 
 
+_GRIEVANCE_CLOSE_RUNTIME = (
+    " After section 11, say your goodbye exactly ONCE, then immediately call "
+    "finish_complaint. Never repeat the closing, never keep talking after goodbye, "
+    "and never speak tool names aloud."
+)
+
+_JAN_SUNWAI_V3_CLOSE_RUNTIME = (
+    " After your spoken close (Section 15A for a complaint letter, 15B for an "
+    "information sheet), say goodbye exactly ONCE, then immediately call "
+    "finish_complaint with session_type and print_mode. Never repeat the closing, "
+    "never keep talking after goodbye, never speak tool names aloud, and NEVER "
+    "speak or display the <<<JANSUNWAI_RECORD>>> block — the backend builds the "
+    "printed document after the call."
+)
+
+
 def _grievance_runtime(centre: KioskCentre, language: str) -> str:
+    if is_jan_sunwai_v3(centre):
+        return (
+            "\n\nAsk exactly ONE question per turn, then wait for the answer. "
+            "Greet in Hindi first (Section 2.1): disclose you are AI, invite a "
+            "complaint, an information question, OR any other help — do NOT force "
+            "a category. "
+            "When speaking Hindi, use Devanagari script for everything you say aloud "
+            "— it is shown live on the kiosk screen. "
+            "CRITICAL — COMPLAINT NUMBER: You do NOT know any reference number during "
+            "this call. NEVER invent, guess, or speak any complaint/tracking number "
+            "(no JS-VNS-, JS-BWN-, NN-VNS-, or random digits). "
+            "The system handles references after the call; never voice or print an ID. "
+            "Decide the mode early (Section 6): complaint → application letter; "
+            "information → info sheet; unclear → help desk then route. "
+            "NEVER ask which language the citizen prefers — Hindi only."
+            + _JAN_SUNWAI_V3_CLOSE_RUNTIME
+        )
     if _is_barwani_jan_sunwai(centre):
         return (
             "\n\nAsk exactly ONE question per turn, then wait for the answer. "
@@ -70,6 +108,7 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
             "The system assigns the official number only after the citizen ends the call; "
             "it appears on the acknowledgement slip and at the counter. "
             "Never voice the ID — tell the citizen they can get it from the parchi or counter."
+            + _GRIEVANCE_CLOSE_RUNTIME
         )
     lang = _language_name(language)
     return (
@@ -83,6 +122,7 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
         "The system assigns the official number only after the citizen ends the call; "
         "it appears on the result screen (and slip/counter if available). "
         "Never voice the ID — tell the citizen they can get it from the screen, parchi, or counter."
+        + _GRIEVANCE_CLOSE_RUNTIME
     )
 
 
@@ -139,6 +179,13 @@ def system_instruction_learning(
 
 
 def kickoff_text(centre: KioskCentre, language: str) -> str:
+    if is_jan_sunwai_v3(centre):
+        return (
+            f"The citizen is now at the kiosk for {centre.name}. "
+            "Greet them warmly in Hindi (Section 2.1): disclose you are AI, say "
+            "they may register a complaint, ask for information, or ask for any "
+            "other help — this is a help desk. Do not wait for further instructions."
+        )
     if _is_barwani_jan_sunwai(centre):
         return (
             f"The citizen is now at the kiosk for {centre.name}. "

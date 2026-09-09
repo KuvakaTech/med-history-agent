@@ -70,6 +70,9 @@ class SessionResultResponse(BaseModel):
     session_id: str
     centre_kind: str = "grievance"
     complaint_number: Optional[str] = None
+    session_type: Optional[str] = None
+    print_mode: Optional[str] = None
+    print_document_text: Optional[str] = None
     phase: str
     status: str
     phone: Optional[str] = None
@@ -195,6 +198,11 @@ async def get_session_result(slug: str, session_id: str) -> SessionResultRespons
         session_id=session.session_id,
         centre_kind=kind,
         complaint_number=session.complaint_number,
+        session_type=(grievance or {}).get("session_type") if grievance else None,
+        print_mode=(grievance or {}).get("print_mode") if grievance else None,
+        print_document_text=(grievance or {}).get("print_document_text")
+        if grievance
+        else None,
         phase=session.phase,
         status=session.status,
         phone=session.phone,

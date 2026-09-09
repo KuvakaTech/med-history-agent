@@ -6,7 +6,7 @@ const CARDS = [
   {
     title: "Office of District Magistrate Varanasi",
     sub: "Public grievance kiosk",
-    href: "/kiosk/varanasi-jan-sunwai/start",
+    href: "/kiosk/varanasi-jan-sunwai-v3/start",
     icon: "🗣️",
   },
   {

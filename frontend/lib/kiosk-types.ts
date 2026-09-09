@@ -11,6 +11,15 @@ export interface GrievanceAddress {
 }
 
 export interface GrievanceRecord {
+  session_type?: string | null;
+  print_mode?: string | null;
+  print_document_text?: string | null;
+  primary_intent?: string | null;
+  addressed_to?: Record<string, string> | null;
+  documents_to_attach_or_required?: string[];
+  out_of_scope?: boolean | null;
+  flags?: string[];
+  not_captured?: string[];
   full_name?: string | null;
   father_guardian_name?: string | null;
   age?: number | null;
@@ -108,6 +117,9 @@ export interface SessionResultResponse {
   session_id: string;
   centre_kind: "grievance" | "learning";
   complaint_number?: string | null;
+  session_type?: string | null;
+  print_mode?: string | null;
+  print_document_text?: string | null;
   phase: string;
   status: string;
   phone?: string | null;
@@ -140,6 +152,9 @@ export type KioskWSEvent = {
   turn?: number;
   audio_b64?: string;
   complaint_number?: string;
+  session_type?: string;
+  print_mode?: string;
+  print_document_text?: string;
   grievance?: GrievanceRecord;
   learning_record?: LearningRecord;
   word_id?: string;
@@ -174,7 +189,11 @@ export function isLearningSlug(slug: string): boolean {
 }
 
 export function isJanSunwaiSlug(slug: string): boolean {
-  return slug === "varanasi-jan-sunwai";
+  return slug === "varanasi-jan-sunwai" || slug === "varanasi-jan-sunwai-v3";
+}
+
+export function isJanSunwaiV3Slug(slug: string): boolean {
+  return slug === "varanasi-jan-sunwai-v3";
 }
 
 export function isBarwaniJanSunwaiSlug(slug: string): boolean {

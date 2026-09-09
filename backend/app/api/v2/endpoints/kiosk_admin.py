@@ -75,9 +75,12 @@ def _format_session(s: dict) -> dict:
             s["grievance_summary"] = (
                 grievance.get("confirmed_summary")
                 or grievance.get("verbatim_problem")
+                or grievance.get("chief_complaint_or_query")
                 or grievance.get("category")
             )
             s["session_summary"] = s.get("grievance_summary")
+            s["session_type"] = grievance.get("session_type")
+            s["print_mode"] = grievance.get("print_mode")
     return s
 
 

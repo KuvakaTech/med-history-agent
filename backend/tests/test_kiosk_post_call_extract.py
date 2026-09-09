@@ -11,9 +11,14 @@ import pytest
 from app.kiosk.models import KioskCentre, KioskSession, KioskTranscriptEntry
 from app.kiosk.post_call_extract import (
     GrievanceExtract,
+    JanSunwaiV3MetaExtract,
+    _JAN_SUNWAI_V3_META_EXTRACT_PROMPT,
     _extract_prompt_for_centre,
+    fill_print_placeholders,
     format_transcript,
+    parse_jansunwai_record,
     run_post_call_extract,
+    template_v3_print_document,
 )
 
 
@@ -122,3 +127,262 @@ def test_barwani_jan_sunwai_extract_prompt():
     assert "punarvas" in prompt
     assert "Sadar" not in prompt
     assert "PVVNL" not in prompt
+
+
+def test_jan_sunwai_v3_meta_extract_prompt():
+    assert "application_letter" in _JAN_SUNWAI_V3_META_EXTRACT_PROMPT
+    assert "info_sheet" in _JAN_SUNWAI_V3_META_EXTRACT_PROMPT
+    assert "Do NOT generate the printable letter body" in _JAN_SUNWAI_V3_META_EXTRACT_PROMPT
+
+
+def test_fill_print_placeholders():
+    out = fill_print_placeholders("दिनांक: {{DATE}} समय: {{TIME}}")
+    assert "{{DATE}}" not in out
+    assert "{{TIME}}" not in out
+    assert "{DATE}" not in out
+    assert "{TIME}" not in out
+    assert "दिनांक:" in out
+
+
+def test_fill_print_placeholders_single_brace_tokens():
+    out = fill_print_placeholders("दिनांक: {DATE}   समय: {TIME}")
+    assert "{DATE}" not in out
+    assert "{TIME}" not in out
+    assert "दिनांक:" in out
+
+
+def test_parse_jansunwai_record():
+    transcript = (
+        'Agent: done\n<<<JANSUNWAI_RECORD\n'
+        '{"session_type":"information","print_mode":"info_sheet",'
+        '"print_document_text":"आपका प्रश्न"}\n'
+        "JANSUNWAI_RECORD>>>"
+    )
+    record = parse_jansunwai_record(transcript)
+    assert record is not None
+    assert record["session_type"] == "information"
+    assert record["print_mode"] == "info_sheet"
+
+
+def test_template_v3_application_letter():
+    meta = JanSunwaiV3MetaExtract(
+        full_name="Ram Kumar",
+        father_guardian_name="Shyam Kumar",
+        confirmed_summary="Ganda paani aa raha hai",
+        department_tag="water",
+    )
+    text = template_v3_print_document(meta, "application_letter")
+    assert "जन सुनवाई केंद्र" in text
+    assert "Ram Kumar" in text
+    assert "प्रार्थना पत्र" in text
+    assert "{{DATE}}" in text
+
+
+def test_template_v3_info_sheet():
+    meta = JanSunwaiV3MetaExtract(
+        chief_complaint_or_query="Nivas praman ke liye kya document",
+        department_tag="certificates",
+    )
+    text = template_v3_print_document(meta, "info_sheet")
+    assert "जानकारी" not in text or "आपका प्रश्न" in text
+    assert "आपका प्रश्न" in text
+
+
+@pytest.mark.asyncio
+async def test_v3_complaint_assigns_number_and_letter():
+    session = KioskSession(
+        centre_id="c1",
+        phone="9876543210",
+        language="hi",
+        finish_print_mode="application_letter",
+        finish_session_type="complaint",
+        transcript=[
+            KioskTranscriptEntry(speaker="user", text="Kabza ho gaya"),
+            KioskTranscriptEntry(speaker="agent", text="Naam bataiye"),
+        ],
+    )
+    centre = KioskCentre(
+        slug="varanasi-jan-sunwai-v3",
+        name="Varanasi Jan Sunwai v3",
+        prompt_file="jan_sunwai_v3_system.txt",
+        complaint_prefix="JS-VNS",
+    )
+    meta = JanSunwaiV3MetaExtract(
+        full_name="Ram Kumar",
+        session_type="complaint",
+        print_mode="application_letter",
+        confirmed_summary="Kabza on land",
+        department_tag="land_revenue",
+        urgency="normal",
+    )
+    with patch(
+        "app.agent.llm.complete_structured",
+        new_callable=AsyncMock,
+        return_value=meta,
+    ):
+        with patch(
+            "app.agent.llm.complete",
+            new_callable=AsyncMock,
+            return_value="                 जन सुनवाई केंद्र\nदिनांक: {{DATE}}",
+        ):
+            with patch(
+                "app.kiosk.post_call_extract.next_complaint_number",
+                new_callable=AsyncMock,
+                return_value="JS-VNS-20250825-00001",
+            ):
+                with patch(
+                    "app.kiosk.session_store.kiosk_session_store.update",
+                    new_callable=AsyncMock,
+                ):
+                    out = await run_post_call_extract(session, centre)
+    assert out.status == "completed"
+    assert out.complaint_number == "JS-VNS-20250825-00001"
+    assert out.grievance is not None
+    assert out.grievance.print_mode == "application_letter"
+    assert out.grievance.print_document_text
+    assert "{{DATE}}" not in out.grievance.print_document_text
+    assert "JS-VNS" not in (out.grievance.print_document_text or "")
+
+
+@pytest.mark.asyncio
+async def test_v3_information_skips_complaint_number():
+    session = KioskSession(
+        centre_id="c1",
+        phone="9876543210",
+        language="hi",
+        finish_print_mode="info_sheet",
+        finish_session_type="information",
+        transcript=[
+            KioskTranscriptEntry(
+                speaker="user",
+                text="Nivas praman ke liye kya document lagega",
+            ),
+        ],
+    )
+    centre = KioskCentre(
+        slug="varanasi-jan-sunwai-v3",
+        name="Varanasi Jan Sunwai v3",
+        prompt_file="jan_sunwai_v3_system.txt",
+    )
+    meta = JanSunwaiV3MetaExtract(
+        session_type="information",
+        print_mode="info_sheet",
+        chief_complaint_or_query="Nivas praman documents",
+        department_tag="certificates",
+    )
+    with patch(
+        "app.agent.llm.complete_structured",
+        new_callable=AsyncMock,
+        return_value=meta,
+    ):
+        with patch(
+            "app.agent.llm.complete",
+            new_callable=AsyncMock,
+            return_value="आपका प्रश्न : निवास\nदिनांक: {{DATE}}",
+        ):
+            with patch(
+                "app.kiosk.post_call_extract.next_complaint_number",
+                new_callable=AsyncMock,
+            ) as mock_num:
+                with patch(
+                    "app.kiosk.session_store.kiosk_session_store.update",
+                    new_callable=AsyncMock,
+                ):
+                    out = await run_post_call_extract(session, centre)
+    mock_num.assert_not_called()
+    assert out.complaint_number is None
+    assert out.grievance is not None
+    assert out.grievance.print_mode == "info_sheet"
+    assert out.grievance.print_document_text
+
+
+@pytest.mark.asyncio
+async def test_v3_template_fallback_when_llm_letter_empty():
+    session = KioskSession(
+        centre_id="c1",
+        phone="9876543210",
+        language="hi",
+        finish_print_mode="application_letter",
+        finish_session_type="complaint",
+        transcript=[
+            KioskTranscriptEntry(speaker="user", text="Ganda paani aa raha hai"),
+        ],
+    )
+    centre = KioskCentre(
+        slug="varanasi-jan-sunwai-v3",
+        name="Varanasi Jan Sunwai v3",
+        prompt_file="jan_sunwai_v3_system.txt",
+    )
+    meta = JanSunwaiV3MetaExtract(
+        full_name="Ram Kumar",
+        confirmed_summary="Ganda paani",
+        department_tag="water",
+    )
+    with patch(
+        "app.agent.llm.complete_structured",
+        new_callable=AsyncMock,
+        return_value=meta,
+    ):
+        with patch(
+            "app.agent.llm.complete",
+            new_callable=AsyncMock,
+            return_value="",
+        ):
+            with patch(
+                "app.kiosk.post_call_extract.next_complaint_number",
+                new_callable=AsyncMock,
+                return_value="JS-VNS-20250825-00001",
+            ):
+                with patch(
+                    "app.kiosk.session_store.kiosk_session_store.update",
+                    new_callable=AsyncMock,
+                ):
+                    out = await run_post_call_extract(session, centre)
+    assert out.status == "completed"
+    assert out.grievance is not None
+    assert out.grievance.print_document_text
+    assert "जन सुनवाई केंद्र" in out.grievance.print_document_text
+
+
+@pytest.mark.asyncio
+async def test_v3_partial_when_document_unavailable():
+    session = KioskSession(
+        centre_id="c1",
+        phone="9876543210",
+        language="hi",
+        finish_print_mode="application_letter",
+        finish_session_type="complaint",
+        transcript=[
+            KioskTranscriptEntry(speaker="user", text="Shikayat"),
+        ],
+    )
+    centre = KioskCentre(
+        slug="varanasi-jan-sunwai-v3",
+        name="Varanasi Jan Sunwai v3",
+        prompt_file="jan_sunwai_v3_system.txt",
+    )
+    meta = JanSunwaiV3MetaExtract(
+        full_name="Ram Kumar",
+        department_tag="water",
+    )
+    with patch(
+        "app.agent.llm.complete_structured",
+        new_callable=AsyncMock,
+        return_value=meta,
+    ):
+        with patch(
+            "app.agent.llm.complete",
+            new_callable=AsyncMock,
+            return_value="",
+        ):
+            with patch(
+                "app.kiosk.post_call_extract.template_v3_print_document",
+                return_value="",
+            ):
+                with patch(
+                    "app.kiosk.session_store.kiosk_session_store.update",
+                    new_callable=AsyncMock,
+                ):
+                    out = await run_post_call_extract(session, centre)
+    assert out.status == "partial"
+    assert out.complaint_number is None

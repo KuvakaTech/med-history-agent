@@ -7,7 +7,7 @@ import type {
   KioskTranscriptEntry,
   SessionResultResponse,
 } from "@/lib/kiosk-types";
-import { isBarwaniJanSunwaiSlug, isJanSunwaiSlug } from "@/lib/kiosk-types";
+import { isBarwaniJanSunwaiSlug, isJanSunwaiSlug, isJanSunwaiV3Slug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 function formatAddress(addr: GrievanceAddress | null | undefined): string {
@@ -57,6 +57,11 @@ function KioskResultPageInner() {
   const countdownStartedRef = useRef(false);
 
   const isLearning = result?.centre_kind === "learning";
+  const isV3 = isJanSunwaiV3Slug(slug);
+  const printDocument =
+    result?.print_document_text || result?.grievance?.print_document_text || "";
+  const printMode = result?.print_mode || result?.grievance?.print_mode || "";
+  const hasPrintableDoc = Boolean(printDocument.trim()) && printMode !== "none";
 
   useEffect(() => {
     kioskApi
@@ -68,9 +73,11 @@ function KioskResultPageInner() {
 
   useEffect(() => {
     if (!result || !autoprint || isLearning || countdownStartedRef.current) return;
+    const shouldAutoprint = isV3 ? hasPrintableDoc : true;
+    if (!shouldAutoprint) return;
     countdownStartedRef.current = true;
     setCountdown(5);
-  }, [result, autoprint, isLearning]);
+  }, [result, autoprint, isLearning, isV3, hasPrintableDoc]);
 
   useEffect(() => {
     if (countdown === null) return;
@@ -129,7 +136,7 @@ function KioskResultPageInner() {
           className="btn-primary"
           onClick={() => router.push(`/kiosk/${slug}/start`)}
         >
-          {slug === "barwani-guddi" ? "नया सबक" : "नई शिकायत"}
+          {slug === "barwani-guddi" ? "नया सबक" : isV3 ? "नई बात" : "नई शिकायत"}
         </button>
       </main>
     );
@@ -148,7 +155,53 @@ function KioskResultPageInner() {
 
   const g = result.grievance;
   const isPartial = result.status === "partial";
+  const newSessionLabel = isV3 ? "नई बात" : "नई शिकायत";
+  const docTitle =
+    printMode === "application_letter"
+      ? "प्रार्थना पत्र"
+      : printMode === "info_sheet"
+        ? "जानकारी पत्र"
+        : "जन सुनवाई";
 
+  if (isV3 && hasPrintableDoc) {
+    return (
+      <V3DocumentResultView
+        slug={slug}
+        result={result}
+        router={router}
+        printRef={printRef}
+        printDocument={printDocument}
+        docTitle={docTitle}
+        newSessionLabel={newSessionLabel}
+        countdown={countdown}
+        setCountdown={setCountdown}
+      />
+    );
+  }
+
+  if (isV3 && printMode === "none" && !isPartial) {
+    return (
+      <V3HelpDeskResultView
+        slug={slug}
+        result={result}
+        router={router}
+        newSessionLabel={newSessionLabel}
+      />
+    );
+  }
+
+  if (isV3) {
+    return (
+      <V3IncompleteResultView
+        slug={slug}
+        result={result}
+        router={router}
+        newSessionLabel={newSessionLabel}
+      />
+    );
+  }
+
+  const successTitle = isPartial ? "अधूरी शिकायत" : "शिकायत दर्ज हो गई";
   return (
     <main className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-100 px-5 h-14 flex items-center justify-between sticky top-0 z-50 print:hidden">
@@ -178,7 +231,7 @@ function KioskResultPageInner() {
               onClick={() => router.push(`/kiosk/${slug}/start`)}
               className="btn-primary text-xs py-2 px-3"
             >
-              नई शिकायत
+              {newSessionLabel}
             </button>
           </div>
         )}
@@ -195,9 +248,7 @@ function KioskResultPageInner() {
           ) : (
             <p className="text-sm text-gray-500">{result.centre_name || "Jan Sunwai"}</p>
           )}
-          <h1 className="text-xl font-bold text-gray-900">
-            {isPartial ? "अधूरी शिकायत" : "शिकायत दर्ज हो गई"}
-          </h1>
+          <h1 className="text-xl font-bold text-gray-900">{successTitle}</h1>
           {result.complaint_number && (
             <p className="text-3xl font-mono font-bold text-amber-700 tracking-wide">
               {result.complaint_number}
@@ -237,6 +288,181 @@ function KioskResultPageInner() {
           <p>Started: {result.started_at || "—"}</p>
           <p>Ended: {result.ended_at || "—"}</p>
           <p>Phone (intake): {result.phone}</p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function V3DocumentResultView({
+  slug,
+  result,
+  router,
+  printRef,
+  printDocument,
+  docTitle,
+  newSessionLabel,
+  countdown,
+  setCountdown,
+}: {
+  slug: string;
+  result: SessionResultResponse;
+  router: ReturnType<typeof useRouter>;
+  printRef: React.RefObject<HTMLDivElement>;
+  printDocument: string;
+  docTitle: string;
+  newSessionLabel: string;
+  countdown: number | null;
+  setCountdown: (v: number | null) => void;
+}) {
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-100 px-5 h-14 flex items-center justify-between sticky top-0 z-50 print:hidden">
+        <span className="text-sm font-semibold text-gray-700">{docTitle}</span>
+        {countdown !== null ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-amber-700">Printing in {countdown}s</span>
+            <button
+              type="button"
+              onClick={() => setCountdown(null)}
+              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="btn-secondary text-xs py-2 px-3"
+            >
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(`/kiosk/${slug}/start`)}
+              className="btn-primary text-xs py-2 px-3"
+            >
+              {newSessionLabel}
+            </button>
+          </div>
+        )}
+      </header>
+
+      <div ref={printRef} className="max-w-2xl mx-auto px-4 py-8 print:max-w-none print:px-8 print:py-6">
+        <div className="text-center space-y-2 print:hidden mb-4">
+          <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
+          <h1 className="text-xl font-bold text-gray-900">आपका दस्तावेज़ तैयार है</h1>
+        </div>
+
+        <div className="print:h-screen print:overflow-hidden">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 print:shadow-none print:border-0 print:p-0 print:rounded-none">
+            <pre
+              data-testid="v3-print-document"
+              className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-900 print:text-[13px] print:leading-snug"
+            >
+              {printDocument}
+            </pre>
+          </div>
+        </div>
+
+        <div className="text-center text-xs text-gray-400 print:hidden mt-4">
+          <p>Started: {result.started_at || "—"}</p>
+          <p>Ended: {result.ended_at || "—"}</p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function V3IncompleteResultView({
+  slug,
+  result,
+  router,
+  newSessionLabel,
+}: {
+  slug: string;
+  result: SessionResultResponse;
+  router: ReturnType<typeof useRouter>;
+  newSessionLabel: string;
+}) {
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-100 px-5 h-14 flex items-center justify-between sticky top-0 z-50">
+        <span className="text-sm font-semibold text-gray-700">जन सुनवाई</span>
+        <button
+          type="button"
+          onClick={() => router.push(`/kiosk/${slug}/start`)}
+          className="btn-primary text-xs py-2 px-3"
+        >
+          {newSessionLabel}
+        </button>
+      </header>
+
+      <div className="max-w-2xl mx-auto px-6 py-12 space-y-6 text-center">
+        <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
+        <h1 className="text-xl font-bold text-gray-900">अधूरी बातचीत</h1>
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl py-4 px-5">
+          आपका प्रार्थना पत्र / जानकारी पत्र तैयार नहीं हो सका। कृपया काउंटर पर कर्मचारी
+          से सहायता लें या दोबारा बातचीत शुरू करें।
+        </p>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => router.push(`/kiosk/${slug}/start`)}
+        >
+          {newSessionLabel}
+        </button>
+        <div className="text-xs text-gray-400">
+          <p>Started: {result.started_at || "—"}</p>
+          <p>Ended: {result.ended_at || "—"}</p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function V3HelpDeskResultView({
+  slug,
+  result,
+  router,
+  newSessionLabel,
+}: {
+  slug: string;
+  result: SessionResultResponse;
+  router: ReturnType<typeof useRouter>;
+  newSessionLabel: string;
+}) {
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-100 px-5 h-14 flex items-center justify-between sticky top-0 z-50">
+        <span className="text-sm font-semibold text-gray-700">जन सुनवाई</span>
+        <button
+          type="button"
+          onClick={() => router.push(`/kiosk/${slug}/start`)}
+          className="btn-primary text-xs py-2 px-3"
+        >
+          {newSessionLabel}
+        </button>
+      </header>
+
+      <div className="max-w-2xl mx-auto px-6 py-12 space-y-6 text-center">
+        <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
+        <h1 className="text-xl font-bold text-gray-900">धन्यवाद</h1>
+        <p className="text-base text-gray-700">
+          आपकी बात सुन ली गई। किसी दस्तावेज़ की आवश्यकता नहीं है।
+        </p>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => router.push(`/kiosk/${slug}/start`)}
+        >
+          {newSessionLabel}
+        </button>
+        <div className="text-xs text-gray-400">
+          <p>Started: {result.started_at || "—"}</p>
+          <p>Ended: {result.ended_at || "—"}</p>
         </div>
       </div>
     </main>

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     ANTHROPIC_FAST_MODEL: str = "claude-haiku-4-5-20251001"  # conversational turns
     # Groq — used for streaming when key is set (fastest inference)
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
 
     # STT / TTS
     DEEPGRAM_API_KEY: str = ""
@@ -150,6 +150,9 @@ class Settings(BaseSettings):
     KIOSK_MAX_SESSION_MINUTES: int = 20
     KIOSK_MAX_CONCURRENT_LIVE_SESSIONS_PER_CENTRE: int = 3
     KIOSK_PERSIST_INTERVAL_SECS: float = 15.0
+    KIOSK_POST_CALL_MODEL: str = ""  # empty → ANTHROPIC_MODEL; post-call extract only
+    # Test-only: accept WS {type:"test_utterance", text:"..."} as citizen speech.
+    KIOSK_TEST_UTTERANCE_ENABLED: bool = False
 
     # Only used for the per-session cost log line. A setting rather than a constant so
     # ops can correct it without a new image as the rate moves.

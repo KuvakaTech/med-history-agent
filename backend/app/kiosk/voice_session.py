@@ -7,6 +7,7 @@ import base64
 import json
 import logging
 import math
+import re
 import time
 from datetime import datetime
 from typing import Any, Optional
@@ -20,6 +21,7 @@ from app.kiosk.gemini_live import (
     LiveEvent,
     complaint_tools,
     lesson_tools,
+    sanitize_agent_transcript,
 )
 from app.kiosk.hindi_display import to_devanagari_display
 from app.kiosk.learning_engine import LearningEngine, agent_invites_repeat
@@ -27,6 +29,7 @@ from app.kiosk.learning_extract import run_learning_extract
 from app.kiosk.models import KioskCentre, KioskSession, KioskTranscriptEntry, centre_kind_for
 from app.kiosk.post_call_extract import run_post_call_extract
 from app.kiosk.prompts import (
+    is_jan_sunwai_v3,
     kickoff_text,
     kickoff_text_learning,
     system_instruction,
@@ -43,6 +46,44 @@ _MAX_AUDIO_FRAME_BYTES = 64 * 1024
 _SEND_TIMEOUT = 8.0
 _DUCK_RMS_THRESHOLD = 600.0
 _MAX_ANSWER_ATTEMPTS = 2
+
+_TOOL_LEAK_RE = re.compile(
+    r"call:finish_(?:complaint|lesson)\{.*?(?:\}|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _looks_like_grievance_closing(text: str) -> bool:
+    low = (text or "").lower()
+    thanked = any(
+        p in low for p in ("धन्यवाद", "dhanyavaad", "dhanyawad", "thank you")
+    )
+    if not thanked:
+        return False
+    return any(
+        p in low
+        for p in (
+            "शुभ हो",
+            "din shubh",
+            "good day",
+            "nice day",
+            "जन सुनवाई",
+            "jan sunwai",
+            "दर्ज कर ली",
+            "दर्ज हो",
+            "darj ho",
+            "darj kar",
+            "recorded",
+            "नोट कर",
+            "जानकारी",
+            "jaankari",
+            "parchi print",
+            "print ho rahi",
+            "print ho raha",
+            "ghar par",
+            "aaram se dekh",
+        )
+    )
 
 _live_counts: dict[str, int] = {}
 _live_lock = asyncio.Lock()
@@ -112,6 +153,7 @@ class KioskVoiceSession:
         self._last_answer_result: Optional[str] = None
         self._agent_turn_id = 0
         self._last_answer_turn_id = -1
+        self._closing_turn_count = 0
         self._learning_engine: Optional[LearningEngine] = None
         if self._is_learning:
             self._learning_engine = LearningEngine(session.lesson_topic)
@@ -202,7 +244,7 @@ class KioskVoiceSession:
                 self.session.language,
                 phone_on_record=self.session.phone,
             )
-            tools = complaint_tools()
+            tools = complaint_tools(v3=is_jan_sunwai_v3(self.centre))
             kickoff = kickoff_text(self.centre, self.session.language)
 
         self._phase_done = asyncio.Event()
@@ -225,6 +267,7 @@ class KioskVoiceSession:
             await self._close_live()
 
         if not self._stopped.is_set():
+            await self._send(ev.session_processing(self.session.session_id))
             self.session.phase = "result"
             await kiosk_session_store.update(self.session)
 
@@ -267,7 +310,7 @@ class KioskVoiceSession:
             return
         try:
             async for event in self._live.receive():
-                if self._stopped.is_set():
+                if self._stopped.is_set() or self._phase_done.is_set():
                     return
                 await self._handle_live_event(event)
         except asyncio.CancelledError:
@@ -278,6 +321,13 @@ class KioskVoiceSession:
             self._stopped.set()
 
     async def _handle_live_event(self, event: LiveEvent) -> None:
+        if self._phase_done.is_set() and event.kind in (
+            "agent_audio_chunk",
+            "agent_transcript_partial",
+            "agent_transcript_final",
+            "turn_complete",
+        ):
+            return
         if event.kind == "user_speech_started":
             await self._send(ev.user_speech_started())
         elif event.kind == "user_transcript_partial":
@@ -289,13 +339,19 @@ class KioskVoiceSession:
             b64 = base64.b64encode(event.audio).decode("ascii")
             await self._send(ev.agent_audio_chunk(b64))
         elif event.kind == "agent_transcript_partial":
-            display = to_devanagari_display(event.text)
+            text = sanitize_agent_transcript(event.text)
+            if not text:
+                return
+            display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
         elif event.kind == "agent_transcript_final":
-            self._enqueue_transcript("agent", event.text)
-            display = to_devanagari_display(event.text)
+            text = sanitize_agent_transcript(event.text)
+            if not text:
+                return
+            self._enqueue_transcript("agent", text)
+            display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
-            await self._on_agent_transcript_final(event.text)
+            await self._on_agent_transcript_final(text)
         elif event.kind == "interrupted":
             self._agent_playing = False
             await self._send(ev.interrupt())
@@ -348,13 +404,35 @@ class KioskVoiceSession:
         await self._process_child_answer(text)
 
     async def _on_agent_transcript_final(self, text: str) -> None:
-        if not self._is_learning:
+        if self._is_learning:
+            await self._maybe_auto_show_card(text)
+            if self._displayed_card and agent_invites_repeat(text):
+                self._awaiting_child_answer = True
+                self._answer_attempts = 0
+                self._last_answer_result = None
             return
-        await self._maybe_auto_show_card(text)
-        if self._displayed_card and agent_invites_repeat(text):
-            self._awaiting_child_answer = True
-            self._answer_attempts = 0
-            self._last_answer_result = None
+        await self._maybe_auto_finish_on_closing(text)
+
+    async def _maybe_auto_finish_on_closing(self, text: str) -> None:
+        if self._phase_done.is_set():
+            return
+        if _TOOL_LEAK_RE.search(text):
+            log.info(
+                "kiosk auto-finish on leaked finish tool for %s",
+                self.session.session_id,
+            )
+            self._phase_done.set()
+            return
+        if not _looks_like_grievance_closing(text):
+            self._closing_turn_count = 0
+            return
+        self._closing_turn_count += 1
+        if self._closing_turn_count >= 1:
+            log.info(
+                "kiosk auto-finish on closing transcript for %s",
+                self.session.session_id,
+            )
+            self._phase_done.set()
 
     async def _process_child_answer(self, transcript: str) -> None:
         """Unified teach + quiz verification against the displayed card."""
@@ -528,6 +606,12 @@ class KioskVoiceSession:
                 {"result": "ok", "hindi": word.hindi, "word_id": word.word_id},
             )
 
+    async def _inject_test_utterance(self, text: str) -> None:
+        """Test-only: send citizen text to Gemini Live (no microphone)."""
+        self._enqueue_transcript("user", text)
+        if self._live is not None:
+            await self._live.send_text(text)
+
     async def _handle_finish_tool(self, event: LiveEvent) -> None:
         if (
             self._is_learning
@@ -549,6 +633,14 @@ class KioskVoiceSession:
                 event.tool_call_id,
                 {"result": "ok", "status": "closing"},
             )
+        if not self._is_learning:
+            args = event.tool_args or {}
+            session_type = args.get("session_type")
+            print_mode = args.get("print_mode")
+            if session_type:
+                self.session.finish_session_type = str(session_type).strip()
+            if print_mode:
+                self.session.finish_print_mode = str(print_mode).strip()
         self._phase_done.set()
 
     def _enqueue_audio_frame(self, frame: bytes) -> None:
@@ -594,6 +686,14 @@ class KioskVoiceSession:
                     return
                 if data.get("type") == "ping":
                     await self._send({"type": "pong"})
+                elif (
+                    data.get("type") == "test_utterance"
+                    and settings.KIOSK_TEST_UTTERANCE_ENABLED
+                    and not self._is_learning
+                ):
+                    text = (data.get("text") or "").strip()
+                    if text:
+                        await self._inject_test_utterance(text)
 
     def _enqueue_transcript(self, speaker: str, text: str) -> None:
         text = (text or "").strip()

@@ -50,6 +50,11 @@ _SLUG_DEFAULTS: dict[str, dict[str, str]] = {
         "complaint_prefix": "JS-VNS",
         "centre_kind": "grievance",
     },
+    "varanasi-jan-sunwai-v3": {
+        "prompt_file": "jan_sunwai_v3_system.txt",
+        "complaint_prefix": "JS-VNS",
+        "centre_kind": "grievance",
+    },
     "barwani-jan-sunwai": {
         "prompt_file": "barwani_jan_sunwai",
         "complaint_prefix": "JS-BWN",
@@ -117,6 +122,15 @@ class GrievanceAddress(BaseModel):
 
 
 class GrievanceRecord(BaseModel):
+    session_type: Optional[str] = None  # complaint | information | help_desk | mixed
+    print_mode: Optional[str] = None  # application_letter | info_sheet | none
+    print_document_text: Optional[str] = None
+    primary_intent: Optional[str] = None
+    addressed_to: Optional[dict[str, Any]] = None
+    documents_to_attach_or_required: list[str] = Field(default_factory=list)
+    out_of_scope: Optional[bool] = None
+    flags: list[str] = Field(default_factory=list)
+    not_captured: list[str] = Field(default_factory=list)
     full_name: Optional[str] = None
     father_guardian_name: Optional[str] = None
     age: Optional[int] = None
@@ -182,6 +196,8 @@ class KioskSession(BaseModel):
     phase: Literal["complaint", "lesson", "result"] = "complaint"
     status: Literal["active", "partial", "completed"] = "active"
     complaint_number: Optional[str] = None
+    finish_session_type: Optional[str] = None
+    finish_print_mode: Optional[str] = None
     grievance: Optional[GrievanceRecord] = None
     learning_record: Optional[LearningRecord] = None
     lesson_state: Optional[dict[str, Any]] = None

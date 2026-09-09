@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, LessonTopic } from "@/lib/kiosk-types";
-import { LESSON_TOPICS, isBarwaniJanSunwaiSlug, isJanSunwaiSlug } from "@/lib/kiosk-types";
+import { LESSON_TOPICS, isBarwaniJanSunwaiSlug, isJanSunwaiSlug, isJanSunwaiV3Slug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 const GENDERS = [
@@ -260,6 +260,7 @@ function GrievanceStart({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const centreInitialsLabel = centreInitials(centre.name);
+  const isV3 = isJanSunwaiV3Slug(slug);
 
   const goNext = () => {
     setError("");
@@ -348,8 +349,14 @@ function GrievanceStart({
                 />
               ))}
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">शिकायत दर्ज करें</h1>
-            <p className="text-sm text-gray-500">Register your grievance at the kiosk</p>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isV3 ? "जन सुनवाई सहायता" : "शिकायत दर्ज करें"}
+            </h1>
+            <p className="text-sm text-gray-500">
+              {isV3
+                ? "शिकायत, जानकारी, या कोई भी मदद — बोलकर बताइए"
+                : "Register your grievance at the kiosk"}
+            </p>
           </div>
 
           {step === "phone" && (

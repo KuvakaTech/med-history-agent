@@ -120,6 +120,8 @@ export default function KioskAdminSessionPage() {
             {isLearning
               ? ` · ${session.learner_name || "—"} · ${session.lesson_topic || "—"}`
               : ` · Phone: ${session.phone || "—"}`}
+            {!isLearning && session.session_type ? ` · ${session.session_type}` : ""}
+            {!isLearning && session.print_mode ? ` · ${session.print_mode}` : ""}
           </p>
           <span
             className={clsx(
@@ -166,6 +168,17 @@ export default function KioskAdminSessionPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {g && typeof g.print_document_text === "string" && g.print_document_text.trim() && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
+            <h2 className="text-base font-bold text-gray-900">
+              {g.print_mode === "application_letter" ? "प्रार्थना पत्र" : "जानकारी पत्र"}
+            </h2>
+            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-900">
+              {String(g.print_document_text)}
+            </pre>
           </div>
         )}
 

@@ -17,6 +17,14 @@ CENTRES = [
         "complaint_prefix": "JS-VNS",
     },
     {
+        "slug": "varanasi-jan-sunwai-v3",
+        "name": "Varanasi Jan Sunwai v3",
+        "default_language": "hi",
+        "centre_kind": "grievance",
+        "prompt_file": "jan_sunwai_v3_system.txt",
+        "complaint_prefix": "JS-VNS",
+    },
+    {
         "slug": "barwani-jan-sunwai",
         "name": "Barwani Jan Sunwai",
         "default_language": "hi",

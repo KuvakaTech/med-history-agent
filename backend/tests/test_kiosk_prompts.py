@@ -84,3 +84,24 @@ def test_slug_defaults_without_explicit_fields():
     assert prompt_file_for_centre(centre) == "nagar_nigam_system.txt"
     v2 = KioskCentre(slug="barwani-jan-sunwai", name="Barwani Jan Sunwai")
     assert prompt_file_for_centre(v2) == "barwani_jan_sunwai"
+    v3 = KioskCentre(slug="varanasi-jan-sunwai-v3", name="Varanasi Jan Sunwai v3")
+    assert prompt_file_for_centre(v3) == "jan_sunwai_v3_system.txt"
+
+
+def test_jan_sunwai_v3_prompt_loads():
+    centre = KioskCentre(
+        slug="varanasi-jan-sunwai-v3",
+        name="Varanasi Jan Sunwai v3",
+        prompt_file="jan_sunwai_v3_system.txt",
+    )
+    text = system_instruction(centre, "hi")
+    assert "MODE A" in text or "COMPLAINT" in text.upper()
+    assert "जानकारी पत्र" in text or "INFORMATION" in text.upper()
+    assert "13.2" in text
+    assert "13.3" in text
+    assert "JANSUNWAI_RECORD" in text
+    assert "complaint, an information question, OR any other help" in text
+    assert "register their problem" not in kickoff_text(centre, "hi")
+    kick = kickoff_text(centre, "hi")
+    assert "information" in kick.lower()
+    assert "NEVER invent, guess, or speak any complaint" in text

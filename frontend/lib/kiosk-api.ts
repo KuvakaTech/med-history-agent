@@ -276,6 +276,13 @@ export class KioskVoiceWS {
     this.micOpen = false;
   }
 
+  /** Stop mic and agent playback; keep the socket open for result_ready. */
+  enterProcessing(): void {
+    this.micOpen = false;
+    this.agentPlaying = false;
+    this._interruptPcm();
+  }
+
   stop(): void {
     this.micOpen = false;
     this._interruptPcm();

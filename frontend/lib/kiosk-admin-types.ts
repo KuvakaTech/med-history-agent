@@ -46,6 +46,8 @@ export interface KioskAdminSession {
   ended_at_ist?: string | null;
   deleted_at_ist?: string | null;
   grievance_summary?: string | null;
+  session_type?: string | null;
+  print_mode?: string | null;
   session_summary?: string | null;
   grievance?: Record<string, unknown> | null;
   learning_record?: LearningRecord | null;

@@ -44,9 +44,17 @@ def result_ready(
     if learning_record is not None:
         payload["learning_record"] = learning_record
     else:
+        g = grievance or {}
         payload["complaint_number"] = complaint_number
-        payload["grievance"] = grievance or {}
+        payload["grievance"] = g
+        payload["session_type"] = g.get("session_type")
+        payload["print_mode"] = g.get("print_mode")
+        payload["print_document_text"] = g.get("print_document_text")
     return payload
+
+
+def session_processing(session_id: str) -> dict:
+    return {"type": "session_processing", "session_id": session_id}
 
 
 def session_partial(session_id: str) -> dict:

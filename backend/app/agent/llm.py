@@ -1,10 +1,10 @@
-"""Async LLM client — Anthropic preferred, Groq fallback. No LlamaIndex overhead."""
+"""Async LLM client — Groq/Gemini by default; Anthropic for post-call extract only."""
 from __future__ import annotations
 
 import json
 import logging
 import re
-from typing import Any, AsyncGenerator, Type
+from typing import Any, AsyncGenerator, Literal, Type
 
 from pydantic import BaseModel
 
@@ -12,6 +12,8 @@ from app.agent import usage
 from app.core.config import settings
 
 log = logging.getLogger(__name__)
+
+LlmProvider = Literal["default", "anthropic"]
 
 
 def _extract_json(text: str, schema: Type[BaseModel]) -> BaseModel:
@@ -32,15 +34,30 @@ def _extract_json(text: str, schema: Type[BaseModel]) -> BaseModel:
     raise ValueError(f"Could not parse LLM response into {schema.__name__}: {text[:300]}")
 
 
-async def complete(prompt: str, system: str = "", temperature: float = 0.3, fast: bool = False) -> str:
-    """Plain text completion. Anthropic primary, Groq fallback."""
-    if settings.ANTHROPIC_API_KEY:
-        try:
-            return await _anthropic_complete(prompt, system, temperature, fast=fast)
-        except Exception as exc:
-            log.warning("Anthropic complete failed (%s), falling back to Groq", exc)
+async def complete(
+    prompt: str,
+    system: str = "",
+    temperature: float = 0.3,
+    fast: bool = False,
+    max_tokens: int = 1024,
+    *,
+    provider: LlmProvider = "default",
+    model: str | None = None,
+) -> str:
+    """Plain text completion.
+
+    Default: Groq → Gemini. Pass provider=\"anthropic\" for post-call extract only.
+    """
+    if provider == "anthropic":
+        return await _anthropic_complete(
+            prompt, system, temperature, fast=fast, model=model, max_tokens=max_tokens
+        )
+
     if settings.GROQ_API_KEY:
-        return await _groq_complete(prompt, system, temperature)
+        try:
+            return await _groq_complete(prompt, system, temperature, max_tokens=max_tokens)
+        except Exception as exc:
+            log.warning("Groq complete failed (%s), falling back to Gemini", exc)
     return await _gemini_complete(prompt, temperature, fast=fast)
 
 
@@ -51,45 +68,70 @@ async def complete_structured(
     temperature: float = 0.3,
     fast: bool = False,
     max_tokens: int = 512,
+    *,
+    provider: LlmProvider = "default",
+    model: str | None = None,
 ) -> BaseModel:
-    """Structured completion returning a validated Pydantic model. Anthropic primary, Groq fallback."""
-    if settings.ANTHROPIC_API_KEY:
-        try:
-            return await _anthropic_structured(prompt, schema, system, temperature, fast=fast, max_tokens=max_tokens)
-        except Exception as exc:
-            log.warning("Anthropic structured failed (%s), falling back to Groq", exc)
+    """Structured completion returning a validated Pydantic model.
+
+    Default: Groq → Gemini. Pass provider=\"anthropic\" for post-call extract only.
+    """
+    if provider == "anthropic":
+        if settings.ANTHROPIC_API_KEY:
+            try:
+                return await _anthropic_structured(
+                    prompt,
+                    schema,
+                    system,
+                    temperature,
+                    fast=fast,
+                    max_tokens=max_tokens,
+                    model=model,
+                )
+            except Exception as exc:
+                log.warning(
+                    "Anthropic structured failed (%s), falling back to Gemini", exc
+                )
+        return await _gemini_structured(
+            prompt, schema, temperature, fast=fast, max_tokens=max_tokens
+        )
+
     if settings.GROQ_API_KEY:
-        return await _groq_structured(prompt, schema, system, temperature, max_tokens=max_tokens)
-    return await _gemini_structured(prompt, schema, temperature, fast=fast)
+        try:
+            return await _groq_structured(
+                prompt, schema, system, temperature, max_tokens=max_tokens
+            )
+        except Exception as exc:
+            log.warning("Groq structured failed (%s), falling back to Gemini", exc)
+    return await _gemini_structured(
+        prompt, schema, temperature, fast=fast, max_tokens=max_tokens
+    )
 
 
 async def stream_complete(
-    prompt: str, system: str = "", fast: bool = True
+    prompt: str,
+    system: str = "",
+    fast: bool = True,
+    *,
+    provider: LlmProvider = "default",
 ) -> AsyncGenerator[str, None]:
-    """Stream text tokens. Anthropic primary, Groq fallback — matches complete()/complete_structured().
+    """Stream text tokens. Default: Groq → Gemini (Anthropic not used for streaming)."""
+    if provider == "anthropic":
+        async for token in _anthropic_stream(prompt, system, fast=fast):
+            yield token
+        return
 
-    If Anthropic errors before any token was yielded, we transparently retry on Groq so the
-    caller — and the patient — never sees the raw provider error. Once tokens have started
-    streaming from one provider we can no longer switch, since the caller has already
-    displayed a partial answer.
-    """
     started = False
-    if settings.ANTHROPIC_API_KEY:
+    if settings.GROQ_API_KEY:
         try:
-            async for token in _anthropic_stream(prompt, system, fast=fast):
+            async for token in _groq_stream(prompt, system):
                 started = True
                 yield token
             return
         except Exception as exc:
             if started:
                 raise
-            log.warning("Anthropic stream failed (%s), falling back to Groq", exc)
-
-    if settings.GROQ_API_KEY:
-        async for token in _groq_stream(prompt, system):
-            started = True
-            yield token
-        return
+            log.warning("Groq stream failed (%s), falling back to Gemini", exc)
 
     async for token in _gemini_stream(prompt, system, fast=fast):
         yield token
@@ -244,7 +286,11 @@ async def _gemini_complete(prompt: str, temperature: float, fast: bool = False) 
 
 
 async def _gemini_structured(
-    prompt: str, schema: Type[BaseModel], temperature: float, fast: bool = False
+    prompt: str,
+    schema: Type[BaseModel],
+    temperature: float,
+    fast: bool = False,
+    max_tokens: int = 512,
 ) -> BaseModel:
     from google import genai
     from google.genai import types
@@ -258,6 +304,7 @@ async def _gemini_structured(
                 response_mime_type="application/json",
                 response_schema=schema,
                 temperature=temperature,
+                max_output_tokens=max_tokens,
             ),
         )
         _record_gemini(_gemini_model(fast), resp)
@@ -270,6 +317,7 @@ async def _gemini_structured(
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=temperature,
+                max_output_tokens=max_tokens,
             ),
         )
         _record_gemini(_gemini_model(fast), resp)
@@ -295,7 +343,9 @@ async def _gemini_stream(prompt: str, system: str, fast: bool = True) -> AsyncGe
 # Anthropic
 # ─────────────────────────────────────────────
 
-def _anthropic_model(fast: bool) -> str:
+def _anthropic_model(fast: bool, model: str | None = None) -> str:
+    if model:
+        return model
     return settings.ANTHROPIC_FAST_MODEL if fast else settings.ANTHROPIC_MODEL
 
 
@@ -314,16 +364,21 @@ def _record_anthropic(model: str, resp: Any) -> None:
 
 
 async def _anthropic_complete(
-    prompt: str, system: str, temperature: float, fast: bool = False
+    prompt: str,
+    system: str,
+    temperature: float,
+    fast: bool = False,
+    model: str | None = None,
+    max_tokens: int = 1024,
 ) -> str:
     import anthropic
 
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    # anthropic>=1.4 removed the top-level temperature kwarg from messages.create.
     kwargs: dict[str, Any] = dict(
-        model=_anthropic_model(fast),
-        max_tokens=512,
+        model=_anthropic_model(fast, model=model),
+        max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
     )
     if system:
         kwargs["system"] = system
@@ -333,7 +388,13 @@ async def _anthropic_complete(
 
 
 async def _anthropic_structured(
-    prompt: str, schema: Type[BaseModel], system: str, temperature: float, fast: bool = False, max_tokens: int = 512
+    prompt: str,
+    schema: Type[BaseModel],
+    system: str,
+    temperature: float,
+    fast: bool = False,
+    max_tokens: int = 512,
+    model: str | None = None,
 ) -> BaseModel:
     import anthropic
 
@@ -342,10 +403,9 @@ async def _anthropic_structured(
     tool_name = schema.__name__
 
     kwargs: dict[str, Any] = dict(
-        model=_anthropic_model(fast),
+        model=_anthropic_model(fast, model=model),
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
         tools=[{
             "name": tool_name,
             "description": f"Return a {tool_name} object",

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.agent import llm
 from app.agent.summarization.service import SummarizationService
+from app.core.config import settings
 from app.ticketing.models import (
     CategoryInfo,
     TicketFlag,
@@ -150,6 +151,8 @@ async def run_post_call_extract(
             PostCallExtract,
             fast=False,
             max_tokens=2048,
+            provider="anthropic",
+            model=settings.TICKETING_POST_CALL_MODEL or None,
         )
     except Exception as exc:
         log.error(

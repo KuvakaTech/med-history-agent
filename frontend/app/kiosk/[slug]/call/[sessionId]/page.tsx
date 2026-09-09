@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { KioskVoiceWS, kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, KioskWSEvent } from "@/lib/kiosk-types";
-import { isBarwaniJanSunwaiSlug, isJanSunwaiSlug, isLearningSlug } from "@/lib/kiosk-types";
+import { isBarwaniJanSunwaiSlug, isJanSunwaiSlug, isJanSunwaiV3Slug, isLearningSlug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 type Phase = "connecting" | "active" | "processing" | "done" | "error";
@@ -42,18 +42,56 @@ export default function KioskCallPage() {
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isLearning = isLearningSlug(slug) || centre?.centre_kind === "learning";
+  const isV3 = isJanSunwaiV3Slug(slug);
   const agentLabel = isLearning ? "गुड्डी" : "AI सहायक";
   const userLabel = isLearning ? "बच्चा" : "आप";
-  const sessionLabel = isLearning ? "हिंदी सीखना" : "शिकायत दर्ज";
+  const sessionLabel = isLearning ? "हिंदी सीखना" : isV3 ? "जन सुनवाई" : "शिकायत दर्ज";
   const processingLabel = isLearning
     ? "सीखने का रिकॉर्ड बन रहा है…"
-    : "शिकायत दर्ज की जा रही है…";
+    : isV3
+      ? "आपका दस्तावेज़ तैयार हो रहा है…"
+      : "शिकायत दर्ज की जा रही है…";
   const resultQuery = isLearning ? "" : "?autoprint=1";
+
+  const beginProcessing = () => {
+    setPhase("processing");
+    setAgentSpeaking(false);
+    setPartialTranscript("");
+    wsRef.current?.enterProcessing();
+  };
 
   const goToResult = () => {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
-    router.push(`/kiosk/${slug}/result/${sessionId}${resultQuery}`);
+    requestAnimationFrame(() => {
+      router.push(`/kiosk/${slug}/result/${sessionId}${resultQuery}`);
+    });
+  };
+
+  const v3PrintReady = (event: KioskWSEvent) => {
+    const mode = event.print_mode || event.grievance?.print_mode || "";
+    if (mode === "none") return true;
+    const doc = event.print_document_text || event.grievance?.print_document_text || "";
+    return Boolean(doc.trim());
+  };
+
+  const pollForV3Result = async () => {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline && !navigatedRef.current) {
+      try {
+        const res = await kioskApi.getResult(slug, sessionId);
+        const mode = res.print_mode || res.grievance?.print_mode || "";
+        const doc = res.print_document_text || res.grievance?.print_document_text || "";
+        if (mode === "none" || res.status === "partial" || doc.trim()) {
+          goToResult();
+          return;
+        }
+      } catch {
+        // keep polling until deadline
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    goToResult();
   };
 
   handlerRef.current = (event: KioskWSEvent) => {
@@ -95,11 +133,19 @@ export default function KioskCallPage() {
           feedbackTimerRef.current = setTimeout(() => setAnswerFeedback(null), 3000);
         }
         break;
+      case "session_processing":
+        beginProcessing();
+        break;
       case "result_ready":
+        beginProcessing();
+        if (isV3 && !v3PrintReady(event)) {
+          void pollForV3Result();
+          break;
+        }
         goToResult();
         break;
       case "session_partial":
-        setPhase("processing");
+        beginProcessing();
         setTimeout(() => goToResult(), 1500);
         break;
       case "error":
@@ -182,6 +228,30 @@ export default function KioskCallPage() {
         >
           फिर से शुरू करें
         </button>
+      </main>
+    );
+  }
+
+  if (phase === "processing") {
+    return (
+      <main
+        className={clsx(
+          "min-h-screen flex flex-col items-center justify-center px-6 gap-6",
+          isLearning ? "bg-gradient-to-b from-pink-50 to-white" : "bg-gray-50"
+        )}
+        data-testid="kiosk-processing-screen"
+      >
+        <div
+          className={clsx(
+            "h-16 w-16 rounded-full border-4 border-t-transparent animate-spin",
+            isLearning ? "border-pink-400" : "border-amber-500"
+          )}
+          aria-hidden
+        />
+        <div className="text-center space-y-2 max-w-md">
+          <p className="text-lg font-semibold text-gray-800">{processingLabel}</p>
+          <p className="text-sm text-gray-500">कृपया प्रतीक्षा करें — आपको परिणाम पृष्ठ पर ले जाया जा रहा है।</p>
+        </div>
       </main>
     );
   }
@@ -283,9 +353,6 @@ export default function KioskCallPage() {
           </div>
         )}
 
-        {phase === "processing" && (
-          <p className="text-sm text-gray-500 animate-pulse">{processingLabel}</p>
-        )}
       </div>
     </main>
   );

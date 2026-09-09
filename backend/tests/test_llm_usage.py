@@ -7,7 +7,7 @@ modules call llm.complete/complete_structured and none of them changed.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -144,7 +144,7 @@ async def test_anthropic_complete_still_returns_a_plain_string(sink, monkeypatch
             self.messages = FakeMessages()
 
     with patch("anthropic.AsyncAnthropic", FakeClient):
-        result = await llm.complete("hi", fast=True)
+        result = await llm.complete("hi", fast=True, provider="anthropic")
 
     assert result == "hello"
     assert len(sink) == 1
@@ -171,7 +171,63 @@ async def test_a_response_without_usage_does_not_break_the_completion(
             self.messages = FakeMessages()
 
     with patch("anthropic.AsyncAnthropic", FakeClient):
-        result = await llm.complete("hi", fast=True)
+        result = await llm.complete("hi", fast=True, provider="anthropic")
 
     assert result == "hello"
     assert sink == []
+
+
+async def test_anthropic_messages_create_omits_temperature(monkeypatch):
+    """anthropic>=1.4 removed temperature from messages.create — passing it raises."""
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "")
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", "")
+
+    captured: dict[str, object] = {}
+
+    class FakeToolBlock:
+        type = "tool_use"
+        input = {"full_name": "Ram"}
+
+    class FakeResponse:
+        content = [FakeToolBlock()]
+        usage = FakeUsage()
+
+    class FakeMessages:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return FakeResponse()
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.messages = FakeMessages()
+
+    from app.kiosk.post_call_extract import GrievanceExtract
+
+    with patch("anthropic.AsyncAnthropic", FakeClient):
+        result = await llm.complete_structured(
+            "extract", GrievanceExtract, fast=False, provider="anthropic"
+        )
+
+    assert "temperature" not in captured
+    assert result.full_name == "Ram"
+
+
+async def test_default_structured_uses_groq_not_anthropic(monkeypatch):
+    """Default provider chain skips Anthropic — reserved for post-call extract."""
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "groq-key")
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", "")
+
+    from app.kiosk.post_call_extract import GrievanceExtract
+
+    with patch("app.agent.llm._anthropic_structured", new=AsyncMock()) as mock_anthropic:
+        with patch(
+            "app.agent.llm._groq_structured",
+            new=AsyncMock(return_value=GrievanceExtract(full_name="Via Groq")),
+        ) as mock_groq:
+            result = await llm.complete_structured("extract", GrievanceExtract)
+
+    mock_anthropic.assert_not_called()
+    mock_groq.assert_called_once()
+    assert result.full_name == "Via Groq"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
@@ -48,6 +49,15 @@ LANGUAGE_TO_BCP47: dict[str, str] = {
 _LEARNING_SILENCE_MS = 750
 _DEFAULT_SILENCE_MS = 400
 
+_TOOL_LEAK_RE = re.compile(
+    r"call:finish_(?:complaint|lesson)\{.*?(?:\}|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+_JANSUNWAI_RECORD_RE = re.compile(
+    r"<<<JANSUNWAI_RECORD.*?JANSUNWAI_RECORD>>>",
+    re.DOTALL | re.IGNORECASE,
+)
+
 
 def merge_transcript_chunk(buf: str, chunk: str) -> str:
     """Merge Gemini transcription chunks (incremental or cumulative)."""
@@ -67,6 +77,77 @@ def merge_transcript_chunk(buf: str, chunk: str) -> str:
         if buf.endswith(chunk[:n]):
             return buf + chunk[n:]
     return buf + chunk
+
+
+def dedupe_concatenated_repeats(text: str) -> str:
+    """Collapse exact whole-string repetition (e.g. closing line said 7×)."""
+    t = (text or "").strip()
+    n = len(t)
+    if n < 2:
+        return t
+    for size in range(1, n // 2 + 1):
+        if n % size != 0:
+            continue
+        unit = t[:size]
+        if unit * (n // size) == t:
+            return unit
+    return t
+
+
+def collapse_repeated_suffix(text: str, min_unit: int = 24) -> str:
+    """If the same trailing phrase repeats, keep one copy."""
+    t = (text or "").strip()
+    changed = True
+    while changed:
+        changed = False
+        if len(t) < min_unit * 2:
+            break
+        for size in range(len(t) // 2, min_unit - 1, -1):
+            unit = t[-size:]
+            count = 0
+            pos = len(t)
+            while pos >= size and t[pos - size : pos] == unit:
+                count += 1
+                pos -= size
+            if count >= 2:
+                t = t[:pos] + unit
+                changed = True
+                break
+    return t
+
+
+def collapse_consecutive_repeats(text: str, min_unit: int = 24) -> str:
+    """Collapse consecutive identical substrings (mid-text or trailing)."""
+    t = (text or "").strip()
+    changed = True
+    while changed:
+        changed = False
+        if len(t) < min_unit * 2:
+            break
+        for size in range(len(t) // 2, min_unit - 1, -1):
+            i = 0
+            while i + size * 2 <= len(t):
+                unit = t[i : i + size]
+                end = i + size
+                while end + size <= len(t) and t[end : end + size] == unit:
+                    end += size
+                if end - i >= size * 2:
+                    t = t[: i + size] + t[end:]
+                    changed = True
+                    break
+                i += 1
+            if changed:
+                break
+    return t
+
+
+def sanitize_agent_transcript(text: str) -> str:
+    """Strip leaked tool-call syntax, record blocks, and repeated closing phrases."""
+    cleaned = _JANSUNWAI_RECORD_RE.sub("", text or "")
+    cleaned = _TOOL_LEAK_RE.sub("", cleaned).strip()
+    cleaned = dedupe_concatenated_repeats(cleaned)
+    cleaned = collapse_consecutive_repeats(cleaned)
+    return collapse_repeated_suffix(cleaned)
 
 
 def bcp47_language(code: str) -> str:
@@ -153,27 +234,46 @@ def lesson_tools() -> list[Tool]:
     ]
 
 
-def complaint_tools() -> list[Tool]:
+def complaint_tools(*, v3: bool = False) -> list[Tool]:
+    properties: dict = {
+        "reason": Schema(
+            type=Type.STRING,
+            description="Why the session is ending",
+        ),
+    }
+    required = ["reason"]
+    description = (
+        "Call ONCE immediately after section 11 — deliver a single goodbye, "
+        "then call this tool. Do not repeat closing phrases or keep talking. "
+        "Also call if the citizen wants to stop after partial capture."
+    )
+    if v3:
+        description = (
+            "Call ONCE immediately after the spoken close (Section 15A or 15B) — "
+            "deliver a single goodbye, then call this tool with session_type and "
+            "print_mode. Do not repeat closing phrases or keep talking."
+        )
+        properties["session_type"] = Schema(
+            type=Type.STRING,
+            description=(
+                "complaint | information | help_desk | mixed — primary session mode"
+            ),
+        )
+        properties["print_mode"] = Schema(
+            type=Type.STRING,
+            description="application_letter | info_sheet | none",
+        )
+        required = ["reason", "session_type", "print_mode"]
     return [
         Tool(
             function_declarations=[
                 FunctionDeclaration(
                     name="finish_complaint",
-                    description=(
-                        "Call when the grievance is complete: problem fully captured, "
-                        "identity and address confirmed, complaint location captured, "
-                        "and the citizen has confirmed the summary. Also call if they "
-                        "want to stop after a partial capture."
-                    ),
+                    description=description,
                     parameters=Schema(
                         type=Type.OBJECT,
-                        properties={
-                            "reason": Schema(
-                                type=Type.STRING,
-                                description="Why the session is ending",
-                            ),
-                        },
-                        required=["reason"],
+                        properties=properties,
+                        required=required,
                     ),
                 )
             ]
@@ -397,11 +497,13 @@ class GeminiLiveSession:
         out = getattr(content, "output_transcription", None)
         if out is not None and out.text:
             self._agent_buf = merge_transcript_chunk(self._agent_buf, out.text)
-            events.append(
-                LiveEvent(kind="agent_transcript_partial", text=self._agent_buf)
-            )
+            partial = sanitize_agent_transcript(self._agent_buf)
+            if partial:
+                events.append(
+                    LiveEvent(kind="agent_transcript_partial", text=partial)
+                )
             if out.finished:
-                text = self._agent_buf.strip()
+                text = sanitize_agent_transcript(self._agent_buf.strip())
                 self._agent_buf = ""
                 if text:
                     events.append(LiveEvent(kind="agent_transcript_final", text=text))
@@ -424,11 +526,11 @@ class GeminiLiveSession:
 
         if getattr(content, "turn_complete", False):
             if self._agent_buf.strip():
-                events.append(
-                    LiveEvent(
-                        kind="agent_transcript_final", text=self._agent_buf.strip()
+                text = sanitize_agent_transcript(self._agent_buf.strip())
+                if text:
+                    events.append(
+                        LiveEvent(kind="agent_transcript_final", text=text)
                     )
-                )
                 self._agent_buf = ""
             if self._user_buf.strip() and not self._user_final_emitted:
                 self._user_final_emitted = True
