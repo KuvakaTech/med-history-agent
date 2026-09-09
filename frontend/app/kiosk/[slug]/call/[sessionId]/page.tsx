@@ -286,9 +286,7 @@ export default function KioskCallPage() {
               {centre?.name || "शिकायत कियोस्क"}
             </span>
           )}
-          <span className="text-xs text-gray-400">
-            {phase === "processing" ? "प्रसंस्करण…" : sessionLabel}
-          </span>
+          <span className="text-xs text-gray-400">{sessionLabel}</span>
         </div>
         <button
           type="button"
