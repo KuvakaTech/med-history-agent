@@ -6,6 +6,7 @@ import os
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
 from app.kiosk.gemini_live import (
+    GeminiLiveSession,
     complaint_tools,
     lesson_tools,
     build_live_config,
@@ -28,6 +29,71 @@ def test_complaint_tool_name():
     decl = tools[0].function_declarations
     assert decl[0].name == "finish_complaint"
     assert "reason" in (decl[0].parameters.required or [])
+
+
+def test_v3_complaint_tool_requires_session_and_print_mode():
+    tools = complaint_tools(v3=True)
+    decl = tools[0].function_declarations[0]
+    assert decl.name == "finish_complaint"
+    required = set(decl.parameters.required or [])
+    assert required == {"reason", "session_type", "print_mode"}
+    assert "application_letter" in (decl.description or "")
+    assert "citizen name must be confirmed" in (decl.description or "").lower()
+
+
+def test_parse_order_tool_before_audio_then_turn_complete():
+    """finish_complaint/transcript can precede audio; turn_complete is last."""
+    live = GeminiLiveSession.__new__(GeminiLiveSession)
+    live._agent_buf = ""
+    live._user_buf = ""
+    live._user_speaking = False
+    live._user_final_emitted = False
+
+    class FakeInline:
+        data = b"\x00\x01" * 50
+
+    class FakePart:
+        inline_data = FakeInline()
+
+    class FakeModelTurn:
+        parts = [FakePart()]
+
+    class FakeFunctionCall:
+        name = "finish_complaint"
+        args = {"reason": "done", "session_type": "complaint", "print_mode": "application_letter"}
+        id = "fc-1"
+
+    class FakeToolCall:
+        function_calls = [FakeFunctionCall()]
+
+    class FakeOutputTranscription:
+        text = "धन्यवाद। आपका दिन शुभ हो।"
+        finished = True
+
+    class FakeServerContent:
+        interrupted = False
+        interim_input_transcription = None
+        input_transcription = None
+        output_transcription = FakeOutputTranscription()
+        model_turn = FakeModelTurn()
+        turn_complete = True
+
+    class FakeMsg:
+        session_resumption_update = None
+        go_away = None
+        tool_call = FakeToolCall()
+        server_content = FakeServerContent()
+
+    events = live._parse(FakeMsg())
+    kinds = [e.kind for e in events]
+    assert kinds[0] == "tool_call"
+    assert "agent_transcript_final" in kinds
+    assert "agent_audio_chunk" in kinds
+    assert kinds[-1] == "turn_complete"
+    tool_idx = kinds.index("tool_call")
+    audio_idx = kinds.index("agent_audio_chunk")
+    turn_idx = kinds.index("turn_complete")
+    assert tool_idx < audio_idx < turn_idx
 
 
 def test_kiosk_live_config_has_tools():

@@ -60,6 +60,12 @@ export default function KioskCallPage() {
     wsRef.current?.enterProcessing();
   };
 
+  const afterPlaybackDrain = async (fn: () => void) => {
+    wsRef.current?.enterProcessing();
+    await wsRef.current?.waitForPlaybackDrain();
+    fn();
+  };
+
   const goToResult = () => {
     if (navigatedRef.current) return;
     navigatedRef.current = true;
@@ -134,19 +140,23 @@ export default function KioskCallPage() {
         }
         break;
       case "session_processing":
-        beginProcessing();
+        void afterPlaybackDrain(beginProcessing);
         break;
       case "result_ready":
-        beginProcessing();
-        if (isV3 && !v3PrintReady(event)) {
-          void pollForV3Result();
-          break;
-        }
-        goToResult();
+        void afterPlaybackDrain(() => {
+          beginProcessing();
+          if (isV3 && !v3PrintReady(event)) {
+            void pollForV3Result();
+            return;
+          }
+          goToResult();
+        });
         break;
       case "session_partial":
-        beginProcessing();
-        setTimeout(() => goToResult(), 1500);
+        void afterPlaybackDrain(() => {
+          beginProcessing();
+          setTimeout(() => goToResult(), 1500);
+        });
         break;
       case "error":
         if (event.fatal) {

@@ -70,7 +70,11 @@ _GRIEVANCE_CLOSE_RUNTIME = (
 _JAN_SUNWAI_V3_CLOSE_RUNTIME = (
     " After your spoken close (Section 15A for a complaint letter, 15B for an "
     "information sheet), say goodbye exactly ONCE, then immediately call "
-    "finish_complaint with session_type and print_mode. Never repeat the closing, "
+    "finish_complaint with session_type and print_mode. Before calling "
+    "finish_complaint you MUST have orally enumerated every required document "
+    "(numbered), stated where to submit the signed letter or how to use the info "
+    "sheet, and confirmed the citizen's name. Never say documents were 'already "
+    "explained' — list them again in full. Never repeat the closing, "
     "never keep talking after goodbye, never speak tool names aloud, and NEVER "
     "speak or display the <<<JANSUNWAI_RECORD>>> block — the backend builds the "
     "printed document after the call."
@@ -81,9 +85,11 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
     if is_jan_sunwai_v3(centre):
         return (
             "\n\nAsk exactly ONE question per turn, then wait for the answer. "
-            "Greet in Hindi first (Section 2.1): disclose you are AI, invite a "
-            "complaint, an information question, OR any other help — do NOT force "
-            "a category. "
+            "Greet in Hindi first (Section 2.1): disclose you are AI, privacy line, "
+            "then capture and CONFIRM full name (Section 8.1) BEFORE asking what "
+            "brings them — in every mode including information queries. "
+            "Invite a complaint, an information question, OR any other help — do NOT "
+            "force a category. "
             "When speaking Hindi, use Devanagari script for everything you say aloud "
             "— it is shown live on the kiosk screen. "
             "CRITICAL — COMPLAINT NUMBER: You do NOT know any reference number during "
@@ -91,7 +97,9 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
             "(no JS-VNS-, JS-BWN-, NN-VNS-, or random digits). "
             "The system handles references after the call; never voice or print an ID. "
             "Decide the mode early (Section 6): complaint → application letter; "
-            "information → info sheet; unclear → help desk then route. "
+            "information → info sheet; mixed grievance+question → application_letter "
+            "only with oral answer; unclear → help desk then route. "
+            "Never claim documents were already explained — re-enumerate the full list. "
             "NEVER ask which language the citizen prefers — Hindi only."
             + _JAN_SUNWAI_V3_CLOSE_RUNTIME
         )
@@ -182,9 +190,10 @@ def kickoff_text(centre: KioskCentre, language: str) -> str:
     if is_jan_sunwai_v3(centre):
         return (
             f"The citizen is now at the kiosk for {centre.name}. "
-            "Greet them warmly in Hindi (Section 2.1): disclose you are AI, say "
-            "they may register a complaint, ask for information, or ask for any "
-            "other help — this is a help desk. Do not wait for further instructions."
+            "Greet them warmly in Hindi (Section 2.1): disclose you are AI, privacy "
+            "line, then ask for and confirm their full name before asking what they "
+            "need. They may register a complaint, ask for information, or ask for "
+            "any other help — this is a help desk. Do not wait for further instructions."
         )
     if _is_barwani_jan_sunwai(centre):
         return (

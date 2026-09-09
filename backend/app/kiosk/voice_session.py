@@ -46,6 +46,7 @@ _MAX_AUDIO_FRAME_BYTES = 64 * 1024
 _SEND_TIMEOUT = 8.0
 _DUCK_RMS_THRESHOLD = 600.0
 _MAX_ANSWER_ATTEMPTS = 2
+_FINISH_DRAIN_TIMEOUT_SEC = 20.0
 
 _TOOL_LEAK_RE = re.compile(
     r"call:finish_(?:complaint|lesson)\{.*?(?:\}|$)",
@@ -154,6 +155,8 @@ class KioskVoiceSession:
         self._agent_turn_id = 0
         self._last_answer_turn_id = -1
         self._closing_turn_count = 0
+        self._finish_pending = False
+        self._finish_timeout_task: Optional[asyncio.Task] = None
         self._learning_engine: Optional[LearningEngine] = None
         if self._is_learning:
             self._learning_engine = LearningEngine(session.lesson_topic)
@@ -248,6 +251,8 @@ class KioskVoiceSession:
             kickoff = kickoff_text(self.centre, self.session.language)
 
         self._phase_done = asyncio.Event()
+        self._finish_pending = False
+        self._finish_timeout_task = None
         self._live = self._live_factory()
         await self._live.connect(
             instruction,
@@ -291,7 +296,7 @@ class KioskVoiceSession:
                 frame = await asyncio.wait_for(self._audio_q.get(), timeout=0.5)
             except asyncio.TimeoutError:
                 continue
-            if self._live is None:
+            if self._live is None or self._finish_pending:
                 continue
             if (
                 not self._is_learning
@@ -358,8 +363,11 @@ class KioskVoiceSession:
         elif event.kind == "turn_complete":
             self._agent_playing = False
             self._agent_turn_id += 1
-            self._awaiting_user = True
             await self._send(ev.agent_done_speaking(self.session.turn_count))
+            if self._finish_pending:
+                self._complete_finish_phase()
+            else:
+                self._awaiting_user = True
         elif event.kind == "tool_call":
             if event.tool_name == self._finish_tool:
                 await self._handle_finish_tool(event)
@@ -413,15 +421,41 @@ class KioskVoiceSession:
             return
         await self._maybe_auto_finish_on_closing(text)
 
+    def _request_finish(self) -> None:
+        if self._phase_done.is_set() or self._finish_pending:
+            return
+        self._finish_pending = True
+        self._awaiting_user = False
+        if self._finish_timeout_task is None or self._finish_timeout_task.done():
+            self._finish_timeout_task = asyncio.create_task(
+                self._finish_drain_timeout(),
+                name="kiosk_finish_drain",
+            )
+
+    def _complete_finish_phase(self) -> None:
+        if self._finish_timeout_task and not self._finish_timeout_task.done():
+            self._finish_timeout_task.cancel()
+        self._finish_pending = False
+        self._phase_done.set()
+
+    async def _finish_drain_timeout(self) -> None:
+        await asyncio.sleep(_FINISH_DRAIN_TIMEOUT_SEC)
+        if self._finish_pending and not self._phase_done.is_set():
+            log.info(
+                "kiosk finish drain timeout for %s",
+                self.session.session_id,
+            )
+            self._complete_finish_phase()
+
     async def _maybe_auto_finish_on_closing(self, text: str) -> None:
-        if self._phase_done.is_set():
+        if self._phase_done.is_set() or self._finish_pending:
             return
         if _TOOL_LEAK_RE.search(text):
             log.info(
                 "kiosk auto-finish on leaked finish tool for %s",
                 self.session.session_id,
             )
-            self._phase_done.set()
+            self._request_finish()
             return
         if not _looks_like_grievance_closing(text):
             self._closing_turn_count = 0
@@ -432,7 +466,7 @@ class KioskVoiceSession:
                 "kiosk auto-finish on closing transcript for %s",
                 self.session.session_id,
             )
-            self._phase_done.set()
+            self._request_finish()
 
     async def _process_child_answer(self, transcript: str) -> None:
         """Unified teach + quiz verification against the displayed card."""
@@ -641,7 +675,10 @@ class KioskVoiceSession:
                 self.session.finish_session_type = str(session_type).strip()
             if print_mode:
                 self.session.finish_print_mode = str(print_mode).strip()
-        self._phase_done.set()
+        if self._is_learning:
+            self._phase_done.set()
+        else:
+            self._request_finish()
 
     def _enqueue_audio_frame(self, frame: bytes) -> None:
         try:

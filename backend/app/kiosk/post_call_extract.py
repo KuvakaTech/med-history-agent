@@ -188,7 +188,10 @@ The kiosk has TWO outputs:
 - COMPLAINT (session_type=complaint): print_mode MUST be application_letter.
 - INFORMATION / HELP (session_type=information or help_desk): print_mode MUST be info_sheet
   unless nothing was provided — then info_sheet or none.
-- MIXED: session_type=mixed; pick the dominant print_mode.
+- MIXED (actionable grievance + information question): session_type=mixed;
+  print_mode MUST be application_letter — oral answer only, one letter printed.
+- INFORMATION / HELP (session_type=information or help_desk): print_mode MUST be
+  info_sheet unless nothing was provided — then info_sheet or none.
 
 Rules:
 - Use ONLY what is explicitly said. Do not invent facts, documents, officers, khasra, fees, or IDs.
@@ -214,6 +217,8 @@ Write the FULL one-page A4 printable document for a Varanasi Jan Sunwai kiosk se
 Document type: {doc_kind}
 Use शुद्ध सरकारी हिंदी for application_letter; simple clear Hindi for info_sheet.
 Follow Section 13.2 (letter) or 13.3 (info sheet) skeleton from the Jan Sunwai spec.
+For application_letter, include the full numbered संलग्नक section at the bottom
+using documents_to_attach_or_required from the structured record.
 Leave {{DATE}} and {{TIME}} as literal tokens — the system fills them later.
 NEVER include any complaint number, reference ID, or tracking number.
 
@@ -328,7 +333,9 @@ def _resolve_v3_modes(
     )
     session_type = str(session_type).strip().lower()
     print_mode = str(print_mode).strip().lower()
-    if session_type in ("information", "help_desk") and print_mode == "application_letter":
+    if session_type == "mixed":
+        print_mode = "application_letter"
+    elif session_type in ("information", "help_desk") and print_mode == "application_letter":
         print_mode = "info_sheet"
     if print_mode not in ("application_letter", "info_sheet", "none"):
         print_mode = (

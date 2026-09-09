@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
@@ -18,7 +18,7 @@ from app.kiosk.voice_session import (
 
 
 @pytest.mark.asyncio
-async def test_finish_complaint_sets_phase_done():
+async def test_finish_complaint_waits_for_turn_complete():
     session = KioskSession(centre_id="c1", phone="9999999999", language="hi")
     centre = KioskCentre(slug="varanasi-jan-sunwai", name="Jan Sunwai")
     ws = MagicMock()
@@ -30,13 +30,72 @@ async def test_finish_complaint_sets_phase_done():
     event = LiveEvent(
         kind="tool_call",
         tool_name="finish_complaint",
-        tool_args={"reason": "complete"},
+        tool_args={"reason": "complete", "session_type": "complaint", "print_mode": "application_letter"},
         tool_call_id="call-1",
     )
     await voice._handle_live_event(event)
 
-    assert voice._phase_done.is_set()
+    assert voice._finish_pending
+    assert not voice._phase_done.is_set()
     voice._live.send_tool_response.assert_awaited_once()
+
+    await voice._handle_live_event(LiveEvent(kind="turn_complete"))
+
+    assert not voice._finish_pending
+    assert voice._phase_done.is_set()
+    assert not voice._awaiting_user
+
+
+@pytest.mark.asyncio
+async def test_finish_complaint_relay_still_sends_audio_before_turn_complete():
+    session = KioskSession(centre_id="c1", phone="9999999999", language="hi")
+    centre = KioskCentre(slug="varanasi-jan-sunwai-v3", name="Jan Sunwai v3")
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
+    voice._live = MagicMock()
+    voice._live.send_tool_response = AsyncMock()
+
+    await voice._handle_live_event(
+        LiveEvent(
+            kind="tool_call",
+            tool_name="finish_complaint",
+            tool_args={"reason": "complete", "session_type": "mixed", "print_mode": "application_letter"},
+            tool_call_id="call-1",
+        )
+    )
+    assert voice._finish_pending
+
+    await voice._handle_live_event(
+        LiveEvent(kind="agent_audio_chunk", audio=b"\x00\x01" * 100)
+    )
+
+    audio_calls = [
+        c for c in ws.send_json.await_args_list if c.args[0].get("type") == "agent_audio_chunk"
+    ]
+    assert len(audio_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_finish_drain_timeout_completes_phase():
+    session = KioskSession(centre_id="c1", phone="9999999999", language="hi")
+    centre = KioskCentre(slug="varanasi-jan-sunwai", name="Jan Sunwai")
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
+
+    voice._request_finish()
+    assert voice._finish_pending
+    assert not voice._phase_done.is_set()
+
+    with patch(
+        "app.kiosk.voice_session._FINISH_DRAIN_TIMEOUT_SEC",
+        0.05,
+    ):
+        await voice._finish_drain_timeout()
+
+    assert voice._phase_done.is_set()
+    assert not voice._finish_pending
 
 
 @pytest.mark.asyncio
@@ -560,7 +619,7 @@ def test_looks_like_grievance_closing():
 
 
 @pytest.mark.asyncio
-async def test_auto_finish_on_closing_transcript():
+async def test_auto_finish_on_closing_transcript_waits_for_turn_complete():
     session = KioskSession(centre_id="c1", phone="9999999999", language="hi")
     centre = KioskCentre(slug="barwani-jan-sunwai", name="Barwani Jan Sunwai")
     ws = MagicMock()
@@ -573,6 +632,10 @@ async def test_auto_finish_on_closing_transcript():
     event = LiveEvent(kind="agent_transcript_final", text=closing)
     await voice._handle_live_event(event)
 
+    assert voice._finish_pending
+    assert not voice._phase_done.is_set()
+
+    await voice._handle_live_event(LiveEvent(kind="turn_complete"))
     assert voice._phase_done.is_set()
 
 

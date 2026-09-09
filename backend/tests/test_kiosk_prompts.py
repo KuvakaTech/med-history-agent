@@ -104,4 +104,14 @@ def test_jan_sunwai_v3_prompt_loads():
     assert "register their problem" not in kickoff_text(centre, "hi")
     kick = kickoff_text(centre, "hi")
     assert "information" in kick.lower()
+    assert "confirm their full name" in kick.lower()
     assert "NEVER invent, guess, or speak any complaint" in text
+    assert "NAME FIRST" in text or "confirm name" in text.lower()
+    assert "application_letter only" in text.lower() or "application_letter" in text
+    assert "3.8" in text or "already explained" in text.lower()
+    assert "8.6" in text
+    assert "Varanasi Sadar" in text
+    assert "Pindra" in text
+    assert "Rajatalab" in text
+    assert "confirm name" in text.lower() or "CONFIRM" in text
+    assert "Never claim documents were already explained" in text

@@ -251,7 +251,11 @@ def complaint_tools(*, v3: bool = False) -> list[Tool]:
         description = (
             "Call ONCE immediately after the spoken close (Section 15A or 15B) — "
             "deliver a single goodbye, then call this tool with session_type and "
-            "print_mode. Do not repeat closing phrases or keep talking."
+            "print_mode. Before calling: citizen name must be confirmed; you must "
+            "have orally enumerated every required document and stated where to "
+            "submit or what to do next. mixed + grievance → print_mode "
+            "application_letter (not info_sheet). Do not repeat closing phrases "
+            "or keep talking."
         )
         properties["session_type"] = Schema(
             type=Type.STRING,

@@ -276,11 +276,26 @@ export class KioskVoiceWS {
     this.micOpen = false;
   }
 
-  /** Stop mic and agent playback; keep the socket open for result_ready. */
+  /** Stop mic capture; keep queued agent PCM playing until drain. */
   enterProcessing(): void {
     this.micOpen = false;
     this.agentPlaying = false;
-    this._interruptPcm();
+  }
+
+  /** Wait until scheduled agent PCM finishes or timeoutMs elapses. */
+  async waitForPlaybackDrain(timeoutMs = 20_000): Promise<void> {
+    const deadline = performance.now() + timeoutMs;
+    while (this._playbackPending() && performance.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  private _playbackPending(): boolean {
+    if (!this.audioCtx) return false;
+    return (
+      this.pcmSources.length > 0 ||
+      this.audioCtx.currentTime < this.pcmNextTime - 0.05
+    );
   }
 
   stop(): void {

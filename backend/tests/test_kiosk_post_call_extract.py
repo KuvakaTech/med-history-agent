@@ -14,6 +14,7 @@ from app.kiosk.post_call_extract import (
     JanSunwaiV3MetaExtract,
     _JAN_SUNWAI_V3_META_EXTRACT_PROMPT,
     _extract_prompt_for_centre,
+    _resolve_v3_modes,
     fill_print_placeholders,
     format_transcript,
     parse_jansunwai_record,
@@ -133,6 +134,27 @@ def test_jan_sunwai_v3_meta_extract_prompt():
     assert "application_letter" in _JAN_SUNWAI_V3_META_EXTRACT_PROMPT
     assert "info_sheet" in _JAN_SUNWAI_V3_META_EXTRACT_PROMPT
     assert "Do NOT generate the printable letter body" in _JAN_SUNWAI_V3_META_EXTRACT_PROMPT
+    assert "mixed" in _JAN_SUNWAI_V3_META_EXTRACT_PROMPT.lower()
+
+
+def test_resolve_v3_modes_mixed_forces_application_letter():
+    session = KioskSession(centre_id="c1", finish_print_mode="info_sheet")
+    extracted = JanSunwaiV3MetaExtract(
+        session_type="mixed",
+        print_mode="info_sheet",
+    )
+    session_type, print_mode = _resolve_v3_modes(session, extracted, None)
+    assert session_type == "mixed"
+    assert print_mode == "application_letter"
+
+
+def test_resolve_v3_modes_mixed_overrides_record_info_sheet():
+    session = KioskSession(centre_id="c1")
+    extracted = JanSunwaiV3MetaExtract(session_type="complaint", print_mode="application_letter")
+    record = {"session_type": "mixed", "print_mode": "info_sheet"}
+    session_type, print_mode = _resolve_v3_modes(session, extracted, record)
+    assert session_type == "mixed"
+    assert print_mode == "application_letter"
 
 
 def test_fill_print_placeholders():
@@ -294,6 +316,69 @@ async def test_v3_information_skips_complaint_number():
     assert out.grievance is not None
     assert out.grievance.print_mode == "info_sheet"
     assert out.grievance.print_document_text
+
+
+@pytest.mark.asyncio
+async def test_v3_mixed_session_prints_application_letter_only():
+    session = KioskSession(
+        centre_id="c1",
+        phone="9876543210",
+        language="hi",
+        finish_print_mode="info_sheet",
+        finish_session_type="mixed",
+        transcript=[
+            KioskTranscriptEntry(
+                speaker="user",
+                text="Bijli bill zyada hai aur nivas praman ke liye kya document chahiye",
+            ),
+        ],
+    )
+    centre = KioskCentre(
+        slug="varanasi-jan-sunwai-v3",
+        name="Varanasi Jan Sunwai v3",
+        prompt_file="jan_sunwai_v3_system.txt",
+        complaint_prefix="JS-VNS",
+    )
+    meta = JanSunwaiV3MetaExtract(
+        full_name="Ram Kumar",
+        session_type="mixed",
+        print_mode="info_sheet",
+        confirmed_summary="High electricity bill",
+        chief_complaint_or_query="Nivas praman documents",
+        department_tag="electricity",
+        documents_to_attach_or_required=["Aadhaar", "Bill copy"],
+    )
+    letter_body = (
+        "                 जन सुनवाई केंद्र\n"
+        "दिनांक: {{DATE}}\n"
+        "संलग्नक:\n1. Aadhaar\n2. Bill copy"
+    )
+    with patch(
+        "app.agent.llm.complete_structured",
+        new_callable=AsyncMock,
+        return_value=meta,
+    ):
+        with patch(
+            "app.agent.llm.complete",
+            new_callable=AsyncMock,
+            return_value=letter_body,
+        ):
+            with patch(
+                "app.kiosk.post_call_extract.next_complaint_number",
+                new_callable=AsyncMock,
+                return_value="JS-VNS-20250825-00002",
+            ):
+                with patch(
+                    "app.kiosk.session_store.kiosk_session_store.update",
+                    new_callable=AsyncMock,
+                ):
+                    out = await run_post_call_extract(session, centre)
+    assert out.status == "completed"
+    assert out.grievance is not None
+    assert out.grievance.print_mode == "application_letter"
+    assert out.grievance.print_document_text
+    assert "संलग्नक" in out.grievance.print_document_text
+    assert "Bill copy" in out.grievance.print_document_text
 
 
 @pytest.mark.asyncio
