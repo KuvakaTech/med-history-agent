@@ -62,6 +62,14 @@ def _parse_dt(value):
 
 def _format_session(s: dict) -> dict:
     s = dict(s)
+    transcript = s.pop("transcript", None) or []
+    if isinstance(transcript, list):
+        s["transcript_turns"] = len(transcript)
+        s["has_transcript"] = bool(transcript)
+    else:
+        s["transcript_turns"] = 0
+        s["has_transcript"] = False
+
     s["started_at_ist"] = to_ist_str(_parse_dt(s.get("started_at")))
     s["ended_at_ist"] = to_ist_str(_parse_dt(s.get("ended_at")))
     s["deleted_at_ist"] = to_ist_str(_parse_dt(s.get("deleted_at")))
@@ -69,6 +77,7 @@ def _format_session(s: dict) -> dict:
     if isinstance(learning, dict) and learning:
         s["grievance_summary"] = learning.get("friendly_summary")
         s["session_summary"] = learning.get("friendly_summary")
+        s["has_print_document"] = False
     else:
         grievance = s.get("grievance") or {}
         if isinstance(grievance, dict):
@@ -81,6 +90,10 @@ def _format_session(s: dict) -> dict:
             s["session_summary"] = s.get("grievance_summary")
             s["session_type"] = grievance.get("session_type")
             s["print_mode"] = grievance.get("print_mode")
+            doc = (grievance.get("print_document_text") or "").strip()
+            s["has_print_document"] = bool(doc)
+        else:
+            s["has_print_document"] = False
     return s
 
 
@@ -99,6 +112,7 @@ def _transcript_lines(session) -> list[dict]:
         {
             "speaker": e.speaker,
             "text": to_devanagari_display(e.text),
+            "timestamp": to_ist_str(e.timestamp),
         }
         for e in session.transcript
         if (e.text or "").strip()
@@ -316,4 +330,12 @@ async def get_session_detail(
     doc["centre_name"] = centre.name if centre else None
     doc["transcript"] = transcript_lines
     doc["full_transcript"] = full_transcript
+    doc["has_transcript"] = bool(transcript_lines)
+    doc["transcript_turns"] = len(transcript_lines)
+    grievance = doc.get("grievance") or {}
+    print_text = ""
+    if isinstance(grievance, dict):
+        print_text = (grievance.get("print_document_text") or "").strip()
+    doc["has_print_document"] = bool(print_text)
+    doc["print_document_text"] = print_text or None
     return doc

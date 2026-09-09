@@ -14,7 +14,7 @@ from jose import jwt
 
 from app.core.config import settings
 from app.kiosk.centre_store import centre_store
-from app.kiosk.models import GrievanceRecord, KioskCentre, KioskSession
+from app.kiosk.models import GrievanceRecord, KioskCentre, KioskSession, KioskTranscriptEntry
 from app.kiosk.session_store import kiosk_session_store
 from app.main import app
 
@@ -172,3 +172,73 @@ def test_list_centres_super_admin_only(client, centre):
     r2 = client.get("/api/v2/kiosk-admin/centres", headers=_super_headers())
     assert r2.status_code == 200
     assert len(r2.json()["centres"]) >= 1
+
+
+def test_list_sessions_exposes_transcript_and_document_flags(client, centre):
+    session = KioskSession(
+        session_id="sess-records",
+        centre_id=centre.centre_id,
+        phone="9876543210",
+        language="hi",
+        status="completed",
+        complaint_number="JS-VNS-20250825-00100",
+        transcript=[
+            KioskTranscriptEntry(speaker="user", text="Paani nahi aata"),
+            KioskTranscriptEntry(speaker="agent", text="Kab se?"),
+        ],
+        grievance=GrievanceRecord(
+            full_name="Ram Kumar",
+            confirmed_summary="Water issue",
+            category="water",
+            print_mode="application_letter",
+            print_document_text="                 जन सुनवाई केंद्र\nदिनांक: 09-09-2026",
+        ),
+    )
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(kiosk_session_store.create(session))
+    finally:
+        loop.close()
+
+    r = client.get(
+        "/api/v2/kiosk-admin/sessions",
+        headers=_centre_admin_headers(centre.centre_id),
+    )
+    assert r.status_code == 200
+    row = next(s for s in r.json()["sessions"] if s["session_id"] == "sess-records")
+    assert row["has_transcript"] is True
+    assert row["transcript_turns"] == 2
+    assert row["has_print_document"] is True
+    assert "transcript" not in row
+
+
+def test_session_detail_includes_print_document_and_timestamps(client, centre):
+    session = KioskSession(
+        session_id="sess-doc",
+        centre_id=centre.centre_id,
+        phone="9876543210",
+        language="hi",
+        status="completed",
+        transcript=[KioskTranscriptEntry(speaker="user", text="Shikayat hai")],
+        grievance=GrievanceRecord(
+            full_name="Ram Kumar",
+            print_mode="application_letter",
+            print_document_text="प्रार्थना पत्र",
+        ),
+    )
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(kiosk_session_store.create(session))
+    finally:
+        loop.close()
+
+    r = client.get(
+        "/api/v2/kiosk-admin/sessions/sess-doc",
+        headers=_centre_admin_headers(centre.centre_id),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["has_print_document"] is True
+    assert body["print_document_text"] == "प्रार्थना पत्र"
+    assert body["has_transcript"] is True
+    assert body["transcript"][0]["timestamp"]

@@ -363,6 +363,7 @@ export default function KioskAdminDashboard() {
                       </>
                     )}
                     <th className="text-left px-4 py-3 font-semibold text-gray-500">Summary</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-500">Records</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-500">Status</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-500">Started</th>
                   </tr>
@@ -370,7 +371,7 @@ export default function KioskAdminDashboard() {
                 <tbody>
                   {sessions.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                      <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                         No sessions found.
                       </td>
                     </tr>
@@ -379,7 +380,13 @@ export default function KioskAdminDashboard() {
                       <tr
                         key={s.session_id}
                         className="border-b border-gray-50 hover:bg-amber-50/50 cursor-pointer"
-                        onClick={() => router.push(`/kiosk-admin/sessions/${s.session_id}`)}
+                        onClick={() => {
+                          const q =
+                            userRole === "super_admin" && selectedCentre
+                              ? `?centre_id=${selectedCentre}`
+                              : "";
+                          router.push(`/kiosk-admin/sessions/${s.session_id}${q}`);
+                        }}
                       >
                         {isLearningCentre ? (
                           <>
@@ -398,6 +405,23 @@ export default function KioskAdminDashboard() {
                         )}
                         <td className="px-4 py-3 text-gray-700 max-w-xs truncate">
                           {s.session_summary || s.grievance_summary || "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {s.has_transcript && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                                Chat{s.transcript_turns ? ` (${s.transcript_turns})` : ""}
+                              </span>
+                            )}
+                            {s.has_print_document && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                                Document
+                              </span>
+                            )}
+                            {!s.has_transcript && !s.has_print_document && (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <span

@@ -51,13 +51,17 @@ export interface KioskAdminSession {
   session_summary?: string | null;
   grievance?: Record<string, unknown> | null;
   learning_record?: LearningRecord | null;
+  has_transcript?: boolean;
+  has_print_document?: boolean;
+  transcript_turns?: number;
 }
 
 export interface KioskAdminSessionDetail extends KioskAdminSession {
   centre_kind?: "grievance" | "learning";
-  transcript?: Array<{ speaker: string; text: string }>;
+  transcript?: Array<{ speaker: string; text: string; timestamp?: string | null }>;
   full_transcript?: string | null;
   centre_name?: string | null;
+  print_document_text?: string | null;
 }
 
 export interface GrievanceAddress {

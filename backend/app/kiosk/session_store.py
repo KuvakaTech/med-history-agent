@@ -23,6 +23,8 @@ _LIST_PROJECTION = {
     "phone": 1,
     "language": 1,
     "gender": 1,
+    "learner_name": 1,
+    "lesson_topic": 1,
     "phase": 1,
     "status": 1,
     "turn_count": 1,
@@ -31,6 +33,8 @@ _LIST_PROJECTION = {
     "updated_at": 1,
     "deleted_at": 1,
     "grievance": 1,
+    "learning_record": 1,
+    "transcript": 1,
 }
 
 
