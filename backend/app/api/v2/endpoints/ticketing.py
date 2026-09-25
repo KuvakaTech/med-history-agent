@@ -26,6 +26,7 @@ from app.ticketing import events as ev
 from app.ticketing.hospital_store import hospital_store
 from app.ticketing.models import CASTE_VALUES, VISIT_TYPE_VALUES, TicketSession, hospital_public_dict, to_ist_str
 from app.ticketing.patient_store import ticket_patient_store
+from app.ticketing.post_call_extract import ensure_soap_summary
 from app.ticketing.session_store import ticket_session_store
 from app.ticketing.voice_session import TicketVoiceSession
 
@@ -222,6 +223,8 @@ async def get_session_result(
         raise HTTPException(status_code=404, detail="Session not found.")
     if session.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Session not found.")
+
+    session = await ensure_soap_summary(session)
 
     patient = await ticket_patient_store.get(session.patient_id)
     patient_info = None

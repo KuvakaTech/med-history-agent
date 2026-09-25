@@ -105,6 +105,49 @@ def format_transcript(entries: list[TicketTranscriptEntry]) -> str:
     return "\n".join(lines)
 
 
+def transcript_text_for_summary(session: TicketSession) -> str:
+    """Prefer raw Live transcript; fall back to reconstructed qa_log."""
+    text = format_transcript(session.transcript)
+    if text.strip():
+        return text
+    return "\n".join(
+        f"Agent: {e.question_text}\nPatient: {e.answer}"
+        for e in session.qa_log
+        if (e.question_text or e.answer)
+    )
+
+
+async def _summarize_ticket_session(session: TicketSession, transcript_text: str) -> dict:
+    """SOAP note — same Anthropic path as post-call extract when configured."""
+    svc = SummarizationService()
+    if settings.ANTHROPIC_API_KEY:
+        return await svc.summarize(
+            transcript_text,
+            provider="anthropic",
+            model=settings.TICKETING_POST_CALL_MODEL or None,
+        )
+    return await svc.summarize(transcript_text)
+
+
+async def ensure_soap_summary(session: TicketSession) -> TicketSession:
+    """Retry SOAP generation when a completed session has flags but no summary."""
+    if session.summary is not None or session.status != "completed":
+        return session
+    transcript_text = transcript_text_for_summary(session)
+    if not transcript_text.strip():
+        return session
+    try:
+        session.summary = await _summarize_ticket_session(session, transcript_text)
+        await ticket_session_store.update(session)
+    except Exception as exc:
+        log.warning(
+            "Lazy SOAP summarization failed for session %s: %s",
+            session.session_id,
+            exc,
+        )
+    return session
+
+
 async def extract_triage_fallback(
     transcript: str,
     category_keys: str,
@@ -191,8 +234,7 @@ async def run_post_call_extract(
     ]
 
     try:
-        soap = await SummarizationService().summarize(transcript_text)
-        session.summary = soap
+        session.summary = await _summarize_ticket_session(session, transcript_text)
     except Exception as exc:
         log.error(
             "SOAP summarization failed for ticket session %s: %s",

@@ -41,7 +41,6 @@ from typing import Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agent import llm
-from app.agent.summarization.service import SummarizationService
 from app.ticketing import events as ev
 from app.ticketing.consultation_engine import ConsultationEngine
 from app.ticketing.deepgram_live import DeepgramLiveStream, DGEventType
@@ -501,9 +500,9 @@ class TicketVoiceSession:
             return
 
         try:
-            svc = SummarizationService()
-            summary = await svc.summarize(transcript)
-            self.session.summary = summary
+            from app.ticketing.post_call_extract import _summarize_ticket_session
+
+            self.session.summary = await _summarize_ticket_session(self.session, transcript)
         except Exception as exc:
             log.error("Summarization failed for ticket session %s: %s",
                       self.session.session_id, exc)
