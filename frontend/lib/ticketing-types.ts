@@ -5,6 +5,25 @@ export const VISIT_TYPES = [
   { value: "ipd", label: "आईपीडी", sub: "IPD", fee: 30 },
 ] as const;
 
+/** Hindi labels for hospital departments (manual picker + display). */
+export const DEPARTMENT_LABELS_HI: Record<string, string> = {
+  general_medicine: "सामान्य चिकित्सा",
+  gynecology: "स्त्री रोग / प्रसूति",
+  pediatrics: "बाल रोग",
+  orthopedics: "अस्थि रोग / Orthopaedics",
+  cardiology: "हृदय रोग",
+  dermatology: "त्वचा रोग",
+  ent: "कान, नाक, गला",
+  ophthalmology: "नेत्र रोग",
+  psychiatry: "मनोरोग / मानसिक स्वास्थ्य",
+  gastroenterology: "पेट एवं आंत रोग",
+  neurology: "न्यूरोलॉजी (मस्तिष्क व तंत्रिका)",
+  urology: "मूत्र रोग",
+  oncology: "कैंसर रोग",
+  endocrinology: "अंतःस्रावी रोग / मधुमेह",
+  pulmonology: "फेफड़े एवं श्वास रोग",
+};
+
 export function visitTypeFee(type: string | null | undefined): number | null {
   const match = VISIT_TYPES.find((v) => v.value === type);
   return match?.fee ?? null;

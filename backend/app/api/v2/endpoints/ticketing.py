@@ -325,6 +325,7 @@ async def voice_stream(
         await ws.close(code=1008)
         return
 
+    await hospital_store.ensure_default_categories(hospital.hospital_id)
     categories = await hospital_store.list_categories(
         hospital.hospital_id, active_only=True
     )

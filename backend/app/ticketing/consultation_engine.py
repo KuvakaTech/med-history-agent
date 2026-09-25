@@ -23,6 +23,7 @@ from typing import AsyncGenerator, Optional, Union
 from pydantic import BaseModel
 
 from app.agent import llm
+from app.ticketing.category_playbooks import consultation_supplement
 from app.ticketing.models import TicketFlag, TicketQAEntry, TicketSession
 from app.ticketing.triage_engine import _language_name
 
@@ -108,6 +109,8 @@ RED_FLAG (needs prompt medical attention):
   • Severe pain (≥8/10 on pain scale)
   • Pregnancy possibility in females of childbearing age
   • Drug interaction risks with current medications
+
+{department_supplement}
 """
 
 _CONSULT_Q_PROMPT = """\
@@ -244,6 +247,7 @@ class ConsultationEngine:
         name: str = "the patient",
         age: str = "unknown",
         gender: str = "unknown",
+        category_key: str | None = None,
     ) -> None:
         self._lang_name = _language_name(language)
         self._system = _CONSULT_SYSTEM.format(
@@ -254,6 +258,7 @@ class ConsultationEngine:
             name=name,
             age=age,
             gender=gender,
+            department_supplement=consultation_supplement(category_key),
         )
 
     async def opening_question(

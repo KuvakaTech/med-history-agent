@@ -151,6 +151,25 @@ class HospitalStore:
                 log.warning("Category write failed: %s", exc)
         return cat
 
+    async def ensure_default_categories(self, hospital_id: str) -> int:
+        """Backfill any DEFAULT_CATEGORIES missing for an existing hospital."""
+        existing = await self.list_categories(hospital_id, active_only=False)
+        have = {c.key for c in existing}
+        added = 0
+        for key, label in DEFAULT_CATEGORIES:
+            if key in have:
+                continue
+            await self.create_category(
+                TicketCategory(
+                    hospital_id=hospital_id,
+                    key=key,
+                    label=label,
+                    active=True,
+                )
+            )
+            added += 1
+        return added
+
     async def list_categories(
         self, hospital_id: str, active_only: bool = True
     ) -> list[TicketCategory]:

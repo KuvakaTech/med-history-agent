@@ -13,6 +13,7 @@ from typing import AsyncGenerator, Literal, Optional, Union
 from pydantic import BaseModel
 
 from app.agent import llm
+from app.ticketing.category_playbooks import triage_routing_block
 from app.ticketing.models import TicketFlag, TicketQAEntry, TicketSession
 
 log = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ ANTI-LOOP — CRITICAL:
 
 AVAILABLE DEPARTMENTS for this hospital:
 {category_list}
+{routing_hints}
 
 RULES:
 - Ask ONE question per turn. Short, warm, conversational -- like a receptionist, not a form.
@@ -199,6 +201,7 @@ class TriageEngine:
         self._system = _TRIAGE_SYSTEM.format(
             max_turns=MAX_TRIAGE_TURNS,
             category_list=_build_category_list(categories),
+            routing_hints=triage_routing_block([c.key for c in categories]),
             language=_language_name(language),
         )
 

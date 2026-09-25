@@ -371,6 +371,7 @@ class TicketVoiceSession:
             name=self._patient_name,
             age=self._patient_age,
             gender=self.session.gender,
+            category_key=self._category_key,
         )
 
         # Extract the chief complaint from triage if it was mentioned

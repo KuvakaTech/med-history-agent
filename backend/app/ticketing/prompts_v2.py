@@ -7,6 +7,10 @@ Department is never asked; it is inferred and reported via finish_triage.
 
 from __future__ import annotations
 
+from app.ticketing.category_playbooks import (
+    consultation_supplement,
+    triage_routing_block,
+)
 from app.ticketing.consultation_engine import (
     MAX_CONSULTATION_TURNS,
     MIN_CONSULTATION_TURNS,
@@ -25,6 +29,7 @@ def triage_system_instruction(
 ) -> str:
     lang = _language_name(language)
     cat_list = _category_list(categories)
+    routing_hints = triage_routing_block([c.key for c in categories])
     return f"""\
 You are a warm, friendly female AI receptionist at a hospital conducting a brief pre-visit intake over a live voice call. Speak as a woman. In Hindi use feminine verb forms (kartī hūn, pūchh saktī hūn).
 
@@ -44,6 +49,7 @@ ANTI-LOOP — CRITICAL:
 
 INTERNAL DEPARTMENTS (never read this list aloud, never ask the patient to pick one):
 {cat_list}
+{routing_hints}
 
 RULES:
 - Ask ONE short question per turn. Conversational, not a form.
@@ -67,8 +73,10 @@ def consultation_system_instruction(
     age: str,
     gender: str,
     routing_summary: str,
+    category_key: str | None = None,
 ) -> str:
     lang = _language_name(language)
+    dept_extra = consultation_supplement(category_key)
     complaint_block = (
         f"Routing summary from reception (already collected — do NOT re-ask 'what brings you in'):\n  {routing_summary}"
         if routing_summary.strip()
@@ -106,6 +114,7 @@ QUESTIONING:
 When all required areas are sufficiently covered, OR you have asked {MAX_CONSULTATION_TURNS} questions, call finish_consultation.
 
 RED FLAGS — notice urgent symptoms (chest pain, severe breathlessness, worst-ever headache, stroke signs, vomiting blood, fainting, allergic swelling, suicidal thoughts, high fever with confusion). Acknowledge briefly and continue the history; do not diagnose. The physician will see the full record after the call.
+{dept_extra}
 """
 
 
