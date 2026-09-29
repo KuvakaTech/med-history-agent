@@ -6,6 +6,7 @@ from typing import Optional
 
 import bcrypt
 
+from app.ticketing.intake_locale import normalize_kiosk_language
 from app.ticketing.models import (
     DEFAULT_CATEGORIES,
     Hospital,
@@ -126,6 +127,28 @@ class HospitalStore:
                 )
             except Exception as exc:
                 log.warning("Hospital collect_caste write failed: %s", exc)
+                _mongo_write_failed = True
+        return hospital
+
+    async def set_default_language(
+        self, hospital_id: str, default_language: str
+    ) -> Optional[Hospital]:
+        global _mongo_write_failed
+        lang = normalize_kiosk_language(default_language)
+        hospital = await self.get(hospital_id)
+        if not hospital:
+            return None
+        hospital.default_language = lang
+        doc = hospital.model_dump(mode="json")
+        _mem_hospitals[hospital_id] = doc
+        if not _mongo_write_failed:
+            try:
+                await _hospitals_col().update_one(
+                    {"hospital_id": hospital_id},
+                    {"$set": {"default_language": lang}},
+                )
+            except Exception as exc:
+                log.warning("Hospital default_language write failed: %s", exc)
                 _mongo_write_failed = True
         return hospital
 

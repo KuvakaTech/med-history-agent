@@ -78,7 +78,17 @@ class UpdateCategoryRequest(BaseModel):
 
 
 class SetHospitalSettingsRequest(BaseModel):
-    collect_caste: bool
+    collect_caste: Optional[bool] = None
+    default_language: Optional[str] = None
+
+    @field_validator("default_language")
+    @classmethod
+    def validate_language(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        from app.ticketing.intake_locale import normalize_kiosk_language
+
+        return normalize_kiosk_language(v)
 
 
 class SetKioskPinRequest(BaseModel):
@@ -190,7 +200,18 @@ async def set_hospital_settings(
     user: dict = Depends(require_hospital_admin),
 ):
     hid = _resolve_hid(user, hospital_id)
-    hospital = await hospital_store.set_collect_caste(hid, body.collect_caste)
+    if body.collect_caste is None and body.default_language is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide collect_caste and/or default_language.",
+        )
+    hospital = await hospital_store.get(hid)
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found.")
+    if body.collect_caste is not None:
+        hospital = await hospital_store.set_collect_caste(hid, body.collect_caste)
+    if body.default_language is not None:
+        hospital = await hospital_store.set_default_language(hid, body.default_language)
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found.")
     return hospital_public_dict(hospital)

@@ -51,7 +51,7 @@ export default function StartPage() {
   const [collectCaste, setCollectCaste] = useState(false);
 
   const [phone, setPhone] = useState("");
-  const [language] = useState("hi");
+  const [language, setLanguage] = useState("hi");
   const [visitType, setVisitType] = useState("");
   const [gender, setGender] = useState("");
   const [caste, setCaste] = useState("");
@@ -70,6 +70,7 @@ export default function StartPage() {
       .then((cfg) => {
         setHospitalName(cfg.name);
         setCollectCaste(!!cfg.collect_caste);
+        setLanguage(cfg.default_language || "hi");
       })
       .catch(() => {});
   }, [slug]);
@@ -111,6 +112,7 @@ export default function StartPage() {
       const data = await ticketApi.unlock(slug, pin);
       setHospitalName(data.hospital_name);
       setCollectCaste(!!data.collect_caste);
+      if (data.default_language) setLanguage(data.default_language);
       setUnlocked(true);
       setPin("");
     } catch (err: unknown) {

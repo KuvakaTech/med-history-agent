@@ -75,12 +75,14 @@ class UnlockResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     hospital_name: str
+    default_language: str = "hi"
     collect_caste: bool = False
 
 
 class HospitalConfigResponse(BaseModel):
     slug: str
     name: str
+    default_language: str = "hi"
     collect_caste: bool = False
     has_kiosk_pin: bool = False
 
@@ -115,6 +117,7 @@ async def hospital_config(slug: str) -> HospitalConfigResponse:
     return HospitalConfigResponse(
         slug=hospital.slug,
         name=hospital.name,
+        default_language=hospital.default_language or "hi",
         collect_caste=bool(public.get("collect_caste")),
         has_kiosk_pin=bool(public.get("has_kiosk_pin")),
     )
@@ -138,6 +141,7 @@ async def unlock_kiosk(slug: str, payload: UnlockRequest) -> UnlockResponse:
         access_token=token,
         expires_in=settings.TICKETING_KIOSK_TOKEN_HOURS * 3600,
         hospital_name=hospital.name,
+        default_language=hospital.default_language or "hi",
         collect_caste=hospital.collect_caste,
     )
 

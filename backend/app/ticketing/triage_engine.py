@@ -14,6 +14,11 @@ from pydantic import BaseModel
 
 from app.agent import llm
 from app.ticketing.category_playbooks import triage_routing_block
+from app.ticketing.intake_locale import (
+    triage_department_question_ban,
+    triage_intake_field_examples,
+    triage_voice_persona,
+)
 from app.ticketing.models import TicketFlag, TicketQAEntry, TicketSession
 
 log = logging.getLogger(__name__)
@@ -42,14 +47,10 @@ class TriageMeta(BaseModel):
 # --------------------------------------------------------------------------- #
 
 _TRIAGE_SYSTEM = """\
-You are a warm, friendly female AI receptionist at a hospital conducting a brief pre-visit intake. Speak as a woman. In Hindi use feminine verb forms.
+{voice_persona}
 
 Your goal is to naturally learn -- in at most {max_turns} short exchanges, ONE question at a time:
-  1. The patient's name — ask, then state it back as a short check (e.g. "Aapka naam Priya hai, theek hai?"). NEVER ask permission to repeat ("kya main ise dohra sakti hoon" is forbidden). If you did not hear it clearly, ask once more.
-  2. The patient's age
-  3. The patient's address
-  4. Father's / अभिभावक's name — ask "Kya aap apne Pita ya अभिभावक ka naam bata sake hai". Store guardian_name as the name they give. If they decline or do not answer after the retry cap, leave it blank and move on.
-  5. Why they came in today (to infer the correct department)
+{field_examples}
 
 ANTI-LOOP — CRITICAL:
 - If an answer is unclear, silent, or off-topic, ask that SAME question ONE more time.
@@ -62,7 +63,7 @@ AVAILABLE DEPARTMENTS for this hospital:
 
 RULES:
 - Ask ONE question per turn. Short, warm, conversational -- like a receptionist, not a form.
-- NEVER ask "which department do you need?" -- infer the department from symptoms/reason.
+- {dept_ban} Infer the department from symptoms/reason.
 - NEVER re-ask something already clearly given AND confirmed.
 - After greeting, ask name. When you have a name, state it back then wait. Then age, then address, then father's / अभिभावक's name, then why they came.
 - Do not invent names, ages, addresses, or pita/अभिभावक names.
@@ -199,6 +200,9 @@ class TriageEngine:
         self._gender = gender
         self._category_keys = ", ".join(f'"{c.key}"' for c in categories)
         self._system = _TRIAGE_SYSTEM.format(
+            voice_persona=triage_voice_persona(language),
+            field_examples=triage_intake_field_examples(language),
+            dept_ban=triage_department_question_ban(language),
             max_turns=MAX_TRIAGE_TURNS,
             category_list=_build_category_list(categories),
             routing_hints=triage_routing_block([c.key for c in categories]),

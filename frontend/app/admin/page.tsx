@@ -57,6 +57,8 @@ export default function AdminDashboard() {
   const [kioskPin, setKioskPin] = useState("");
   const [savingPin, setSavingPin] = useState(false);
   const [collectCaste, setCollectCaste] = useState(false);
+  const [defaultLanguage, setDefaultLanguage] = useState("hi");
+  const [savingLanguage, setSavingLanguage] = useState(false);
   const [savingCaste, setSavingCaste] = useState(false);
 
   const [showNewStaff, setShowNewStaff] = useState(false);
@@ -127,6 +129,7 @@ export default function AdminDashboard() {
         setCategories(c.categories);
         const hospital = await adminApi.getCurrentHospital(t, hospital_id).catch(() => null);
         setCollectCaste(!!hospital?.collect_caste);
+        setDefaultLanguage(hospital?.default_language || "hi");
       } else {
         setCategories([]);
       }
@@ -256,6 +259,23 @@ export default function AdminDashboard() {
       alert(e instanceof Error ? e.message : "Failed to set PIN");
     } finally {
       setSavingPin(false);
+    }
+  };
+
+  const handleSaveDefaultLanguage = async (lang: string) => {
+    setSavingLanguage(true);
+    try {
+      const hospital_id = userRole === "super_admin" ? selectedHospital : null;
+      const updated = await adminApi.setHospitalSettings(
+        token,
+        { default_language: lang },
+        hospital_id
+      );
+      setDefaultLanguage(updated.default_language || lang);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to update language");
+    } finally {
+      setSavingLanguage(false);
     }
   };
 
@@ -541,6 +561,29 @@ export default function AdminDashboard() {
               >
                 {savingPin ? "…" : "Set PIN"}
               </button>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-end gap-2 pt-2 border-t border-gray-100">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-700">Kiosk voice language</p>
+                <p className="text-xs text-gray-500 mb-2">
+                  AI intake, consultation, and clinical summary for this hospital only.
+                </p>
+                <select
+                  className="input-field text-sm py-2 max-w-xs"
+                  value={defaultLanguage}
+                  disabled={savingLanguage}
+                  onChange={(e) => {
+                    const lang = e.target.value;
+                    setDefaultLanguage(lang);
+                    handleSaveDefaultLanguage(lang);
+                  }}
+                >
+                  <option value="hi">Hindi</option>
+                  <option value="en">English</option>
+                  <option value="mr">Marathi</option>
+                  <option value="gu">Gujarati</option>
+                </select>
+              </div>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-gray-100">
               <div>

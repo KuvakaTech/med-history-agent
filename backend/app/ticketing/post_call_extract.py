@@ -120,13 +120,15 @@ def transcript_text_for_summary(session: TicketSession) -> str:
 async def _summarize_ticket_session(session: TicketSession, transcript_text: str) -> dict:
     """SOAP note — same Anthropic path as post-call extract when configured."""
     svc = SummarizationService()
+    lang = (session.language or "hi").lower()
     if settings.ANTHROPIC_API_KEY:
         return await svc.summarize(
             transcript_text,
             provider="anthropic",
             model=settings.TICKETING_POST_CALL_MODEL or None,
+            output_language=lang,
         )
-    return await svc.summarize(transcript_text)
+    return await svc.summarize(transcript_text, output_language=lang)
 
 
 async def ensure_soap_summary(session: TicketSession) -> TicketSession:
