@@ -25,6 +25,8 @@ from app.kiosk.gemini_live import (
     talk_tools,
 )
 from app.kiosk.guddi_talk_extract import run_guddi_talk_extract
+from app.kiosk.guddi_v5_extract import run_guddi_v5_extract
+from app.kiosk.guddi_v6_extract import run_guddi_v6_extract
 from app.kiosk.hindi_display import to_devanagari_display
 from app.kiosk.learning_engine import LearningEngine, agent_invites_repeat
 from app.kiosk.learning_extract import run_learning_extract
@@ -36,13 +38,19 @@ from app.kiosk.models import (
 )
 from app.kiosk.post_call_extract import run_post_call_extract
 from app.kiosk.prompts import (
+    is_guddi_v5,
+    is_guddi_v6,
     is_jan_sunwai_v3,
     kickoff_text,
     kickoff_text_learning,
     kickoff_text_talk,
+    kickoff_text_v5,
+    kickoff_text_v6,
     system_instruction,
     system_instruction_learning,
     system_instruction_talk,
+    system_instruction_v5,
+    system_instruction_v6,
 )
 from app.kiosk.session_store import kiosk_session_store
 from app.kiosk.vocabulary import get_word_for_lesson
@@ -154,6 +162,8 @@ class KioskVoiceSession:
         kind = centre_kind_for(centre)
         self._is_learning = kind == "learning"
         self._is_talk = kind == "talk"
+        self._is_v5 = is_guddi_v5(centre)
+        self._is_v6 = is_guddi_v6(centre)
         self._finish_tool = (
             "finish_lesson" if self._is_learning or self._is_talk else "finish_complaint"
         )
@@ -243,9 +253,16 @@ class KioskVoiceSession:
     async def _run_voice_phase(self) -> None:
         if self._is_talk:
             await self._send(ev.lesson_started(self.session.session_id, self.session.language))
-            instruction = system_instruction_talk(self.centre, self.session.language)
+            if self._is_v6:
+                instruction = system_instruction_v6(self.centre, self.session.language)
+                kickoff = kickoff_text_v6(self.centre, self.session.language)
+            elif self._is_v5:
+                instruction = system_instruction_v5(self.centre, self.session.language)
+                kickoff = kickoff_text_v5(self.centre, self.session.language)
+            else:
+                instruction = system_instruction_talk(self.centre, self.session.language)
+                kickoff = kickoff_text_talk(self.centre, self.session.language)
             tools = talk_tools()
-            kickoff = kickoff_text_talk(self.centre, self.session.language)
         elif self._is_learning:
             await self._send(ev.lesson_started(self.session.session_id, self.session.language))
             instruction = system_instruction_learning(
@@ -819,7 +836,12 @@ class KioskVoiceSession:
             self._persist_lesson_snapshot()
         try:
             if self._is_talk:
-                await run_guddi_talk_extract(self.session, self.centre)
+                if self._is_v6:
+                    await run_guddi_v6_extract(self.session, self.centre)
+                elif self._is_v5:
+                    await run_guddi_v5_extract(self.session, self.centre)
+                else:
+                    await run_guddi_talk_extract(self.session, self.centre)
             elif self._is_learning:
                 await run_learning_extract(self.session, self.centre)
             else:

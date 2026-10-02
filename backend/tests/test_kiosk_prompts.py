@@ -8,10 +8,16 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 from app.kiosk.models import KioskCentre, prompt_file_for_centre
 from app.kiosk.prompts import (
     is_guddi_talk,
+    is_guddi_v5,
+    is_guddi_v6,
     kickoff_text,
     kickoff_text_talk,
+    kickoff_text_v5,
+    kickoff_text_v6,
     system_instruction,
     system_instruction_talk,
+    system_instruction_v5,
+    system_instruction_v6,
 )
 
 
@@ -142,3 +148,46 @@ def test_guddi_talk_prompt_is_speech_only():
     kick = kickoff_text_talk(centre, "hi")
     assert "Guddi didi" in kick
     assert "three topics" in kick
+
+
+def test_guddi_v5_prompt_is_speech_only():
+    centre = KioskCentre(
+        slug="barwani-guddi-v5",
+        name="Guddi v5 Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_v5_talk_system.txt",
+    )
+    assert is_guddi_v5(centre)
+    assert not is_guddi_talk(centre)
+    text = system_instruction_v5(centre, "hi")
+    assert "शब्द" in text
+    assert "कहानी" in text
+    assert "के-ला" in text
+    assert "show_picture" not in text
+    assert "show_word_card" not in text
+    assert "PRONUNCIATION: you teach" not in text
+    kick = kickoff_text_v5(centre, "hi")
+    assert "शब्द" in kick
+    assert "कहानी" in kick
+
+
+def test_guddi_v6_prompt_is_speech_only():
+    centre = KioskCentre(
+        slug="barwani-guddi-v6",
+        name="Guddi v6 Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_v6_talk_system.txt",
+    )
+    assert is_guddi_v6(centre)
+    assert not is_guddi_talk(centre)
+    assert not is_guddi_v5(centre)
+    text = system_instruction_v6(centre, "hi")
+    assert "शब्द" in text
+    assert "कहानी" in text
+    assert "बोलो — केला" in text
+    assert "show_picture" not in text
+    assert "show_word_card" not in text
+    assert "PRONUNCIATION: you teach" not in text
+    kick = kickoff_text_v6(centre, "hi")
+    assert "शब्द" in kick
+    assert "कहानी" in kick

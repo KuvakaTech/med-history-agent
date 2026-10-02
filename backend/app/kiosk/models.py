@@ -73,6 +73,14 @@ _SLUG_DEFAULTS: dict[str, dict[str, str]] = {
         "prompt_file": "guddi_talk_system.txt",
         "centre_kind": "talk",
     },
+    "barwani-guddi-v5": {
+        "prompt_file": "guddi_v5_talk_system.txt",
+        "centre_kind": "talk",
+    },
+    "barwani-guddi-v6": {
+        "prompt_file": "guddi_v6_talk_system.txt",
+        "centre_kind": "talk",
+    },
 }
 
 

@@ -191,7 +191,11 @@ export function isLearningSlug(slug: string): boolean {
 }
 
 export function isGuddiTalkSlug(slug: string): boolean {
-  return slug === "barwani-guddi-v4";
+  return (
+    slug === "barwani-guddi-v4" ||
+    slug === "barwani-guddi-v5" ||
+    slug === "barwani-guddi-v6"
+  );
 }
 
 export function isJanSunwaiSlug(slug: string): boolean {

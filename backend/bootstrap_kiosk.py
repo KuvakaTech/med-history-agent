@@ -54,6 +54,20 @@ CENTRES = [
         "centre_kind": "talk",
         "prompt_file": "guddi_talk_system.txt",
     },
+    {
+        "slug": "barwani-guddi-v5",
+        "name": "Guddi v5 Hindi Seekho",
+        "default_language": "hi",
+        "centre_kind": "talk",
+        "prompt_file": "guddi_v5_talk_system.txt",
+    },
+    {
+        "slug": "barwani-guddi-v6",
+        "name": "Guddi v6 Hindi Seekho",
+        "default_language": "hi",
+        "centre_kind": "talk",
+        "prompt_file": "guddi_v6_talk_system.txt",
+    },
 ]
 
 

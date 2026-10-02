@@ -112,3 +112,71 @@ async def test_guddi_talk_start_needs_no_phone_or_topic(guddi_talk_centre):
     assert data["phase"] == "lesson"
     assert data["phone"] is None
     assert data["lesson_topic"] is None
+
+
+@pytest.fixture
+def guddi_v5_centre():
+    return KioskCentre(
+        centre_id="guddi-v5-1",
+        slug="barwani-guddi-v5",
+        name="Guddi v5 Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_v5_talk_system.txt",
+    )
+
+
+@pytest.mark.asyncio
+async def test_guddi_v5_start_needs_no_phone(guddi_v5_centre):
+    with patch(
+        "app.api.v2.endpoints.kiosk.centre_store.get_by_slug",
+        new_callable=AsyncMock,
+        return_value=guddi_v5_centre,
+    ):
+        with patch(
+            "app.api.v2.endpoints.kiosk.kiosk_session_store.create",
+            new_callable=AsyncMock,
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                res = await client.post(
+                    "/api/v2/kiosk/barwani-guddi-v5/session",
+                    json={},
+                )
+    assert res.status_code == 201
+    data = res.json()
+    assert data["phase"] == "lesson"
+    assert data["phone"] is None
+
+
+@pytest.fixture
+def guddi_v6_centre():
+    return KioskCentre(
+        centre_id="guddi-v6-1",
+        slug="barwani-guddi-v6",
+        name="Guddi v6 Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_v6_talk_system.txt",
+    )
+
+
+@pytest.mark.asyncio
+async def test_guddi_v6_start_needs_no_phone(guddi_v6_centre):
+    with patch(
+        "app.api.v2.endpoints.kiosk.centre_store.get_by_slug",
+        new_callable=AsyncMock,
+        return_value=guddi_v6_centre,
+    ):
+        with patch(
+            "app.api.v2.endpoints.kiosk.kiosk_session_store.create",
+            new_callable=AsyncMock,
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                res = await client.post(
+                    "/api/v2/kiosk/barwani-guddi-v6/session",
+                    json={},
+                )
+    assert res.status_code == 201
+    data = res.json()
+    assert data["phase"] == "lesson"
+    assert data["phone"] is None

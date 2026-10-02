@@ -12,6 +12,8 @@ _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 _BARWANI_PROMPT_KEY = "barwani_jan_sunwai"
 _JAN_SUNWAI_V3_PROMPT_KEY = "jan_sunwai_v3_system.txt"
 _GUDDI_TALK_PROMPT_KEY = "guddi_talk_system.txt"
+_GUDDI_V5_PROMPT_KEY = "guddi_v5_talk_system.txt"
+_GUDDI_V6_PROMPT_KEY = "guddi_v6_talk_system.txt"
 
 
 def is_jan_sunwai_v3(centre: KioskCentre) -> bool:
@@ -20,6 +22,14 @@ def is_jan_sunwai_v3(centre: KioskCentre) -> bool:
 
 def is_guddi_talk(centre: KioskCentre) -> bool:
     return prompt_file_for_centre(centre) == _GUDDI_TALK_PROMPT_KEY
+
+
+def is_guddi_v5(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _GUDDI_V5_PROMPT_KEY
+
+
+def is_guddi_v6(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _GUDDI_V6_PROMPT_KEY
 
 
 def _load_embedded_prompt(module_name: str, attr: str) -> str:
@@ -250,6 +260,38 @@ def kickoff_text_talk(centre: KioskCentre, language: str) -> str:
         "Greet them as Guddi didi, say you will learn new Hindi words today, "
         "then offer exactly three topics for them to say aloud. "
         "Do not wait for further instructions."
+    )
+
+
+def system_instruction_v5(centre: KioskCentre, language: str) -> str:
+    base = _load_base_prompt(centre)
+    lang = _language_name(language)
+    return base + f"\nSpeak only in {lang}."
+
+
+def kickoff_text_v5(centre: KioskCentre, language: str) -> str:
+    lang = _language_name(language)
+    return (
+        f"A child is now at the Hindi kiosk for {centre.name}. "
+        f"You speak first, in {lang}. "
+        "Greet them as Guddi didi, then offer a word lesson (शब्द) or a story "
+        "(कहानी) by voice. Do not wait for further instructions."
+    )
+
+
+def system_instruction_v6(centre: KioskCentre, language: str) -> str:
+    base = _load_base_prompt(centre)
+    lang = _language_name(language)
+    return base + f"\nSpeak only in {lang}."
+
+
+def kickoff_text_v6(centre: KioskCentre, language: str) -> str:
+    lang = _language_name(language)
+    return (
+        f"A child is now at the Hindi kiosk for {centre.name}. "
+        f"You speak first, in {lang}. "
+        "Greet them as Guddi didi, then offer a word lesson (शब्द) or a story "
+        "(कहानी) by voice. Do not wait for further instructions."
     )
 
 
