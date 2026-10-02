@@ -22,18 +22,27 @@ from app.kiosk.gemini_live import (
     complaint_tools,
     lesson_tools,
     sanitize_agent_transcript,
+    talk_tools,
 )
+from app.kiosk.guddi_talk_extract import run_guddi_talk_extract
 from app.kiosk.hindi_display import to_devanagari_display
 from app.kiosk.learning_engine import LearningEngine, agent_invites_repeat
 from app.kiosk.learning_extract import run_learning_extract
-from app.kiosk.models import KioskCentre, KioskSession, KioskTranscriptEntry, centre_kind_for
+from app.kiosk.models import (
+    KioskCentre,
+    KioskSession,
+    KioskTranscriptEntry,
+    centre_kind_for,
+)
 from app.kiosk.post_call_extract import run_post_call_extract
 from app.kiosk.prompts import (
     is_jan_sunwai_v3,
     kickoff_text,
     kickoff_text_learning,
+    kickoff_text_talk,
     system_instruction,
     system_instruction_learning,
+    system_instruction_talk,
 )
 from app.kiosk.session_store import kiosk_session_store
 from app.kiosk.vocabulary import get_word_for_lesson
@@ -52,6 +61,11 @@ _TOOL_LEAK_RE = re.compile(
     r"call:finish_(?:complaint|lesson)\{.*?(?:\}|$)",
     re.IGNORECASE | re.DOTALL,
 )
+
+
+def _looks_like_guddi_talk_closing(text: str) -> bool:
+    low = (text or "").lower()
+    return any(p in low for p in ("बाय-बाय", "बाय बाय", "bye-bye", "bye bye"))
 
 
 def _looks_like_grievance_closing(text: str) -> bool:
@@ -137,8 +151,12 @@ class KioskVoiceSession:
         self.centre = centre
         self.ws = ws
         self._live_factory = live_factory or GeminiLiveSession
-        self._is_learning = centre_kind_for(centre) == "learning"
-        self._finish_tool = "finish_lesson" if self._is_learning else "finish_complaint"
+        kind = centre_kind_for(centre)
+        self._is_learning = kind == "learning"
+        self._is_talk = kind == "talk"
+        self._finish_tool = (
+            "finish_lesson" if self._is_learning or self._is_talk else "finish_complaint"
+        )
         self._stopped = asyncio.Event()
         self._audio_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self._transcript_q: asyncio.Queue[KioskTranscriptEntry] = asyncio.Queue()
@@ -223,7 +241,12 @@ class KioskVoiceSession:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def _run_voice_phase(self) -> None:
-        if self._is_learning:
+        if self._is_talk:
+            await self._send(ev.lesson_started(self.session.session_id, self.session.language))
+            instruction = system_instruction_talk(self.centre, self.session.language)
+            tools = talk_tools()
+            kickoff = kickoff_text_talk(self.centre, self.session.language)
+        elif self._is_learning:
             await self._send(ev.lesson_started(self.session.session_id, self.session.language))
             instruction = system_instruction_learning(
                 self.centre,
@@ -419,6 +442,9 @@ class KioskVoiceSession:
                 self._answer_attempts = 0
                 self._last_answer_result = None
             return
+        if self._is_talk:
+            await self._maybe_auto_finish_on_guddi_close(text)
+            return
         await self._maybe_auto_finish_on_closing(text)
 
     def _request_finish(self) -> None:
@@ -446,6 +472,16 @@ class KioskVoiceSession:
                 self.session.session_id,
             )
             self._complete_finish_phase()
+
+    async def _maybe_auto_finish_on_guddi_close(self, text: str) -> None:
+        if self._phase_done.is_set() or self._finish_pending:
+            return
+        if _TOOL_LEAK_RE.search(text) or _looks_like_guddi_talk_closing(text):
+            log.info(
+                "kiosk auto-finish on Guddi goodbye for %s",
+                self.session.session_id,
+            )
+            self._request_finish()
 
     async def _maybe_auto_finish_on_closing(self, text: str) -> None:
         if self._phase_done.is_set() or self._finish_pending:
@@ -782,7 +818,9 @@ class KioskVoiceSession:
         if self._learning_engine is not None:
             self._persist_lesson_snapshot()
         try:
-            if self._is_learning:
+            if self._is_talk:
+                await run_guddi_talk_extract(self.session, self.centre)
+            elif self._is_learning:
                 await run_learning_extract(self.session, self.centre)
             else:
                 await run_post_call_extract(self.session, self.centre)
@@ -796,7 +834,7 @@ class KioskVoiceSession:
             await self._send(ev.session_partial(self.session.session_id))
             return
 
-        if self._is_learning:
+        if self._is_learning or self._is_talk:
             record = (
                 self.session.learning_record.model_dump(mode="json")
                 if self.session.learning_record

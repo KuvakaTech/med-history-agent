@@ -77,3 +77,38 @@ async def test_get_centre_returns_kind(guddi_centre):
             res = await client.get("/api/v2/kiosk/barwani-guddi")
     assert res.status_code == 200
     assert res.json()["centre_kind"] == "learning"
+
+
+@pytest.fixture
+def guddi_talk_centre():
+    return KioskCentre(
+        centre_id="guddi-talk-1",
+        slug="barwani-guddi-v4",
+        name="Guddi Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_talk_system.txt",
+    )
+
+
+@pytest.mark.asyncio
+async def test_guddi_talk_start_needs_no_phone_or_topic(guddi_talk_centre):
+    with patch(
+        "app.api.v2.endpoints.kiosk.centre_store.get_by_slug",
+        new_callable=AsyncMock,
+        return_value=guddi_talk_centre,
+    ):
+        with patch(
+            "app.api.v2.endpoints.kiosk.kiosk_session_store.create",
+            new_callable=AsyncMock,
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                res = await client.post(
+                    "/api/v2/kiosk/barwani-guddi-v4/session",
+                    json={},
+                )
+    assert res.status_code == 201
+    data = res.json()
+    assert data["phase"] == "lesson"
+    assert data["phone"] is None
+    assert data["lesson_topic"] is None

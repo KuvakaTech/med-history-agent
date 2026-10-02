@@ -130,6 +130,14 @@ async def start_session(slug: str, body: StartSessionRequest) -> StartSessionRes
             phase="lesson",
             status="active",
         )
+    elif kind == "talk":
+        session = KioskSession(
+            session_id=str(uuid.uuid4()),
+            centre_id=centre.centre_id,
+            language=language,
+            phase="lesson",
+            status="active",
+        )
     else:
         phone = (body.phone or "").strip()
         if not phone:
@@ -186,7 +194,7 @@ async def get_session_result(slug: str, session_id: str) -> SessionResultRespons
         for e in session.transcript
         if (e.text or "").strip()
     ]
-    agent_label = "गुड्डी" if kind == "learning" else "AI सहायक"
+    agent_label = "गुड्डी" if kind in ("learning", "talk") else "AI सहायक"
     full_transcript = format_transcript(session.transcript).strip() or None
     if full_transcript:
         full_transcript = "\n".join(
@@ -270,7 +278,7 @@ async def voice_stream(ws: WebSocket, slug: str, session_id: str) -> None:
         if not await acquire_live_slot(centre.centre_id):
             busy_msg = (
                 "सभी लाइन व्यस्त हैं। कृपया कुछ क्षण बाद दोबारा प्रयास करें।"
-                if centre_kind_for(centre) == "learning"
+                if centre_kind_for(centre) in ("learning", "talk")
                 else "सभी कियोस्क लाइन व्यस्त हैं। कृपया कुछ क्षण बाद दोबारा प्रयास करें।"
             )
             await ws.send_json(ev.error(busy_msg, fatal=True))

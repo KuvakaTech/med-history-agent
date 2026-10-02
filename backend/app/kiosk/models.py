@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 _IST_OFFSET_HOURS = 5.5
 
-CentreKind = Literal["grievance", "learning"]
+CentreKind = Literal["grievance", "learning", "talk"]
 LessonTopic = Literal[
     "Ghar",
     "Khana",
@@ -68,6 +68,10 @@ _SLUG_DEFAULTS: dict[str, dict[str, str]] = {
     "barwani-guddi": {
         "prompt_file": "guddi_learning_system.txt",
         "centre_kind": "learning",
+    },
+    "barwani-guddi-v4": {
+        "prompt_file": "guddi_talk_system.txt",
+        "centre_kind": "talk",
     },
 }
 

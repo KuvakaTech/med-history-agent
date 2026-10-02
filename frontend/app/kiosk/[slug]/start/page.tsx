@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, LessonTopic } from "@/lib/kiosk-types";
-import { LESSON_TOPICS, isBarwaniJanSunwaiSlug, isJanSunwaiSlug, isJanSunwaiV3Slug } from "@/lib/kiosk-types";
+import { LESSON_TOPICS, isBarwaniJanSunwaiSlug, isGuddiTalkSlug, isJanSunwaiSlug, isJanSunwaiV3Slug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 const GENDERS = [
@@ -35,7 +35,7 @@ function usePageTitle(slug: string) {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
       document.title = "बड़वानी जन सुनवाई";
-    } else if (slug === "barwani-guddi") {
+    } else if (slug === "barwani-guddi" || isGuddiTalkSlug(slug)) {
       document.title = "गुड्डी";
     } else {
       return;
@@ -81,11 +81,74 @@ export default function KioskStartPage() {
     );
   }
 
+  if (centre.centre_kind === "talk") {
+    return <TalkStart slug={slug} centre={centre} router={router} />;
+  }
+
   if (centre.centre_kind === "learning") {
     return <LearningStart slug={slug} centre={centre} router={router} />;
   }
 
   return <GrievanceStart slug={slug} centre={centre} router={router} />;
+}
+
+function TalkStart({
+  slug,
+  centre,
+  router,
+}: {
+  slug: string;
+  centre: CentreResponse;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleStart = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const session = await kioskApi.startSession(slug, {
+        language: centre.default_language,
+      });
+      router.push(`/kiosk/${slug}/call/${session.session_id}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to start. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-gradient-to-b from-pink-50 via-purple-50 to-white flex flex-col px-6 py-10 select-none">
+      <div className="flex flex-col self-start leading-tight">
+        <span className="text-xl font-extrabold text-pink-600">गुड्डी दीदी</span>
+        <span className="text-xs font-bold text-pink-400 tracking-widest">HINDI SEEKHO</span>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center">
+        <div className="w-full max-w-md space-y-8 text-center fade-up">
+          <div className="mx-auto h-24 w-24 rounded-full bg-pink-400 text-white flex items-center justify-center text-4xl shadow-lg shadow-pink-200">
+            🎙️
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-gray-900">हिंदी के नए शब्द</h1>
+            <p className="text-sm text-gray-500">
+              गुड्डी दीदी बोलकर सिखाएगी। चित्र नहीं — सिर्फ़ बात।
+            </p>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleStart}
+            className="w-full max-w-xs mx-auto block py-4 rounded-xl font-semibold text-white bg-pink-500 hover:bg-pink-600 transition-all active:scale-[0.98] disabled:opacity-60"
+          >
+            {loading ? "शुरू हो रहा है…" : "बात शुरू करें"}
+          </button>
+        </div>
+      </div>
+    </main>
+  );
 }
 
 function LearningStart({

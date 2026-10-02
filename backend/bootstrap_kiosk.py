@@ -47,6 +47,13 @@ CENTRES = [
         "centre_kind": "learning",
         "prompt_file": "guddi_learning_system.txt",
     },
+    {
+        "slug": "barwani-guddi-v4",
+        "name": "Guddi Hindi Seekho",
+        "default_language": "hi",
+        "centre_kind": "talk",
+        "prompt_file": "guddi_talk_system.txt",
+    },
 ]
 
 
@@ -60,7 +67,18 @@ async def main():
     for cfg in CENTRES:
         existing = await centre_store.get_by_slug(cfg["slug"])
         if existing:
-            print(f"✓ Centre '{cfg['slug']}' already exists (id={existing.centre_id})")
+            kind_changed = existing.centre_kind != cfg["centre_kind"]
+            prompt_changed = existing.prompt_file != cfg.get("prompt_file")
+            if cfg["slug"] == "barwani-guddi-v4" and (kind_changed or prompt_changed):
+                existing.centre_kind = cfg["centre_kind"]
+                existing.prompt_file = cfg.get("prompt_file")
+                await centre_store.update(existing)
+                print(
+                    f"✓ Updated centre '{cfg['slug']}' → kind={existing.centre_kind} "
+                    f"prompt={existing.prompt_file}"
+                )
+            else:
+                print(f"✓ Centre '{cfg['slug']}' already exists (id={existing.centre_id})")
         else:
             centre = KioskCentre(**cfg)
             await centre_store.create(centre)

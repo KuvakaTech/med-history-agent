@@ -73,7 +73,8 @@ export default function KioskAdminDashboard() {
   }, []);
 
   const selectedCentreMeta = centres.find((c) => c.centre_id === selectedCentre);
-  const isLearningCentre = selectedCentreMeta?.centre_kind === "learning";
+  const isLearningCentre =
+    selectedCentreMeta?.centre_kind === "learning" || selectedCentreMeta?.centre_kind === "talk";
 
   const loadData = useCallback(
     async (t: string, centreId?: string, isSuperAdmin = false) => {

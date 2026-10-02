@@ -44,7 +44,7 @@ export const kioskAdminApi = {
       slug: string;
       name: string;
       default_language?: string;
-      centre_kind?: "grievance" | "learning";
+      centre_kind?: "grievance" | "learning" | "talk";
       prompt_file?: string;
       complaint_prefix?: string;
     }

@@ -11,10 +11,15 @@ from app.kiosk.vocabulary import words_for_topic
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 _BARWANI_PROMPT_KEY = "barwani_jan_sunwai"
 _JAN_SUNWAI_V3_PROMPT_KEY = "jan_sunwai_v3_system.txt"
+_GUDDI_TALK_PROMPT_KEY = "guddi_talk_system.txt"
 
 
 def is_jan_sunwai_v3(centre: KioskCentre) -> bool:
     return prompt_file_for_centre(centre) == _JAN_SUNWAI_V3_PROMPT_KEY
+
+
+def is_guddi_talk(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _GUDDI_TALK_PROMPT_KEY
 
 
 def _load_embedded_prompt(module_name: str, attr: str) -> str:
@@ -207,6 +212,36 @@ def kickoff_text(centre: KioskCentre, language: str) -> str:
         f"The citizen is now at the kiosk for {centre.name}. "
         f"Greet them warmly in {lang} only. "
         "Do NOT ask Hindi or English — begin intake immediately. "
+        "Do not wait for further instructions."
+    )
+
+
+_GUDDI_TALK_RUNTIME = (
+    "\n\nSay at most two short Hindi sentences, then stop and wait for the child. "
+    "Speak only in Hindi. Use Devanagari for everything you say aloud — it is shown "
+    "live as chat text. "
+    "This is voice only: no picture, no word card, no screen button, and no printer. "
+    "Never describe pointing at a screen. "
+    "Never ask the child's name, age, village, or family. "
+    "After the spoken goodbye, call finish_lesson exactly once. "
+    "Never repeat the closing, never keep talking after goodbye, never speak tool "
+    "names, and never speak a learning-outcome or score."
+)
+
+
+def system_instruction_talk(centre: KioskCentre, language: str) -> str:
+    base = _load_base_prompt(centre)
+    lang = _language_name(language)
+    return base + _GUDDI_TALK_RUNTIME + f"\nSpeak only in {lang}."
+
+
+def kickoff_text_talk(centre: KioskCentre, language: str) -> str:
+    lang = _language_name(language)
+    return (
+        f"A child is now at the Hindi kiosk for {centre.name}. "
+        f"You speak first, in {lang}. "
+        "Greet them as Guddi didi, say you will learn new Hindi words today, "
+        "then offer exactly three topics for them to say aloud. "
         "Do not wait for further instructions."
     )
 

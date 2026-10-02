@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { KioskVoiceWS, kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, KioskWSEvent } from "@/lib/kiosk-types";
-import { isBarwaniJanSunwaiSlug, isJanSunwaiSlug, isJanSunwaiV3Slug, isLearningSlug } from "@/lib/kiosk-types";
+import { isBarwaniJanSunwaiSlug, isGuddiTalkSlug, isJanSunwaiSlug, isJanSunwaiV3Slug, isLearningSlug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 type Phase = "connecting" | "active" | "processing" | "done" | "error";
@@ -41,17 +41,19 @@ export default function KioskCallPage() {
   const [answerFeedback, setAnswerFeedback] = useState<AnswerFeedback | null>(null);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isLearning = isLearningSlug(slug) || centre?.centre_kind === "learning";
+  const isTalk = isGuddiTalkSlug(slug) || centre?.centre_kind === "talk";
+  const isLearning = !isTalk && (isLearningSlug(slug) || centre?.centre_kind === "learning");
+  const isGuddi = isLearning || isTalk;
   const isV3 = isJanSunwaiV3Slug(slug);
-  const agentLabel = isLearning ? "गुड्डी" : "AI सहायक";
-  const userLabel = isLearning ? "बच्चा" : "आप";
-  const sessionLabel = isLearning ? "हिंदी सीखना" : isV3 ? "जन सुनवाई" : "शिकायत दर्ज";
-  const processingLabel = isLearning
+  const agentLabel = isGuddi ? "गुड्डी" : "AI सहायक";
+  const userLabel = isGuddi ? "बच्चा" : "आप";
+  const sessionLabel = isGuddi ? "हिंदी सीखना" : isV3 ? "जन सुनवाई" : "शिकायत दर्ज";
+  const processingLabel = isGuddi
     ? "सीखने का रिकॉर्ड बन रहा है…"
     : isV3
       ? "आपका दस्तावेज़ तैयार हो रहा है…"
       : "शिकायत दर्ज की जा रही है…";
-  const resultQuery = isLearning ? "" : "?autoprint=1";
+  const resultQuery = isGuddi ? "" : "?autoprint=1";
 
   const beginProcessing = () => {
     setPhase("processing");
@@ -179,7 +181,7 @@ export default function KioskCallPage() {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
       document.title = "बड़वानी जन सुनवाई";
-    } else if (slug === "barwani-guddi") {
+    } else if (slug === "barwani-guddi" || isGuddiTalkSlug(slug)) {
       document.title = "गुड्डी";
     } else {
       return;
@@ -247,14 +249,14 @@ export default function KioskCallPage() {
       <main
         className={clsx(
           "min-h-screen flex flex-col items-center justify-center px-6 gap-6",
-          isLearning ? "bg-gradient-to-b from-pink-50 to-white" : "bg-gray-50"
+          isGuddi ? "bg-gradient-to-b from-pink-50 to-white" : "bg-gray-50"
         )}
         data-testid="kiosk-processing-screen"
       >
         <div
           className={clsx(
             "h-16 w-16 rounded-full border-4 border-t-transparent animate-spin",
-            isLearning ? "border-pink-400" : "border-amber-500"
+            isGuddi ? "border-pink-400" : "border-amber-500"
           )}
           aria-hidden
         />
@@ -266,7 +268,7 @@ export default function KioskCallPage() {
     );
   }
 
-  const accent = isLearning
+  const accent = isGuddi
     ? agentSpeaking
       ? "bg-pink-400 shadow-lg shadow-pink-200"
       : "bg-pink-100"
@@ -278,12 +280,12 @@ export default function KioskCallPage() {
     <main
       className={clsx(
         "min-h-screen flex flex-col",
-        isLearning ? "bg-gradient-to-b from-pink-50 to-white" : "bg-gray-50"
+        isGuddi ? "bg-gradient-to-b from-pink-50 to-white" : "bg-gray-50"
       )}
     >
       <header className="bg-white border-b border-gray-100 px-4 h-14 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          {slug === "barwani-guddi" ? (
+          {slug === "barwani-guddi" || isTalk ? (
             <span className="text-sm font-extrabold text-pink-600">गुड्डी 🌸</span>
           ) : slug === "varanasi-nagar-nigam" ? (
             <span className="text-sm font-extrabold text-orange-600">वाराणसी नगर निगम</span>
@@ -344,7 +346,7 @@ export default function KioskCallPage() {
           <div
             className={clsx(
               "max-w-lg w-full rounded-2xl border p-4",
-              isLearning
+              isGuddi
                 ? "bg-purple-50 border-purple-100"
                 : "bg-amber-50 border-amber-100"
             )}
@@ -352,7 +354,7 @@ export default function KioskCallPage() {
             <p
               className={clsx(
                 "text-xs mb-1",
-                isLearning ? "text-purple-700" : "text-amber-700"
+                isGuddi ? "text-purple-700" : "text-amber-700"
               )}
             >
               {userLabel}

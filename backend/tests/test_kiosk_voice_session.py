@@ -14,6 +14,7 @@ from app.kiosk.models import KioskCentre, KioskSession
 from app.kiosk.voice_session import (
     KioskVoiceSession,
     _looks_like_grievance_closing,
+    _looks_like_guddi_talk_closing,
 )
 
 
@@ -74,6 +75,45 @@ async def test_finish_complaint_relay_still_sends_audio_before_turn_complete():
         c for c in ws.send_json.await_args_list if c.args[0].get("type") == "agent_audio_chunk"
     ]
     assert len(audio_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_guddi_talk_finish_waits_like_jan_sunwai():
+    session = KioskSession(centre_id="c1", language="hi", phase="lesson")
+    centre = KioskCentre(
+        slug="barwani-guddi-v4",
+        name="Guddi Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_talk_system.txt",
+    )
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
+    assert voice._is_talk
+    assert not voice._is_learning
+    assert voice._learning_engine is None
+    assert voice._finish_tool == "finish_lesson"
+    voice._live = MagicMock()
+    voice._live.send_tool_response = AsyncMock()
+
+    await voice._handle_live_event(
+        LiveEvent(
+            kind="tool_call",
+            tool_name="finish_lesson",
+            tool_args={"reason": "goodbye"},
+            tool_call_id="call-1",
+        )
+    )
+    assert voice._finish_pending
+    assert not voice._phase_done.is_set()
+
+    await voice._handle_live_event(LiveEvent(kind="turn_complete"))
+    assert voice._phase_done.is_set()
+
+
+def test_guddi_talk_closing_is_bye_not_vocabulary():
+    assert _looks_like_guddi_talk_closing("कल फिर मिलेंगे। बाय-बाय!")
+    assert not _looks_like_guddi_talk_closing("फिर मिलेंगे। बोलो — फिर मिलेंगे।")
 
 
 @pytest.mark.asyncio

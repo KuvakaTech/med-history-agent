@@ -7,7 +7,7 @@ import type {
   KioskTranscriptEntry,
   SessionResultResponse,
 } from "@/lib/kiosk-types";
-import { isBarwaniJanSunwaiSlug, isJanSunwaiSlug, isJanSunwaiV3Slug } from "@/lib/kiosk-types";
+import { isBarwaniJanSunwaiSlug, isGuddiTalkSlug, isJanSunwaiSlug, isJanSunwaiV3Slug } from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 function formatAddress(addr: GrievanceAddress | null | undefined): string {
@@ -56,7 +56,7 @@ function KioskResultPageInner() {
   const printTriggeredRef = useRef(false);
   const countdownStartedRef = useRef(false);
 
-  const isLearning = result?.centre_kind === "learning";
+  const isLearning = result?.centre_kind === "learning" || result?.centre_kind === "talk";
   const isV3 = isJanSunwaiV3Slug(slug);
   const printDocument =
     result?.print_document_text || result?.grievance?.print_document_text || "";
@@ -109,7 +109,7 @@ function KioskResultPageInner() {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
       document.title = "बड़वानी जन सुनवाई";
-    } else if (slug === "barwani-guddi") {
+    } else if (slug === "barwani-guddi" || isGuddiTalkSlug(slug)) {
       document.title = "गुड्डी";
     } else {
       return;
@@ -136,7 +136,7 @@ function KioskResultPageInner() {
           className="btn-primary"
           onClick={() => router.push(`/kiosk/${slug}/start`)}
         >
-          {slug === "barwani-guddi" ? "नया सबक" : isV3 ? "नई बात" : "नई शिकायत"}
+          {slug === "barwani-guddi" || isGuddiTalkSlug(slug) ? "नया सबक" : isV3 ? "नई बात" : "नई शिकायत"}
         </button>
       </main>
     );

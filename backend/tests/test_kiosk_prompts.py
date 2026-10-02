@@ -6,7 +6,13 @@ import os
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
 from app.kiosk.models import KioskCentre, prompt_file_for_centre
-from app.kiosk.prompts import kickoff_text, system_instruction
+from app.kiosk.prompts import (
+    is_guddi_talk,
+    kickoff_text,
+    kickoff_text_talk,
+    system_instruction,
+    system_instruction_talk,
+)
 
 
 def test_jan_sunwai_prompt_loads():
@@ -115,3 +121,22 @@ def test_jan_sunwai_v3_prompt_loads():
     assert "Rajatalab" in text
     assert "confirm name" in text.lower() or "CONFIRM" in text
     assert "Never claim documents were already explained" in text
+
+
+def test_guddi_talk_prompt_is_speech_only():
+    centre = KioskCentre(
+        slug="barwani-guddi-v4",
+        name="Guddi Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_talk_system.txt",
+    )
+    assert is_guddi_talk(centre)
+    text = system_instruction_talk(centre, "hi")
+    assert "गुड्डी दीदी" in text
+    assert "finish_lesson" in text
+    assert "केला" in text
+    assert "show_word_card" not in text
+    assert "show_picture" not in text
+    kick = kickoff_text_talk(centre, "hi")
+    assert "Guddi didi" in kick
+    assert "three topics" in kick

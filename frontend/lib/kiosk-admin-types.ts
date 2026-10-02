@@ -3,7 +3,7 @@ export interface KioskCentre {
   slug: string;
   name: string;
   default_language: string;
-  centre_kind?: "grievance" | "learning";
+  centre_kind?: "grievance" | "learning" | "talk";
   prompt_file?: string | null;
   complaint_prefix?: string | null;
 }
@@ -57,7 +57,7 @@ export interface KioskAdminSession {
 }
 
 export interface KioskAdminSessionDetail extends KioskAdminSession {
-  centre_kind?: "grievance" | "learning";
+  centre_kind?: "grievance" | "learning" | "talk";
   transcript?: Array<{ speaker: string; text: string; timestamp?: string | null }>;
   full_transcript?: string | null;
   centre_name?: string | null;

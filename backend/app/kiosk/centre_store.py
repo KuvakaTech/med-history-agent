@@ -52,6 +52,22 @@ class CentreStore:
         doc = _mem_centres.get(centre_id)
         return KioskCentre.model_validate(doc) if doc else None
 
+    async def update(self, centre: KioskCentre) -> KioskCentre:
+        global _mongo_write_failed
+        doc = centre.model_dump(mode="json")
+        _mem_centres[centre.centre_id] = doc
+        if not _mongo_write_failed:
+            try:
+                await _col().update_one(
+                    {"centre_id": centre.centre_id},
+                    {"$set": doc},
+                    upsert=True,
+                )
+            except Exception as exc:
+                log.warning("Kiosk centre MongoDB update failed: %s", exc)
+                _mongo_write_failed = True
+        return centre
+
     async def list_all(self) -> list[dict]:
         try:
             cursor = _col().find({}, {"_id": 0})
