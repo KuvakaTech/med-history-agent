@@ -13,6 +13,7 @@ from app.kiosk.gemini_live import LiveEvent, merge_transcript_chunk
 from app.kiosk.models import KioskCentre, KioskSession
 from app.kiosk.voice_session import (
     KioskVoiceSession,
+    _cut_at_first_goodbye,
     _looks_like_grievance_closing,
     _looks_like_guddi_talk_closing,
 )
@@ -114,6 +115,49 @@ async def test_guddi_talk_finish_waits_like_jan_sunwai():
 def test_guddi_talk_closing_is_bye_not_vocabulary():
     assert _looks_like_guddi_talk_closing("कल फिर मिलेंगे। बाय-बाय!")
     assert not _looks_like_guddi_talk_closing("फिर मिलेंगे। बोलो — फिर मिलेंगे।")
+
+
+def test_guddi_talk_cuts_a_repeated_goodbye():
+    looped = (
+        "शाबाश! चिड़िया उड़ गई। ज़ोर से ताली! शाबाश दोस्त! "
+        "कल फिर मिलेंगे। बाय-बाय! शाबाश! अब कहानी कैसी लगी? "
+        "ज़ोर से ताली! शाबाश दोस्त! कल फिर मिलेंगे। बाय-बाय!"
+    )
+    cut = _cut_at_first_goodbye(looped)
+    assert cut.endswith("बाय-बाय!")
+    assert "कैसी लगी" not in cut
+    assert cut.count("बाय-बाय") == 1
+
+
+@pytest.mark.asyncio
+async def test_guddi_talk_stops_audio_after_a_repeated_goodbye():
+    session = KioskSession(centre_id="c1", language="hi")
+    centre = KioskCentre(
+        slug="barwani-guddi-v6",
+        name="Guddi v6",
+        centre_kind="talk",
+        prompt_file="guddi_v6_talk_system.txt",
+    )
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
+    looped = "कल फिर मिलेंगे। बाय-बाय! अब कहानी कैसी लगी?"
+
+    await voice._handle_live_event(
+        LiveEvent(kind="agent_transcript_partial", text=looped)
+    )
+    await voice._handle_live_event(
+        LiveEvent(kind="agent_audio_chunk", audio=b"\x00\x00")
+    )
+
+    sent = [call.args[0] for call in ws.send_json.await_args_list]
+    types = [payload["type"] for payload in sent]
+    assert "interrupt" in types
+    assert "agent_audio_chunk" not in types
+    question = next(p["question"] for p in sent if p["type"] == "agent_speaking")
+    assert question.endswith("बाय-बाय!")
+    assert "कैसी लगी" not in question
+    assert voice._finish_pending
 
 
 @pytest.mark.asyncio

@@ -71,9 +71,23 @@ _TOOL_LEAK_RE = re.compile(
 )
 
 
+_GOODBYE_RE = re.compile(r"(?:बाय-बाय|बाय बाय|bye-bye|bye bye)", re.IGNORECASE)
+
+
 def _looks_like_guddi_talk_closing(text: str) -> bool:
-    low = (text or "").lower()
-    return any(p in low for p in ("बाय-बाय", "बाय बाय", "bye-bye", "bye bye"))
+    return _GOODBYE_RE.search(text or "") is not None
+
+
+def _cut_at_first_goodbye(text: str) -> str:
+    """Keep speech through the first goodbye. Drop a repeated close."""
+    match = _GOODBYE_RE.search(text or "")
+    if match is None:
+        return text
+    end = match.end()
+    punct = re.match(r"\s*[.!?।]+", text[end:])
+    if punct:
+        end += punct.end()
+    return text[:end].strip()
 
 
 def _looks_like_grievance_closing(text: str) -> bool:
@@ -164,6 +178,7 @@ class KioskVoiceSession:
         self._is_talk = kind == "talk"
         self._is_v5 = is_guddi_v5(centre)
         self._is_v6 = is_guddi_v6(centre)
+        self._goodbye_cut = False
         self._finish_tool = (
             "finish_lesson" if self._is_learning or self._is_talk else "finish_complaint"
         )
@@ -380,6 +395,8 @@ class KioskVoiceSession:
         elif event.kind == "user_transcript_final":
             await self._handle_user_transcript_final(event.text)
         elif event.kind == "agent_audio_chunk":
+            if self._goodbye_cut:
+                return
             self._agent_playing = True
             b64 = base64.b64encode(event.audio).decode("ascii")
             await self._send(ev.agent_audio_chunk(b64))
@@ -387,12 +404,14 @@ class KioskVoiceSession:
             text = sanitize_agent_transcript(event.text)
             if not text:
                 return
+            text = await self._stop_after_goodbye(text)
             display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
         elif event.kind == "agent_transcript_final":
             text = sanitize_agent_transcript(event.text)
             if not text:
                 return
+            text = await self._stop_after_goodbye(text)
             self._enqueue_transcript("agent", text)
             display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
@@ -489,6 +508,20 @@ class KioskVoiceSession:
                 self.session.session_id,
             )
             self._complete_finish_phase()
+
+    async def _stop_after_goodbye(self, text: str) -> str:
+        """If she keeps talking after बाय-बाय, keep the first goodbye only."""
+        if not self._is_talk or not _looks_like_guddi_talk_closing(text):
+            return text
+        cut = _cut_at_first_goodbye(text)
+        if self._goodbye_cut:
+            return cut
+        repeated = len(cut) < len(text.strip())
+        self._goodbye_cut = True
+        if repeated:
+            await self._send(ev.interrupt())
+        self._request_finish()
+        return cut
 
     async def _maybe_auto_finish_on_guddi_close(self, text: str) -> None:
         if self._phase_done.is_set() or self._finish_pending:

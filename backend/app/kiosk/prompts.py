@@ -279,10 +279,18 @@ def kickoff_text_v5(centre: KioskCentre, language: str) -> str:
     )
 
 
+_GUDDI_V6_CLOSE = (
+    "\n\nSay at most two short Hindi sentences, then stop and wait. "
+    "The goodbye is one turn only: ताली, then बाय-बाय, then finish_lesson. "
+    "After the first बाय-बाय say nothing else. Never repeat the goodbye, "
+    "the refrain, or the सीख. Never ask how the story felt."
+)
+
+
 def system_instruction_v6(centre: KioskCentre, language: str) -> str:
     base = _load_base_prompt(centre)
     lang = _language_name(language)
-    return base + f"\nSpeak only in {lang}."
+    return base + _GUDDI_V6_CLOSE + f"\nSpeak only in {lang}."
 
 
 def kickoff_text_v6(centre: KioskCentre, language: str) -> str:
