@@ -135,6 +135,8 @@ def test_guddi_talk_prompt_is_speech_only():
     assert "गुड्डी दीदी" in text
     assert "finish_lesson" in text
     assert "केला" in text
+    assert "ला-ल" in text
+    assert "पी-ला" in text
     assert "show_word_card" not in text
     assert "show_picture" not in text
     kick = kickoff_text_talk(centre, "hi")
