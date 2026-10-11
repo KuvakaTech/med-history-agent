@@ -3,7 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { kioskAdminApi } from "@/lib/kiosk-admin-api";
 import type { KioskAdminSession, KioskCentre } from "@/lib/kiosk-admin-types";
+import { isTicketCentre } from "@/lib/kiosk-tickets";
+import KioskTicketDesk from "@/components/KioskTicketDesk";
 import { getToken } from "@/lib/api";
+import { Hash, Phone, Search, Users, X } from "lucide-react";
 import clsx from "clsx";
 
 interface Stats {
@@ -49,6 +52,8 @@ export default function KioskAdminDashboard() {
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState("");
   const [centreName, setCentreName] = useState("");
+  const [activeCentre, setActiveCentre] = useState<KioskCentre | null>(null);
+  const [adminName, setAdminName] = useState("");
 
   const [centres, setCentres] = useState<KioskCentre[]>([]);
   const [selectedCentre, setSelectedCentre] = useState("");
@@ -75,6 +80,9 @@ export default function KioskAdminDashboard() {
   const selectedCentreMeta = centres.find((c) => c.centre_id === selectedCentre);
   const isLearningCentre =
     selectedCentreMeta?.centre_kind === "learning" || selectedCentreMeta?.centre_kind === "talk";
+  // Gwalior Nagar Seva runs the officer ticket desk instead of the flat
+  // session table — see lib/kiosk-tickets.ts.
+  const isTicketDesk = isTicketCentre(selectedCentreMeta ?? activeCentre);
 
   const loadData = useCallback(
     async (t: string, centreId?: string, isSuperAdmin = false) => {
@@ -100,6 +108,7 @@ export default function KioskAdminDashboard() {
         setStats(statsRes);
         setSessions(sessionsRes.sessions);
         setCentreName(centreRes.name);
+        setActiveCentre(centreRes);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Failed to load data");
       } finally {
@@ -120,6 +129,7 @@ export default function KioskAdminDashboard() {
         }
         setToken(t);
         setUserRole(role);
+        setAdminName(payload.name || payload.email || "Admin");
         if (role === "super_admin") {
           const { centres: list } = await kioskAdminApi.listCentres(t);
           setCentres(list);
@@ -207,13 +217,29 @@ export default function KioskAdminDashboard() {
               + New Centre
             </button>
           )}
+          {isTicketDesk && (
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/kiosk-admin/officers${
+                    userRole === "super_admin" && selectedCentre ? `?centre_id=${selectedCentre}` : ""
+                  }`
+                )
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <Users size={13} />
+              Officers
+            </button>
+          )}
           {stats && (
             <span className="text-xs text-gray-400 hidden sm:block">{stats.date_ist}</span>
           )}
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <div className={clsx("mx-auto px-4 py-8 space-y-6", isTicketDesk ? "max-w-7xl" : "max-w-5xl")}>
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
             {error}
@@ -271,7 +297,7 @@ export default function KioskAdminDashboard() {
           </div>
         )}
 
-        {(userRole !== "super_admin" || selectedCentre) && stats && (
+        {(userRole !== "super_admin" || selectedCentre) && stats && !isTicketDesk && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard label="Today" value={stats.today.total} sub="sessions" />
             <StatCard label="Completed" value={stats.today.completed} color="green" />
@@ -282,7 +308,25 @@ export default function KioskAdminDashboard() {
 
         {(userRole !== "super_admin" || selectedCentre) && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-3 items-end">
+            {isTicketDesk && (
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Ticket Desk</h2>
+                <p className="text-sm text-gray-500">
+                  Every grievance is a ticket owned by an officer. Unresolved tickets escalate
+                  L1 {"→"} L2 {"→"} L3 on their own once the SLA runs out.
+                </p>
+              </div>
+            )}
+
+            <div className="card space-y-3 py-4">
+              <p className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                <Search size={14} className="text-brand" />
+                Find a ticket
+                <span className="font-normal text-gray-400">
+                  — search by complaint number or the complainant&apos;s phone
+                </span>
+              </p>
+              <div className="flex flex-wrap gap-4 items-end">
               {isLearningCentre ? (
                 <>
                   <div className="space-y-1">
@@ -308,49 +352,118 @@ export default function KioskAdminDashboard() {
                 </>
               ) : (
                 <>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-gray-500 uppercase">Complaint No.</label>
-                    <input
-                      className="input-field w-44 text-sm py-2 font-mono"
-                      placeholder="JS-VNS-…"
-                      value={complaintSearch}
-                      onChange={(e) => setComplaintSearch(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && refetch()}
-                    />
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-600">
+                      <Hash size={12} className="text-brand" />
+                      Complaint number
+                    </label>
+                    <div className="relative">
+                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        className="input-field w-64 border-gray-300 bg-white py-2.5 pl-9 pr-8 font-mono text-sm"
+                        placeholder="NS-GWL-000123"
+                        value={complaintSearch}
+                        onChange={(e) => setComplaintSearch(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && refetch()}
+                      />
+                      {complaintSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setComplaintSearch("")}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                          aria-label="Clear complaint number"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-gray-500 uppercase">Phone</label>
-                    <input
-                      className="input-field w-36 text-sm py-2 font-mono"
-                      placeholder="9876543210"
-                      value={phoneSearch}
-                      onChange={(e) => setPhoneSearch(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && refetch()}
-                    />
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-gray-600">
+                      <Phone size={12} className="text-brand" />
+                      Phone number
+                    </label>
+                    <div className="relative">
+                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        className="input-field w-52 border-gray-300 bg-white py-2.5 pl-9 pr-8 font-mono text-sm"
+                        placeholder="9876543210"
+                        inputMode="numeric"
+                        value={phoneSearch}
+                        onChange={(e) => setPhoneSearch(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && refetch()}
+                      />
+                      {phoneSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setPhoneSearch("")}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                          aria-label="Clear phone number"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </>
               )}
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase">Status</label>
-                <select
-                  className="input-field text-sm py-2"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="">All</option>
-                  <option value="completed">Completed</option>
-                  <option value="partial">Partial</option>
-                  <option value="active">Active</option>
-                </select>
-              </div>
-              <button type="button" onClick={refetch} disabled={fetching} className="btn-secondary text-sm py-2 px-4">
-                {fetching ? "…" : "Search"}
+              {!isTicketDesk && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-500 uppercase">Status</label>
+                  <select
+                    className="input-field text-sm py-2"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="">All</option>
+                    <option value="completed">Completed</option>
+                    <option value="partial">Partial</option>
+                    <option value="active">Active</option>
+                  </select>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={refetch}
+                disabled={fetching}
+                className="btn-primary inline-flex items-center gap-1.5 py-2.5 px-5 text-sm"
+              >
+                <Search size={14} />
+                {fetching ? "Searching…" : "Search"}
               </button>
+              {(complaintSearch || phoneSearch || learnerSearch || topicSearch) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setComplaintSearch("");
+                    setPhoneSearch("");
+                    setLearnerSearch("");
+                    setTopicSearch("");
+                  }}
+                  className="pb-2.5 text-xs font-semibold text-gray-500 hover:text-gray-800"
+                >
+                  Clear
+                </button>
+              )}
+              </div>
             </div>
 
-            <div className="card overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-100">
+            {isTicketDesk ? (
+              <KioskTicketDesk
+                sessions={sessions}
+                currentUser={adminName}
+                onOpenSession={(sessionId) => {
+                  const q =
+                    userRole === "super_admin" && selectedCentre
+                      ? `?centre_id=${selectedCentre}`
+                      : "";
+                  router.push(`/kiosk-admin/sessions/${sessionId}${q}`);
+                }}
+              />
+            ) : (
+              <div className="card overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
                     {isLearningCentre ? (
                       <>
@@ -443,8 +556,9 @@ export default function KioskAdminDashboard() {
                     ))
                   )}
                 </tbody>
-              </table>
-            </div>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>
