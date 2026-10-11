@@ -226,7 +226,7 @@ export default function KioskAdminDashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
                 className="input-field text-sm py-2"
-                placeholder="Slug (e.g. varanasi-nagar-nigam)"
+                placeholder="Slug (e.g. gwalior-nagar-seva)"
                 value={newCentreSlug}
                 onChange={(e) => setNewCentreSlug(e.target.value)}
               />

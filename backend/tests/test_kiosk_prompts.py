@@ -94,10 +94,32 @@ def test_nagar_nigam_prompt_loads():
 def test_slug_defaults_without_explicit_fields():
     centre = KioskCentre(slug="varanasi-nagar-nigam", name="Varanasi Nagar Nigam")
     assert prompt_file_for_centre(centre) == "nagar_nigam_system.txt"
+    gwl = KioskCentre(slug="gwalior-nagar-seva", name="Gwalior Nagar Seva")
+    assert prompt_file_for_centre(gwl) == "gwalior_nagar_seva_system.txt"
     v2 = KioskCentre(slug="barwani-jan-sunwai", name="Barwani Jan Sunwai")
     assert prompt_file_for_centre(v2) == "barwani_jan_sunwai"
     v3 = KioskCentre(slug="varanasi-jan-sunwai-v3", name="Varanasi Jan Sunwai v3")
     assert prompt_file_for_centre(v3) == "jan_sunwai_v3_system.txt"
+
+
+def test_gwalior_nagar_seva_prompt_loads():
+    centre = KioskCentre(
+        slug="gwalior-nagar-seva",
+        name="Gwalior Nagar Seva",
+        prompt_file="gwalior_nagar_seva_system.txt",
+        complaint_prefix="NS-GWL",
+    )
+    assert prompt_file_for_centre(centre) == "gwalior_nagar_seva_system.txt"
+    text = system_instruction(centre, "hi")
+    assert "NAGAR SEVA" in text.upper() or "Nagar Seva Sahayika" in text
+    assert "MPMKVVCL" in text
+    assert "Swami Vivekanand" in text or "ward 29" in text.lower()
+    assert "NEVER invent, guess, or speak any number" in text
+    assert "NS-GWL-" in text
+    kick = kickoff_text(centre, "hi")
+    assert "Nagar Seva" in kick
+    assert "Hindi or English" in kick
+    assert "Do NOT ask Hindi or English" not in kick
 
 
 def test_jan_sunwai_v3_prompt_loads():

@@ -14,6 +14,7 @@ _JAN_SUNWAI_V3_PROMPT_KEY = "jan_sunwai_v3_system.txt"
 _GUDDI_TALK_PROMPT_KEY = "guddi_talk_system.txt"
 _GUDDI_V5_PROMPT_KEY = "guddi_v5_talk_system.txt"
 _GUDDI_V6_PROMPT_KEY = "guddi_v6_talk_system.txt"
+_GWALIOR_NAGAR_SEVA_PROMPT_KEY = "gwalior_nagar_seva_system.txt"
 
 
 def is_jan_sunwai_v3(centre: KioskCentre) -> bool:
@@ -30,6 +31,10 @@ def is_guddi_v5(centre: KioskCentre) -> bool:
 
 def is_guddi_v6(centre: KioskCentre) -> bool:
     return prompt_file_for_centre(centre) == _GUDDI_V6_PROMPT_KEY
+
+
+def is_gwalior_nagar_seva(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _GWALIOR_NAGAR_SEVA_PROMPT_KEY
 
 
 def _load_embedded_prompt(module_name: str, attr: str) -> str:
@@ -133,6 +138,25 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
             "Never voice the ID — tell the citizen they can get it from the parchi or counter."
             + _GRIEVANCE_CLOSE_RUNTIME
         )
+    if is_gwalior_nagar_seva(centre):
+        return (
+            "\n\nAsk exactly ONE question per turn, then wait for the answer. "
+            "Greet in Hindi first: disclose you are AI, privacy line, and that "
+            "shikayat darj karna muft hai; offer Hindi or English. "
+            "They may register a new complaint, mention an old complaint number, "
+            "or ask brief information — adapt to what they need. "
+            "When speaking Hindi, use Devanagari script for everything you say aloud "
+            "— it is shown live on the kiosk screen. "
+            "When speaking English, use English on screen (do not transliterate). "
+            "CRITICAL — COMPLAINT NUMBER: You do NOT know any complaint number during "
+            "this call. NEVER invent, guess, or speak any number "
+            "(no NS-GWL-, or random digits). "
+            "The system assigns the official number only after the citizen ends the call; "
+            "it appears on the result screen. "
+            "Never claim a receipt was printed, SMS sent, or live status checked. "
+            "Mandatory confirm-back once before goodbye."
+            + _GRIEVANCE_CLOSE_RUNTIME
+        )
     lang = _language_name(language)
     return (
         f"\n\nSpeak only in {lang}. "
@@ -215,6 +239,15 @@ def kickoff_text(centre: KioskCentre, language: str) -> str:
             f"The citizen is now at the kiosk for {centre.name}. "
             "Greet them warmly in Hindi first (section 2.1): disclose you are AI, "
             "offer Hindi or English, then invite them to register their problem. "
+            "Do not wait for further instructions."
+        )
+    if is_gwalior_nagar_seva(centre):
+        return (
+            f"The citizen is now at the Nagar Seva kiosk for {centre.name}. "
+            "Greet warmly in Hindi (Section S1): disclose you are AI, privacy and "
+            "muft shikayat line, offer Hindi or English, then ask whether they want "
+            "a new complaint, to mention an old complaint number, or brief information. "
+            "If they already describe a problem, start intake immediately. "
             "Do not wait for further instructions."
         )
     lang = _language_name(language)

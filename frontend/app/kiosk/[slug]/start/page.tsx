@@ -3,7 +3,15 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, LessonTopic } from "@/lib/kiosk-types";
-import { LESSON_TOPICS, isBarwaniJanSunwaiSlug, isGuddiTalkSlug, isJanSunwaiSlug, isJanSunwaiV3Slug } from "@/lib/kiosk-types";
+import {
+  LESSON_TOPICS,
+  isBarwaniJanSunwaiSlug,
+  isGuddiTalkSlug,
+  isGwaliorNagarSevaSlug,
+  isJanSunwaiSlug,
+  isJanSunwaiV3Slug,
+  isVaranasiNagarNigamSlug,
+} from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 const GENDERS = [
@@ -29,8 +37,10 @@ function centreInitials(name: string): string {
 
 function usePageTitle(slug: string) {
   useEffect(() => {
-    if (slug === "varanasi-nagar-nigam") {
+    if (isVaranasiNagarNigamSlug(slug)) {
       document.title = "Varanasi Nagar Nigam";
+    } else if (isGwaliorNagarSevaSlug(slug)) {
+      document.title = "Gwalior Nagar Seva";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
@@ -324,6 +334,7 @@ function GrievanceStart({
   const [error, setError] = useState("");
   const centreInitialsLabel = centreInitials(centre.name);
   const isV3 = isJanSunwaiV3Slug(slug);
+  const isGwalior = isGwaliorNagarSevaSlug(slug);
 
   const goNext = () => {
     setError("");
@@ -371,10 +382,15 @@ function GrievanceStart({
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-amber-50 to-white flex flex-col px-6 py-10 select-none">
-      {slug === "varanasi-nagar-nigam" ? (
+      {isVaranasiNagarNigamSlug(slug) ? (
         <div className="flex flex-col self-start leading-tight">
           <span className="text-xl font-extrabold text-orange-600">वाराणसी नगर निगम</span>
           <span className="text-xs font-bold text-orange-500 tracking-widest">VARANASI NAGAR NIGAM</span>
+        </div>
+      ) : isGwaliorNagarSevaSlug(slug) ? (
+        <div className="flex flex-col self-start leading-tight">
+          <span className="text-xl font-extrabold text-orange-600">ग्वालियर नगर सेवा</span>
+          <span className="text-xs font-bold text-orange-500 tracking-widest">NAGAR PALIK NIGAM GWALIOR</span>
         </div>
       ) : isJanSunwaiSlug(slug) ? (
         <div className="flex flex-col self-start leading-tight">
@@ -413,12 +429,14 @@ function GrievanceStart({
               ))}
             </div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {isV3 ? "जन सुनवाई सहायता" : "शिकायत दर्ज करें"}
+              {isV3 ? "जन सुनवाई सहायता" : isGwalior ? "नगर सेवा सहायता" : "शिकायत दर्ज करें"}
             </h1>
             <p className="text-sm text-gray-500">
               {isV3
                 ? "शिकायत, जानकारी, या कोई भी मदद — बोलकर बताइए"
-                : "Register your grievance at the kiosk"}
+                : isGwalior
+                  ? "नई शिकायत, पुराना नंबर, या जानकारी — बोलकर बताइए"
+                  : "Register your grievance at the kiosk"}
             </p>
           </div>
 

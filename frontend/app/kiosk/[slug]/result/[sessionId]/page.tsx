@@ -7,7 +7,14 @@ import type {
   KioskTranscriptEntry,
   SessionResultResponse,
 } from "@/lib/kiosk-types";
-import { isBarwaniJanSunwaiSlug, isGuddiTalkSlug, isJanSunwaiSlug, isJanSunwaiV3Slug } from "@/lib/kiosk-types";
+import {
+  isBarwaniJanSunwaiSlug,
+  isGuddiTalkSlug,
+  isGwaliorNagarSevaSlug,
+  isJanSunwaiSlug,
+  isJanSunwaiV3Slug,
+  isVaranasiNagarNigamSlug,
+} from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 function formatAddress(addr: GrievanceAddress | null | undefined): string {
@@ -103,8 +110,10 @@ function KioskResultPageInner() {
   }, [autoprint, slug, router, isLearning]);
 
   useEffect(() => {
-    if (slug === "varanasi-nagar-nigam") {
+    if (isVaranasiNagarNigamSlug(slug)) {
       document.title = "Varanasi Nagar Nigam";
+    } else if (isGwaliorNagarSevaSlug(slug)) {
+      document.title = "Gwalior Nagar Seva";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
@@ -239,8 +248,10 @@ function KioskResultPageInner() {
 
       <div ref={printRef} className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         <div className="text-center space-y-2">
-          {slug === "varanasi-nagar-nigam" ? (
+          {isVaranasiNagarNigamSlug(slug) ? (
             <p className="text-lg font-extrabold text-orange-600">वाराणसी नगर निगम</p>
+          ) : isGwaliorNagarSevaSlug(slug) ? (
+            <p className="text-lg font-extrabold text-orange-600">ग्वालियर नगर सेवा</p>
           ) : isJanSunwaiSlug(slug) ? (
             <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
           ) : isBarwaniJanSunwaiSlug(slug) ? (

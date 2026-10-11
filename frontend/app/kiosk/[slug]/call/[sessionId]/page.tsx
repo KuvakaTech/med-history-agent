@@ -3,7 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { KioskVoiceWS, kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, KioskWSEvent } from "@/lib/kiosk-types";
-import { isBarwaniJanSunwaiSlug, isGuddiTalkSlug, isJanSunwaiSlug, isJanSunwaiV3Slug, isLearningSlug } from "@/lib/kiosk-types";
+import {
+  isBarwaniJanSunwaiSlug,
+  isGuddiTalkSlug,
+  isGwaliorNagarSevaSlug,
+  isJanSunwaiSlug,
+  isJanSunwaiV3Slug,
+  isLearningSlug,
+  isVaranasiNagarNigamSlug,
+} from "@/lib/kiosk-types";
 import clsx from "clsx";
 
 type Phase = "connecting" | "active" | "processing" | "done" | "error";
@@ -47,7 +55,13 @@ export default function KioskCallPage() {
   const isV3 = isJanSunwaiV3Slug(slug);
   const agentLabel = isGuddi ? "गुड्डी" : "AI सहायक";
   const userLabel = isGuddi ? "बच्चा" : "आप";
-  const sessionLabel = isGuddi ? "हिंदी सीखना" : isV3 ? "जन सुनवाई" : "शिकायत दर्ज";
+  const sessionLabel = isGuddi
+    ? "हिंदी सीखना"
+    : isV3
+      ? "जन सुनवाई"
+      : isGwaliorNagarSevaSlug(slug)
+        ? "नगर सेवा"
+        : "शिकायत दर्ज";
   const processingLabel = isGuddi
     ? "सीखने का रिकॉर्ड बन रहा है…"
     : isV3
@@ -175,8 +189,10 @@ export default function KioskCallPage() {
   }, [slug]);
 
   useEffect(() => {
-    if (slug === "varanasi-nagar-nigam") {
+    if (isVaranasiNagarNigamSlug(slug)) {
       document.title = "Varanasi Nagar Nigam";
+    } else if (isGwaliorNagarSevaSlug(slug)) {
+      document.title = "Gwalior Nagar Seva";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
@@ -287,8 +303,10 @@ export default function KioskCallPage() {
         <div className="flex items-center gap-2">
           {slug === "barwani-guddi" || isTalk ? (
             <span className="text-sm font-extrabold text-pink-600">गुड्डी 🌸</span>
-          ) : slug === "varanasi-nagar-nigam" ? (
+          ) : isVaranasiNagarNigamSlug(slug) ? (
             <span className="text-sm font-extrabold text-orange-600">वाराणसी नगर निगम</span>
+          ) : isGwaliorNagarSevaSlug(slug) ? (
+            <span className="text-sm font-extrabold text-orange-600">ग्वालियर नगर सेवा</span>
           ) : isJanSunwaiSlug(slug) ? (
             <span className="text-sm font-extrabold text-orange-600">वाराणसी जन सुनवाई</span>
           ) : isBarwaniJanSunwaiSlug(slug) ? (

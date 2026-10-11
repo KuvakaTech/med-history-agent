@@ -41,6 +41,14 @@ CENTRES = [
         "complaint_prefix": "NN-VNS",
     },
     {
+        "slug": "gwalior-nagar-seva",
+        "name": "Gwalior Nagar Seva",
+        "default_language": "hi",
+        "centre_kind": "grievance",
+        "prompt_file": "gwalior_nagar_seva_system.txt",
+        "complaint_prefix": "NS-GWL",
+    },
+    {
         "slug": "barwani-guddi",
         "name": "Guddi Learning",
         "default_language": "hi",

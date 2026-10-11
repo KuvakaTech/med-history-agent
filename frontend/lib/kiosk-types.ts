@@ -209,3 +209,16 @@ export function isJanSunwaiV3Slug(slug: string): boolean {
 export function isBarwaniJanSunwaiSlug(slug: string): boolean {
   return slug === "barwani-jan-sunwai";
 }
+
+export function isVaranasiNagarNigamSlug(slug: string): boolean {
+  return slug === "varanasi-nagar-nigam";
+}
+
+export function isGwaliorNagarSevaSlug(slug: string): boolean {
+  return slug === "gwalior-nagar-seva";
+}
+
+/** Grievance kiosks run by a municipal corporation (Nagar Nigam / Nagar Seva). */
+export function isMunicipalGrievanceSlug(slug: string): boolean {
+  return isVaranasiNagarNigamSlug(slug) || isGwaliorNagarSevaSlug(slug);
+}

@@ -65,6 +65,11 @@ _SLUG_DEFAULTS: dict[str, dict[str, str]] = {
         "complaint_prefix": "NN-VNS",
         "centre_kind": "grievance",
     },
+    "gwalior-nagar-seva": {
+        "prompt_file": "gwalior_nagar_seva_system.txt",
+        "complaint_prefix": "NS-GWL",
+        "centre_kind": "grievance",
+    },
     "barwani-guddi": {
         "prompt_file": "guddi_learning_system.txt",
         "centre_kind": "learning",

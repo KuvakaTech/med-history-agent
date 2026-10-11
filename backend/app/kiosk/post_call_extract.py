@@ -119,6 +119,36 @@ Transcript:
 {transcript}
 """
 
+_GWALIOR_NAGAR_SEVA_EXTRACT_PROMPT = """\
+Extract a structured Gwalior Nagar Seva (Nagar Palik Nigam Gwalior) civic complaint record from this kiosk voice transcript.
+
+Rules:
+- Use ONLY what is explicitly said. Do not invent facts.
+- Phone was captured at kiosk intake — do not extract phone from transcript.
+- Never extract Aadhaar, bank account, OTP, or passwords.
+- urgency: "urgent" for fire, gas leak, open manhole on road, live or hanging wire, current in pole or water,
+  tree on road or wires, building or wall about to collapse, deep open pit on busy road, dog bite (recent or child),
+  contaminated water with illness, flooding inside homes, person trapped or injured, self-harm distress;
+  "high" for no water 2+ days for a colony, sewer entering homes, dead animal, garbage near school or hospital,
+  cattle on main road, streetlight out on a whole stretch; else "normal".
+- department_tag: one of jal_praday_water, sewer_drainage, sanitation, street_lights, roads, stray_animals,
+  encroachment, building, parks, fire, certificates, licences_markets, property_tax, welfare, smart_city,
+  public_health, out_of_scope, other, to_be_assigned.
+- category_details (dict) — populate when mentioned:
+  - ward_no, ward_name, zone: Lashkar, Gwalior, Morar, or ward number 1–66
+  - landmark, stretch_start, stretch_end, colony, mohalla
+  - out_of_scope: true for household electricity (MPMKVVCL), police/crime, ration, tehsil land, cantonment, railways, highways
+  - out_of_scope_reason: e.g. mpmkkvvcl_electricity, police, tehsil_land, cantonment_morar, ration, court_matter
+  - route_to: e.g. MPMKVVCL, Gwalior_Police, Tehsil, Cantonment_Board_Morar, CM_Helpline_181, Smart_City
+  - prior_complaint_no, parent_complaint_no, referral_office
+  - property_id, water_consumer_no, samagra_id, application_no when stated
+  - conduct_allegation, court_matter, sensitive flags when stated
+- Referral-only or mixed GMC + referral: still extract the GMC complaint fields; note referral in category_details.
+
+Transcript:
+{transcript}
+"""
+
 _NAGAR_NIGAM_EXTRACT_PROMPT = """\
 Extract a structured Nagar Nigam civic complaint or service-intake record from this kiosk voice transcript.
 
@@ -243,6 +273,8 @@ def _extract_prompt_for_centre(centre: KioskCentre) -> str:
         return _JAN_SUNWAI_V3_EXTRACT_PROMPT
     if key == "nagar_nigam_system.txt":
         return _NAGAR_NIGAM_EXTRACT_PROMPT
+    if key == "gwalior_nagar_seva_system.txt":
+        return _GWALIOR_NAGAR_SEVA_EXTRACT_PROMPT
     if key == "barwani_jan_sunwai":
         return _BARWANI_JAN_SUNWAI_EXTRACT_PROMPT
     return _JAN_SUNWAI_EXTRACT_PROMPT
