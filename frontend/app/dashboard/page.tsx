@@ -22,6 +22,12 @@ const CARDS = [
     icon: "🏛️",
   },
   {
+    title: "Gwalior Nagar Seva",
+    sub: "Nagar Palik Nigam Gwalior civic kiosk",
+    href: "/kiosk/gwalior-nagar-seva/start",
+    icon: "🏛️",
+  },
+  {
     title: "Hospital Platform",
     sub: "Hospital staff login",
     href: "/login",

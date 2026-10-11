@@ -118,7 +118,11 @@ export default function KioskAdminSessionPage() {
   }, [session?.status, session?.session_id, userRole, loadSession]);
 
   const sessionCentre = centres.find((c) => c.centre_id === session?.centre_id);
-  const isLearning = session?.centre_kind === "learning" || sessionCentre?.centre_kind === "learning";
+  const isLearning =
+    session?.centre_kind === "learning" ||
+    session?.centre_kind === "talk" ||
+    sessionCentre?.centre_kind === "learning" ||
+    sessionCentre?.centre_kind === "talk";
   const g = session?.grievance as Record<string, unknown> | null | undefined;
   const lr = session?.learning_record;
   const printText =

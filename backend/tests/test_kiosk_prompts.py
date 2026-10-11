@@ -6,7 +6,19 @@ import os
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
 from app.kiosk.models import KioskCentre, prompt_file_for_centre
-from app.kiosk.prompts import kickoff_text, system_instruction
+from app.kiosk.prompts import (
+    is_guddi_talk,
+    is_guddi_v5,
+    is_guddi_v6,
+    kickoff_text,
+    kickoff_text_talk,
+    kickoff_text_v5,
+    kickoff_text_v6,
+    system_instruction,
+    system_instruction_talk,
+    system_instruction_v5,
+    system_instruction_v6,
+)
 
 
 def test_jan_sunwai_prompt_loads():
@@ -82,10 +94,32 @@ def test_nagar_nigam_prompt_loads():
 def test_slug_defaults_without_explicit_fields():
     centre = KioskCentre(slug="varanasi-nagar-nigam", name="Varanasi Nagar Nigam")
     assert prompt_file_for_centre(centre) == "nagar_nigam_system.txt"
+    gwl = KioskCentre(slug="gwalior-nagar-seva", name="Gwalior Nagar Seva")
+    assert prompt_file_for_centre(gwl) == "gwalior_nagar_seva_system.txt"
     v2 = KioskCentre(slug="barwani-jan-sunwai", name="Barwani Jan Sunwai")
     assert prompt_file_for_centre(v2) == "barwani_jan_sunwai"
     v3 = KioskCentre(slug="varanasi-jan-sunwai-v3", name="Varanasi Jan Sunwai v3")
     assert prompt_file_for_centre(v3) == "jan_sunwai_v3_system.txt"
+
+
+def test_gwalior_nagar_seva_prompt_loads():
+    centre = KioskCentre(
+        slug="gwalior-nagar-seva",
+        name="Gwalior Nagar Seva",
+        prompt_file="gwalior_nagar_seva_system.txt",
+        complaint_prefix="NS-GWL",
+    )
+    assert prompt_file_for_centre(centre) == "gwalior_nagar_seva_system.txt"
+    text = system_instruction(centre, "hi")
+    assert "NAGAR SEVA" in text.upper() or "Nagar Seva Sahayika" in text
+    assert "MPMKVVCL" in text
+    assert "Swami Vivekanand" in text or "ward 29" in text.lower()
+    assert "NEVER invent, guess, or speak any number" in text
+    assert "NS-GWL-" in text
+    kick = kickoff_text(centre, "hi")
+    assert "Nagar Seva" in kick
+    assert "Hindi or English" in kick
+    assert "Do NOT ask Hindi or English" not in kick
 
 
 def test_jan_sunwai_v3_prompt_loads():
@@ -115,3 +149,67 @@ def test_jan_sunwai_v3_prompt_loads():
     assert "Rajatalab" in text
     assert "confirm name" in text.lower() or "CONFIRM" in text
     assert "Never claim documents were already explained" in text
+
+
+def test_guddi_talk_prompt_is_speech_only():
+    centre = KioskCentre(
+        slug="barwani-guddi-v4",
+        name="Guddi Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_talk_system.txt",
+    )
+    assert is_guddi_talk(centre)
+    text = system_instruction_talk(centre, "hi")
+    assert "गुड्डी दीदी" in text
+    assert "finish_lesson" in text
+    assert "केला" in text
+    assert "ला-ल" in text
+    assert "पी-ला" in text
+    assert "show_word_card" not in text
+    assert "show_picture" not in text
+    kick = kickoff_text_talk(centre, "hi")
+    assert "Guddi didi" in kick
+    assert "three topics" in kick
+
+
+def test_guddi_v5_prompt_is_speech_only():
+    centre = KioskCentre(
+        slug="barwani-guddi-v5",
+        name="Guddi v5 Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_v5_talk_system.txt",
+    )
+    assert is_guddi_v5(centre)
+    assert not is_guddi_talk(centre)
+    text = system_instruction_v5(centre, "hi")
+    assert "शब्द" in text
+    assert "कहानी" in text
+    assert "के-ला" in text
+    assert "show_picture" not in text
+    assert "show_word_card" not in text
+    assert "PRONUNCIATION: you teach" not in text
+    kick = kickoff_text_v5(centre, "hi")
+    assert "शब्द" in kick
+    assert "कहानी" in kick
+
+
+def test_guddi_v6_prompt_is_speech_only():
+    centre = KioskCentre(
+        slug="barwani-guddi-v6",
+        name="Guddi v6 Hindi Seekho",
+        centre_kind="talk",
+        prompt_file="guddi_v6_talk_system.txt",
+    )
+    assert is_guddi_v6(centre)
+    assert not is_guddi_talk(centre)
+    assert not is_guddi_v5(centre)
+    text = system_instruction_v6(centre, "hi")
+    assert "शब्द" in text
+    assert "कहानी" in text
+    assert "बोलो — केला" in text
+    assert "show_picture" not in text
+    assert "show_word_card" not in text
+    assert "PRONUNCIATION: you teach" not in text
+    kick = kickoff_text_v6(centre, "hi")
+    assert "शब्द" in kick
+    assert "कहानी" in kick

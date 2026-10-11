@@ -11,10 +11,30 @@ from app.kiosk.vocabulary import words_for_topic
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 _BARWANI_PROMPT_KEY = "barwani_jan_sunwai"
 _JAN_SUNWAI_V3_PROMPT_KEY = "jan_sunwai_v3_system.txt"
+_GUDDI_TALK_PROMPT_KEY = "guddi_talk_system.txt"
+_GUDDI_V5_PROMPT_KEY = "guddi_v5_talk_system.txt"
+_GUDDI_V6_PROMPT_KEY = "guddi_v6_talk_system.txt"
+_GWALIOR_NAGAR_SEVA_PROMPT_KEY = "gwalior_nagar_seva_system.txt"
 
 
 def is_jan_sunwai_v3(centre: KioskCentre) -> bool:
     return prompt_file_for_centre(centre) == _JAN_SUNWAI_V3_PROMPT_KEY
+
+
+def is_guddi_talk(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _GUDDI_TALK_PROMPT_KEY
+
+
+def is_guddi_v5(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _GUDDI_V5_PROMPT_KEY
+
+
+def is_guddi_v6(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _GUDDI_V6_PROMPT_KEY
+
+
+def is_gwalior_nagar_seva(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _GWALIOR_NAGAR_SEVA_PROMPT_KEY
 
 
 def _load_embedded_prompt(module_name: str, attr: str) -> str:
@@ -118,6 +138,25 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
             "Never voice the ID — tell the citizen they can get it from the parchi or counter."
             + _GRIEVANCE_CLOSE_RUNTIME
         )
+    if is_gwalior_nagar_seva(centre):
+        return (
+            "\n\nAsk exactly ONE question per turn, then wait for the answer. "
+            "Greet in Hindi first: disclose you are AI, privacy line, and that "
+            "shikayat darj karna muft hai; offer Hindi or English. "
+            "They may register a new complaint, mention an old complaint number, "
+            "or ask brief information — adapt to what they need. "
+            "When speaking Hindi, use Devanagari script for everything you say aloud "
+            "— it is shown live on the kiosk screen. "
+            "When speaking English, use English on screen (do not transliterate). "
+            "CRITICAL — COMPLAINT NUMBER: You do NOT know any complaint number during "
+            "this call. NEVER invent, guess, or speak any number "
+            "(no NS-GWL-, or random digits). "
+            "The system assigns the official number only after the citizen ends the call; "
+            "it appears on the result screen. "
+            "Never claim a receipt was printed, SMS sent, or live status checked. "
+            "Mandatory confirm-back once before goodbye."
+            + _GRIEVANCE_CLOSE_RUNTIME
+        )
     lang = _language_name(language)
     return (
         f"\n\nSpeak only in {lang}. "
@@ -202,12 +241,98 @@ def kickoff_text(centre: KioskCentre, language: str) -> str:
             "offer Hindi or English, then invite them to register their problem. "
             "Do not wait for further instructions."
         )
+    if is_gwalior_nagar_seva(centre):
+        return (
+            f"The citizen is now at the Nagar Seva kiosk for {centre.name}. "
+            "Greet warmly in Hindi (Section S1): disclose you are AI, privacy and "
+            "muft shikayat line, offer Hindi or English, then ask whether they want "
+            "a new complaint, to mention an old complaint number, or brief information. "
+            "If they already describe a problem, start intake immediately. "
+            "Do not wait for further instructions."
+        )
     lang = _language_name(language)
     return (
         f"The citizen is now at the kiosk for {centre.name}. "
         f"Greet them warmly in {lang} only. "
         "Do NOT ask Hindi or English — begin intake immediately. "
         "Do not wait for further instructions."
+    )
+
+
+_GUDDI_TALK_RUNTIME = (
+    "\n\nSay at most two short Hindi sentences, then stop and wait for the child. "
+    "Speak only in Hindi. Use Devanagari for everything you say aloud — it is shown "
+    "live as chat text. "
+    "This is voice only: no picture, no word card, no screen button, and no printer. "
+    "Never describe pointing at a screen. "
+    "Never ask the child's name, age, village, or family. "
+    "PRONUNCIATION: you teach the sound of EVERY word in EVERY topic, not only "
+    "the examples. If the child says the current target with the wrong sound or "
+    "drops a sound, do NOT go to the next word. Praise the try, then split THAT "
+    "word with a hyphen and teach one piece per turn (लाल → ला-ल, पीला → पी-ला, "
+    "केला → के-ला, and the same shape for गाय, नाक, रोटी, numbers, clothes, "
+    "actions, and every other pool word). Never model their wrong sound. Never "
+    "say गलत. After the pieces, invite the whole word once, then move on. "
+    "After the spoken goodbye, call finish_lesson exactly once. "
+    "Never repeat the closing, never keep talking after goodbye, never speak tool "
+    "names, and never speak a learning-outcome or score."
+)
+
+
+def system_instruction_talk(centre: KioskCentre, language: str) -> str:
+    base = _load_base_prompt(centre)
+    lang = _language_name(language)
+    return base + _GUDDI_TALK_RUNTIME + f"\nSpeak only in {lang}."
+
+
+def kickoff_text_talk(centre: KioskCentre, language: str) -> str:
+    lang = _language_name(language)
+    return (
+        f"A child is now at the Hindi kiosk for {centre.name}. "
+        f"You speak first, in {lang}. "
+        "Greet them as Guddi didi, say you will learn new Hindi words today, "
+        "then offer exactly three topics for them to say aloud. "
+        "Do not wait for further instructions."
+    )
+
+
+def system_instruction_v5(centre: KioskCentre, language: str) -> str:
+    base = _load_base_prompt(centre)
+    lang = _language_name(language)
+    return base + f"\nSpeak only in {lang}."
+
+
+def kickoff_text_v5(centre: KioskCentre, language: str) -> str:
+    lang = _language_name(language)
+    return (
+        f"A child is now at the Hindi kiosk for {centre.name}. "
+        f"You speak first, in {lang}. "
+        "Greet them as Guddi didi, then offer a word lesson (शब्द) or a story "
+        "(कहानी) by voice. Do not wait for further instructions."
+    )
+
+
+_GUDDI_V6_CLOSE = (
+    "\n\nSay at most two short Hindi sentences, then stop and wait. "
+    "The goodbye is one turn only: ताली, then बाय-बाय, then finish_lesson. "
+    "After the first बाय-बाय say nothing else. Never repeat the goodbye, "
+    "the refrain, or the सीख. Never ask how the story felt."
+)
+
+
+def system_instruction_v6(centre: KioskCentre, language: str) -> str:
+    base = _load_base_prompt(centre)
+    lang = _language_name(language)
+    return base + _GUDDI_V6_CLOSE + f"\nSpeak only in {lang}."
+
+
+def kickoff_text_v6(centre: KioskCentre, language: str) -> str:
+    lang = _language_name(language)
+    return (
+        f"A child is now at the Hindi kiosk for {centre.name}. "
+        f"You speak first, in {lang}. "
+        "Greet them as Guddi didi, then offer a word lesson (शब्द) or a story "
+        "(कहानी) by voice. Do not wait for further instructions."
     )
 
 

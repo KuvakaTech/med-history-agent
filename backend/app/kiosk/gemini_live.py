@@ -182,6 +182,34 @@ class LiveEvent:
     handle: str = ""
 
 
+def talk_tools() -> list[Tool]:
+    """Speech-only Guddi — same single end-of-call tool shape as Jan Sunwai."""
+    return [
+        Tool(
+            function_declarations=[
+                FunctionDeclaration(
+                    name="finish_lesson",
+                    description=(
+                        "Call ONCE immediately after the spoken goodbye (बाय-बाय). "
+                        "Do not repeat the closing and do not speak any learning record. "
+                        "Also call if the child wants to stop."
+                    ),
+                    parameters=Schema(
+                        type=Type.OBJECT,
+                        properties={
+                            "reason": Schema(
+                                type=Type.STRING,
+                                description="Why the lesson is ending",
+                            ),
+                        },
+                        required=["reason"],
+                    ),
+                )
+            ]
+        )
+    ]
+
+
 def lesson_tools() -> list[Tool]:
     return [
         Tool(

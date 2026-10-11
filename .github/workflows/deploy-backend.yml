@@ -72,8 +72,10 @@ jobs:
           set -euo pipefail
           ssh() { gcloud compute ssh "${REMOTE_USER}@${INSTANCE}" --project="$PROJECT" --zone="$ZONE" --command="$1"; }
 
-          echo "==> Pulling latest main"
-          ssh "cd $REMOTE_DIR && git pull origin main"
+          echo "==> Checking out latest main"
+          # The VM checkout can diverge from GitHub (local commits). A plain
+          # pull then fails on newer git. Deploy must match origin/main.
+          ssh "cd $REMOTE_DIR && git fetch origin main && git reset --hard origin/main"
 
           echo "==> Building backend image"
           ssh "cd $REMOTE_DIR && sudo docker compose build backend"

@@ -29,7 +29,7 @@ class CreateCentreRequest(BaseModel):
     slug: str
     name: str
     default_language: str = "hi"
-    centre_kind: Literal["grievance", "learning"] = "grievance"
+    centre_kind: Literal["grievance", "learning", "talk"] = "grievance"
     prompt_file: Optional[str] = None
     complaint_prefix: Optional[str] = None
 
@@ -312,8 +312,8 @@ async def get_session_detail(
 
     centre = await centre_store.get(session.centre_id)
     kind = centre_kind_for(centre) if centre else "grievance"
-    agent_label = "गुड्डी" if kind == "learning" else "AI सहायक"
-    user_label = "बच्चा" if kind == "learning" else "आप"
+    agent_label = "गुड्डी" if kind in ("learning", "talk") else "AI सहायक"
+    user_label = "बच्चा" if kind in ("learning", "talk") else "आप"
     transcript_lines = _transcript_lines(session)
     full_transcript = format_transcript(session.transcript).strip() or None
     if full_transcript:

@@ -115,6 +115,18 @@ def test_nagar_nigam_extract_prompt():
     assert "pvvnl_electricity_bill" in prompt
 
 
+def test_gwalior_nagar_seva_extract_prompt():
+    centre = KioskCentre(slug="gwalior-nagar-seva", name="Gwalior Nagar Seva")
+    prompt = _extract_prompt_for_centre(centre)
+    assert "Gwalior Nagar Seva" in prompt
+    assert "jal_praday_water" in prompt
+    assert "MPMKVVCL" in prompt
+    assert "out_of_scope" in prompt
+    assert "route_to" in prompt
+    assert "PVVNL" not in prompt
+    assert "Sadar" not in prompt
+
+
 def test_barwani_jan_sunwai_extract_prompt():
     centre = KioskCentre(
         slug="barwani-jan-sunwai",

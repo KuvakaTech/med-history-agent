@@ -101,11 +101,13 @@ export interface StartSessionResponse {
   lesson_topic?: string | null;
 }
 
+export type CentreKind = "grievance" | "learning" | "talk";
+
 export interface CentreResponse {
   slug: string;
   name: string;
   default_language: string;
-  centre_kind: "grievance" | "learning";
+  centre_kind: CentreKind;
 }
 
 export interface KioskTranscriptEntry {
@@ -115,7 +117,7 @@ export interface KioskTranscriptEntry {
 
 export interface SessionResultResponse {
   session_id: string;
-  centre_kind: "grievance" | "learning";
+  centre_kind: CentreKind;
   complaint_number?: string | null;
   session_type?: string | null;
   print_mode?: string | null;
@@ -188,6 +190,14 @@ export function isLearningSlug(slug: string): boolean {
   return slug === "barwani-guddi";
 }
 
+export function isGuddiTalkSlug(slug: string): boolean {
+  return (
+    slug === "barwani-guddi-v4" ||
+    slug === "barwani-guddi-v5" ||
+    slug === "barwani-guddi-v6"
+  );
+}
+
 export function isJanSunwaiSlug(slug: string): boolean {
   return slug === "varanasi-jan-sunwai" || slug === "varanasi-jan-sunwai-v3";
 }
@@ -198,4 +208,17 @@ export function isJanSunwaiV3Slug(slug: string): boolean {
 
 export function isBarwaniJanSunwaiSlug(slug: string): boolean {
   return slug === "barwani-jan-sunwai";
+}
+
+export function isVaranasiNagarNigamSlug(slug: string): boolean {
+  return slug === "varanasi-nagar-nigam";
+}
+
+export function isGwaliorNagarSevaSlug(slug: string): boolean {
+  return slug === "gwalior-nagar-seva";
+}
+
+/** Grievance kiosks run by a municipal corporation (Nagar Nigam / Nagar Seva). */
+export function isMunicipalGrievanceSlug(slug: string): boolean {
+  return isVaranasiNagarNigamSlug(slug) || isGwaliorNagarSevaSlug(slug);
 }

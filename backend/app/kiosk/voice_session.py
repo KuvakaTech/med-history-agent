@@ -22,18 +22,35 @@ from app.kiosk.gemini_live import (
     complaint_tools,
     lesson_tools,
     sanitize_agent_transcript,
+    talk_tools,
 )
+from app.kiosk.guddi_talk_extract import run_guddi_talk_extract
+from app.kiosk.guddi_v5_extract import run_guddi_v5_extract
+from app.kiosk.guddi_v6_extract import run_guddi_v6_extract
 from app.kiosk.hindi_display import to_devanagari_display
 from app.kiosk.learning_engine import LearningEngine, agent_invites_repeat
 from app.kiosk.learning_extract import run_learning_extract
-from app.kiosk.models import KioskCentre, KioskSession, KioskTranscriptEntry, centre_kind_for
+from app.kiosk.models import (
+    KioskCentre,
+    KioskSession,
+    KioskTranscriptEntry,
+    centre_kind_for,
+)
 from app.kiosk.post_call_extract import run_post_call_extract
 from app.kiosk.prompts import (
+    is_guddi_v5,
+    is_guddi_v6,
     is_jan_sunwai_v3,
     kickoff_text,
     kickoff_text_learning,
+    kickoff_text_talk,
+    kickoff_text_v5,
+    kickoff_text_v6,
     system_instruction,
     system_instruction_learning,
+    system_instruction_talk,
+    system_instruction_v5,
+    system_instruction_v6,
 )
 from app.kiosk.session_store import kiosk_session_store
 from app.kiosk.vocabulary import get_word_for_lesson
@@ -52,6 +69,25 @@ _TOOL_LEAK_RE = re.compile(
     r"call:finish_(?:complaint|lesson)\{.*?(?:\}|$)",
     re.IGNORECASE | re.DOTALL,
 )
+
+
+_GOODBYE_RE = re.compile(r"(?:बाय-बाय|बाय बाय|bye-bye|bye bye)", re.IGNORECASE)
+
+
+def _looks_like_guddi_talk_closing(text: str) -> bool:
+    return _GOODBYE_RE.search(text or "") is not None
+
+
+def _cut_at_first_goodbye(text: str) -> str:
+    """Keep speech through the first goodbye. Drop a repeated close."""
+    match = _GOODBYE_RE.search(text or "")
+    if match is None:
+        return text
+    end = match.end()
+    punct = re.match(r"\s*[.!?।]+", text[end:])
+    if punct:
+        end += punct.end()
+    return text[:end].strip()
 
 
 def _looks_like_grievance_closing(text: str) -> bool:
@@ -137,8 +173,15 @@ class KioskVoiceSession:
         self.centre = centre
         self.ws = ws
         self._live_factory = live_factory or GeminiLiveSession
-        self._is_learning = centre_kind_for(centre) == "learning"
-        self._finish_tool = "finish_lesson" if self._is_learning else "finish_complaint"
+        kind = centre_kind_for(centre)
+        self._is_learning = kind == "learning"
+        self._is_talk = kind == "talk"
+        self._is_v5 = is_guddi_v5(centre)
+        self._is_v6 = is_guddi_v6(centre)
+        self._goodbye_cut = False
+        self._finish_tool = (
+            "finish_lesson" if self._is_learning or self._is_talk else "finish_complaint"
+        )
         self._stopped = asyncio.Event()
         self._audio_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self._transcript_q: asyncio.Queue[KioskTranscriptEntry] = asyncio.Queue()
@@ -223,7 +266,19 @@ class KioskVoiceSession:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def _run_voice_phase(self) -> None:
-        if self._is_learning:
+        if self._is_talk:
+            await self._send(ev.lesson_started(self.session.session_id, self.session.language))
+            if self._is_v6:
+                instruction = system_instruction_v6(self.centre, self.session.language)
+                kickoff = kickoff_text_v6(self.centre, self.session.language)
+            elif self._is_v5:
+                instruction = system_instruction_v5(self.centre, self.session.language)
+                kickoff = kickoff_text_v5(self.centre, self.session.language)
+            else:
+                instruction = system_instruction_talk(self.centre, self.session.language)
+                kickoff = kickoff_text_talk(self.centre, self.session.language)
+            tools = talk_tools()
+        elif self._is_learning:
             await self._send(ev.lesson_started(self.session.session_id, self.session.language))
             instruction = system_instruction_learning(
                 self.centre,
@@ -340,6 +395,8 @@ class KioskVoiceSession:
         elif event.kind == "user_transcript_final":
             await self._handle_user_transcript_final(event.text)
         elif event.kind == "agent_audio_chunk":
+            if self._goodbye_cut:
+                return
             self._agent_playing = True
             b64 = base64.b64encode(event.audio).decode("ascii")
             await self._send(ev.agent_audio_chunk(b64))
@@ -347,12 +404,14 @@ class KioskVoiceSession:
             text = sanitize_agent_transcript(event.text)
             if not text:
                 return
+            text = await self._stop_after_goodbye(text)
             display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
         elif event.kind == "agent_transcript_final":
             text = sanitize_agent_transcript(event.text)
             if not text:
                 return
+            text = await self._stop_after_goodbye(text)
             self._enqueue_transcript("agent", text)
             display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
@@ -419,6 +478,9 @@ class KioskVoiceSession:
                 self._answer_attempts = 0
                 self._last_answer_result = None
             return
+        if self._is_talk:
+            await self._maybe_auto_finish_on_guddi_close(text)
+            return
         await self._maybe_auto_finish_on_closing(text)
 
     def _request_finish(self) -> None:
@@ -446,6 +508,30 @@ class KioskVoiceSession:
                 self.session.session_id,
             )
             self._complete_finish_phase()
+
+    async def _stop_after_goodbye(self, text: str) -> str:
+        """If she keeps talking after बाय-बाय, keep the first goodbye only."""
+        if not self._is_talk or not _looks_like_guddi_talk_closing(text):
+            return text
+        cut = _cut_at_first_goodbye(text)
+        if self._goodbye_cut:
+            return cut
+        repeated = len(cut) < len(text.strip())
+        self._goodbye_cut = True
+        if repeated:
+            await self._send(ev.interrupt())
+        self._request_finish()
+        return cut
+
+    async def _maybe_auto_finish_on_guddi_close(self, text: str) -> None:
+        if self._phase_done.is_set() or self._finish_pending:
+            return
+        if _TOOL_LEAK_RE.search(text) or _looks_like_guddi_talk_closing(text):
+            log.info(
+                "kiosk auto-finish on Guddi goodbye for %s",
+                self.session.session_id,
+            )
+            self._request_finish()
 
     async def _maybe_auto_finish_on_closing(self, text: str) -> None:
         if self._phase_done.is_set() or self._finish_pending:
@@ -782,7 +868,14 @@ class KioskVoiceSession:
         if self._learning_engine is not None:
             self._persist_lesson_snapshot()
         try:
-            if self._is_learning:
+            if self._is_talk:
+                if self._is_v6:
+                    await run_guddi_v6_extract(self.session, self.centre)
+                elif self._is_v5:
+                    await run_guddi_v5_extract(self.session, self.centre)
+                else:
+                    await run_guddi_talk_extract(self.session, self.centre)
+            elif self._is_learning:
                 await run_learning_extract(self.session, self.centre)
             else:
                 await run_post_call_extract(self.session, self.centre)
@@ -796,7 +889,7 @@ class KioskVoiceSession:
             await self._send(ev.session_partial(self.session.session_id))
             return
 
-        if self._is_learning:
+        if self._is_learning or self._is_talk:
             record = (
                 self.session.learning_record.model_dump(mode="json")
                 if self.session.learning_record
