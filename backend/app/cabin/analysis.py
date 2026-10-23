@@ -169,6 +169,7 @@ async def attribute_roles(
         temperature=0.0,
         fast=True,
         max_tokens=512,
+        provider="legacy",
     )
     return result  # type: ignore[return-value]
 
@@ -192,6 +193,7 @@ async def extract_panel_delta(
         system=PANEL_SYSTEM_PROMPT,
         fast=True,
         max_tokens=settings.CABIN_PANEL_MAX_TOKENS,
+        provider="legacy",
     )
     return result  # type: ignore[return-value]
 
@@ -217,6 +219,7 @@ async def reconcile_panel(
         system=RECONCILE_SYSTEM_PROMPT,
         fast=True,
         max_tokens=settings.CABIN_PANEL_RECONCILE_MAX_TOKENS,
+        provider="legacy",
     )
     return result  # type: ignore[return-value]
 
@@ -239,6 +242,7 @@ async def suggest(panel: ClinicalPanel, utterances: list[Utterance]) -> LiveSugg
         system=SUGGEST_SYSTEM_PROMPT,
         fast=False,
         max_tokens=settings.CABIN_SUGGEST_MAX_TOKENS,
+        provider="legacy",
     )
     return result  # type: ignore[return-value]
 

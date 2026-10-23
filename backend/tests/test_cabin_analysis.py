@@ -207,6 +207,7 @@ async def test_panel_extraction_only_sees_new_utterances():
     prompt = mock.await_args.args[0]
     assert "mujhe bukhar hai" in prompt
     assert "headache" in prompt, "the panel so far must still anchor the extraction"
+    assert mock.await_args.kwargs["provider"] == "legacy"
     assert (
         mock.await_args.kwargs["fast"] is True
     ), "extraction must stay on the cheap model"
@@ -254,6 +255,7 @@ async def test_suggest_reads_the_panel_not_the_whole_transcript():
         mock.await_args.kwargs["fast"] is False
     ), "suggestions are the one call worth Sonnet"
     assert mock.await_args.kwargs["max_tokens"] == settings.CABIN_SUGGEST_MAX_TOKENS
+    assert mock.await_args.kwargs["provider"] == "legacy"
 
 
 @pytest.mark.asyncio
@@ -270,6 +272,7 @@ async def test_attribute_roles_window_is_bounded():
     assert "utterance-29" in prompt
     assert "utterance-21" not in prompt
     assert mock.await_args.kwargs["temperature"] == 0.0
+    assert mock.await_args.kwargs["provider"] == "legacy"
 
 
 def test_render_utterances_labels_roles_and_skips_blanks():
@@ -330,6 +333,7 @@ async def test_reconcile_reads_the_whole_transcript():
         mock.await_args.kwargs["max_tokens"]
         == settings.CABIN_PANEL_RECONCILE_MAX_TOKENS
     )
+    assert mock.await_args.kwargs["provider"] == "legacy"
 
 
 @pytest.mark.asyncio

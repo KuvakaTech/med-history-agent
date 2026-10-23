@@ -179,6 +179,7 @@ async def test_detect_gaps_never_receives_the_transcript():
     async def fake_structured(prompt, schema, **kwargs):
         captured["prompt"] = prompt
         captured["fast"] = kwargs.get("fast")
+        captured["provider"] = kwargs.get("provider")
         return GapAlerts()
 
     with patch("app.cabin.gaps.llm.complete_structured", new=fake_structured):
@@ -189,6 +190,7 @@ async def test_detect_gaps_never_receives_the_transcript():
     assert "Any chest pain?" in captured["prompt"]
     assert "Type 2 diabetes" in captured["prompt"]
     assert captured["fast"] is True, "gap checks belong on the cheap tier"
+    assert captured["provider"] == "legacy"
 
 
 def test_gap_key_normalises_for_dedupe():

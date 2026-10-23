@@ -13,7 +13,10 @@ from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
-LlmProvider = Literal["default", "anthropic"]
+LlmProvider = Literal["default", "anthropic", "legacy"]
+
+# August cabin fallback. Not settings.GROQ_MODEL — that is the current default chain.
+LEGACY_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 def _extract_json(text: str, schema: Type[BaseModel]) -> BaseModel:
@@ -75,6 +78,7 @@ async def complete_structured(
     """Structured completion returning a validated Pydantic model.
 
     Default: Groq → Gemini. Pass provider=\"anthropic\" for post-call extract only.
+    Pass provider=\"legacy\" for cabin only: Claude, then llama-3.3-70b-versatile.
     """
     if provider == "anthropic":
         if settings.ANTHROPIC_API_KEY:
@@ -92,6 +96,35 @@ async def complete_structured(
                 log.warning(
                     "Anthropic structured failed (%s), falling back to Gemini", exc
                 )
+        return await _gemini_structured(
+            prompt, schema, temperature, fast=fast, max_tokens=max_tokens
+        )
+
+    if provider == "legacy":
+        if settings.ANTHROPIC_API_KEY:
+            try:
+                return await _anthropic_structured(
+                    prompt,
+                    schema,
+                    system,
+                    temperature,
+                    fast=fast,
+                    max_tokens=max_tokens,
+                    model=model,
+                )
+            except Exception as exc:
+                log.warning(
+                    "Anthropic structured failed (%s), falling back to Groq", exc
+                )
+        if settings.GROQ_API_KEY:
+            return await _groq_structured(
+                prompt,
+                schema,
+                system,
+                temperature,
+                max_tokens=max_tokens,
+                model=LEGACY_GROQ_MODEL,
+            )
         return await _gemini_structured(
             prompt, schema, temperature, fast=fast, max_tokens=max_tokens
         )
@@ -141,11 +174,11 @@ async def stream_complete(
 # Groq  (OpenAI-compatible)
 # ─────────────────────────────────────────────
 
-def _record_groq(data: dict) -> None:
+def _record_groq(data: dict, model: str | None = None) -> None:
     u = (data or {}).get("usage") or {}
     usage.record(
         "groq",
-        settings.GROQ_MODEL,
+        model or settings.GROQ_MODEL,
         u.get("prompt_tokens", 0) or 0,
         u.get("completion_tokens", 0) or 0,
     )
@@ -192,10 +225,17 @@ async def _groq_complete(prompt: str, system: str, temperature: float, max_token
 
 
 async def _groq_structured(
-    prompt: str, schema: Type[BaseModel], system: str, temperature: float, max_tokens: int = 512
+    prompt: str,
+    schema: Type[BaseModel],
+    system: str,
+    temperature: float,
+    max_tokens: int = 512,
+    *,
+    model: str | None = None,
 ) -> BaseModel:
     import httpx
 
+    groq_model = model or settings.GROQ_MODEL
     # json_object mode requires the word "JSON" in the conversation and works across
     # Groq-hosted models, unlike tool calling; the schema goes in the system prompt.
     schema_instruction = (
@@ -216,7 +256,7 @@ async def _groq_structured(
                 "Content-Type": "application/json",
             },
             json={
-                "model": settings.GROQ_MODEL,
+                "model": groq_model,
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
@@ -225,7 +265,7 @@ async def _groq_structured(
         )
         response.raise_for_status()
         data = response.json()
-        _record_groq(data)
+        _record_groq(data, groq_model)
         return _extract_json(data["choices"][0]["message"]["content"], schema)
 
 
