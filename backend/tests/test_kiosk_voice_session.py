@@ -14,6 +14,7 @@ from app.kiosk.models import KioskCentre, KioskSession
 from app.kiosk.voice_session import (
     KioskVoiceSession,
     _cut_at_first_goodbye,
+    _cut_repeated_receipt_close,
     _looks_like_grievance_closing,
     _looks_like_guddi_talk_closing,
 )
@@ -704,6 +705,25 @@ def test_looks_like_grievance_closing():
         "Dhanyavaad ji. Rasid sambhaal kar rakhiye. Shikayat ki koi fees nahi hai."
     )
     assert _looks_like_grievance_closing(gwalior)
+
+
+def test_cut_repeated_receipt_close():
+    once = "धन्यवाद जी। रसीद संभाल कर रखिये। शिकायत की कोई फीस नहीं है।"
+    assert _cut_repeated_receipt_close(once) == once
+    doubled = (
+        "धन्यवाद जी। रसीद संभाल कर रखिये। शिकायत की कोई फीस नहीं है।"
+        "धन्यवाद जी। रसीद संभाल कर रखिये। शिकायत ."
+    )
+    assert _cut_repeated_receipt_close(doubled) == once
+    mixed = (
+        "धन्यवाद जी। रसीद संभाल कर रखिए, शिकायत की कोई फीस नहीं है। "
+        "आपकी शिकायत दर्ज हो गई है.धन्यवाद जी. रसीद संभाल कर रखिये. "
+        "शिकायत की कोई फीस नहीं है.धन्यवाद जी. रसीद संभाल"
+    )
+    cut = _cut_repeated_receipt_close(mixed)
+    assert cut.count("धन्यवाद") == 1
+    assert "दर्ज" not in cut
+    assert cut.endswith("है।")
 
 
 @pytest.mark.asyncio

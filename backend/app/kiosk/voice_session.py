@@ -90,6 +90,30 @@ def _cut_at_first_goodbye(text: str) -> str:
     return text[:end].strip()
 
 
+# First Gwalior receipt close, allowing रखिये/रखिए and ।/. between the parts.
+_RECEIPT_CLOSE_RE = re.compile(
+    r"(?:धन्यवाद|dhanyavaad|dhanyawad).{0,120}?"
+    r"(?:रसीद|rasid).{0,120}?"
+    r"(?:फीस\s*नहीं|फीस\s*नही|fees\s*nahi)(?:\s*है|\s*hai)?",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _cut_repeated_receipt_close(text: str) -> str:
+    """Keep one receipt goodbye. Drop a second copy glued on after it."""
+    raw = text or ""
+    match = _RECEIPT_CLOSE_RE.search(raw)
+    if match is None:
+        return raw
+    end = match.end()
+    punct = re.match(r"\s*[.!?।]+", raw[end:])
+    if punct:
+        end += punct.end()
+    if not raw[end:].strip():
+        return raw
+    return raw[:end].strip()
+
+
 def _looks_like_grievance_closing(text: str) -> bool:
     low = (text or "").lower()
     thanked = any(
@@ -412,6 +436,7 @@ class KioskVoiceSession:
             if not text:
                 return
             text = await self._stop_after_goodbye(text)
+            text = await self._stop_repeated_receipt_close(text)
             display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
         elif event.kind == "agent_transcript_final":
@@ -419,6 +444,7 @@ class KioskVoiceSession:
             if not text:
                 return
             text = await self._stop_after_goodbye(text)
+            text = await self._stop_repeated_receipt_close(text)
             self._enqueue_transcript("agent", text)
             display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
@@ -526,6 +552,19 @@ class KioskVoiceSession:
         repeated = len(cut) < len(text.strip())
         self._goodbye_cut = True
         if repeated:
+            await self._send(ev.interrupt())
+        self._request_finish()
+        return cut
+
+    async def _stop_repeated_receipt_close(self, text: str) -> str:
+        """Drop a second Gwalior receipt close glued onto the first."""
+        if self._is_talk or self._is_learning:
+            return text
+        cut = _cut_repeated_receipt_close(text)
+        if cut == text:
+            return text
+        if not self._goodbye_cut:
+            self._goodbye_cut = True
             await self._send(ev.interrupt())
         self._request_finish()
         return cut
