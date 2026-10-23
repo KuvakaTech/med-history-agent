@@ -700,6 +700,10 @@ def test_looks_like_grievance_closing():
     )
     assert _looks_like_grievance_closing(closing)
     assert not _looks_like_grievance_closing("आपका नाम क्या है?")
+    gwalior = (
+        "Dhanyavaad ji. Rasid sambhaal kar rakhiye. Shikayat ki koi fees nahi hai."
+    )
+    assert _looks_like_grievance_closing(gwalior)
 
 
 @pytest.mark.asyncio

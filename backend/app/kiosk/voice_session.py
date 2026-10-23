@@ -119,6 +119,12 @@ def _looks_like_grievance_closing(text: str) -> bool:
             "print ho raha",
             "ghar par",
             "aaram se dekh",
+            "rasid",
+            "रसीद",
+            "fees nahi",
+            "फीस नहीं",
+            "sambhaal",
+            "संभाल",
         )
     )
 

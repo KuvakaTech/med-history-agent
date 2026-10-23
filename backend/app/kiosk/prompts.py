@@ -172,8 +172,9 @@ def _grievance_runtime(
             "The system assigns the official number only after the citizen ends the call; "
             "it appears on the result screen. "
             "Never claim a receipt was printed, SMS sent, or live status checked. "
-            "Mandatory confirm-back once. Then one goodbye, then call finish_complaint "
-            "once. Never repeat the closing and never speak tool names aloud. "
+            "Mandatory confirm-back once. Then say the S11 close exactly once and "
+            "call finish_complaint in that same turn. Do not say the close again "
+            "and do not add another goodbye. Never speak tool names aloud. "
             + _relation_question(gender)
         )
     lang = _language_name(language)
