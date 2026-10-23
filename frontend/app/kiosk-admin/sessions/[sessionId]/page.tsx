@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { kioskAdminApi } from "@/lib/kiosk-admin-api";
 import type { KioskAdminSessionDetail, KioskCentre } from "@/lib/kiosk-admin-types";
+import { isTicketCentre } from "@/lib/kiosk-tickets";
+import KioskTicketAssignment from "@/components/KioskTicketAssignment";
 import { getToken } from "@/lib/api";
 import clsx from "clsx";
 
@@ -55,6 +57,8 @@ export default function KioskAdminSessionPage() {
   const [error, setError] = useState("");
   const [userRole, setUserRole] = useState("");
   const [centres, setCentres] = useState<KioskCentre[]>([]);
+  const [centre, setCentre] = useState<KioskCentre | null>(null);
+  const [adminName, setAdminName] = useState("");
   const [copied, setCopied] = useState("");
 
   useEffect(() => {
@@ -81,9 +85,15 @@ export default function KioskAdminSessionPage() {
           return;
         }
         setUserRole(role);
+        setAdminName(payload.name || payload.email || "Admin");
         if (role === "super_admin") {
           await kioskAdminApi.listCentres(t).then((r) => setCentres(r.centres));
         }
+        // Needed for the slug — the session payload only carries the centre name.
+        await kioskAdminApi
+          .getCurrentCentre(t, role === "super_admin" ? centreIdParam : null)
+          .then(setCentre)
+          .catch(() => setCentre(null));
         await loadSession(t, role);
       })
       .catch((e) => {
@@ -118,6 +128,7 @@ export default function KioskAdminSessionPage() {
   }, [session?.status, session?.session_id, userRole, loadSession]);
 
   const sessionCentre = centres.find((c) => c.centre_id === session?.centre_id);
+  const isTicketDesk = isTicketCentre(centre ?? sessionCentre);
   const isLearning =
     session?.centre_kind === "learning" ||
     session?.centre_kind === "talk" ||
@@ -210,6 +221,10 @@ export default function KioskAdminSessionPage() {
             {session.status === "active" ? " · live transcript updates" : ""}
           </span>
         </div>
+
+        {isTicketDesk && !isLearning && (
+          <KioskTicketAssignment session={session} currentUser={adminName} />
+        )}
 
         {lr && (
           <div className="bg-white rounded-2xl border border-pink-100 shadow-sm divide-y divide-gray-100">

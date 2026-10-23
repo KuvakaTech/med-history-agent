@@ -74,17 +74,41 @@ function ResultPageInner() {
   }, []);
 
   useEffect(() => {
-    ticketApi
-      .getResult(slug, sessionId)
-      .then(setResult)
-      .catch((e) => {
-        if (e.message === "kiosk_locked") {
-          router.replace(`/checkin/${slug}/start`);
-          return;
-        }
-        setError(e.message);
-      })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 8;
+
+    const load = () => {
+      ticketApi
+        .getResult(slug, sessionId)
+        .then((data) => {
+          if (cancelled) return;
+          setResult(data);
+          setLoading(false);
+          if (
+            data.status === "completed" &&
+            !data.summary &&
+            attempts < maxAttempts - 1
+          ) {
+            attempts += 1;
+            window.setTimeout(load, 3000);
+          }
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          if (e.message === "kiosk_locked") {
+            router.replace(`/checkin/${slug}/start`);
+            return;
+          }
+          setError(e.message);
+          setLoading(false);
+        });
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [slug, sessionId, router]);
 
   // Auto-print the receipt after a 5s countdown, only when landing here fresh
@@ -319,7 +343,8 @@ function ResultPageInner() {
 
         {!result.summary && result.status === "completed" && (
           <div className="card text-sm text-gray-500 text-center py-8">
-            Summary is being processed. Please refresh in a moment.
+            Clinical summary is still generating… this page will update automatically.
+            If it stays empty, ask staff to check backend logs for SOAP summarization errors.
           </div>
         )}
 

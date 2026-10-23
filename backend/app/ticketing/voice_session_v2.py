@@ -290,6 +290,7 @@ class TicketVoiceSessionV2:
             age=self._patient_age,
             gender=self.session.gender,
             routing_summary=self._routing_summary,
+            category_key=self._category_key,
         )
         self._phase_done = asyncio.Event()
         self._user_turns_this_phase = 0

@@ -2,29 +2,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { TicketVoiceWS, getKioskToken, ticketApi } from "@/lib/ticketing-api";
-import type { TicketCategory, TicketFlag, TicketWSEvent } from "@/lib/ticketing-types";
+import { DEPARTMENT_LABELS_HI, type TicketCategory, type TicketFlag, type TicketWSEvent } from "@/lib/ticketing-types";
 import clsx from "clsx";
 
 // ── State machine ─────────────────────────────────────────────
 type Phase = "connecting" | "triage" | "category_select" | "consultation" | "processing" | "done" | "error";
-
-const CATEGORY_LABELS_HI: Record<string, string> = {
-  general_medicine: "सामान्य चिकित्सा",
-  gynecology: "स्त्री रोग / प्रसूति",
-  pediatrics: "बाल रोग",
-  orthopedics: "अस्थि रोग",
-  cardiology: "हृदय रोग",
-  dermatology: "त्वचा रोग",
-  ent: "कान, नाक, गला",
-  ophthalmology: "नेत्र रोग",
-  psychiatry: "मनोरोग / मानसिक स्वास्थ्य",
-  gastroenterology: "पेट एवं आंत रोग",
-  neurology: "न्यूरोलॉजी (मस्तिष्क व तंत्रिका)",
-  urology: "मूत्र रोग",
-  oncology: "कैंसर रोग",
-  endocrinology: "अंतःस्रावी रोग / मधुमेह",
-  pulmonology: "फेफड़े एवं श्वास रोग",
-};
 
 interface CallState {
   phase: Phase;
@@ -318,7 +300,7 @@ export default function CallPage() {
                   className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-gray-200 bg-white py-8 px-4 text-center transition-all active:scale-95 hover:border-brand/40 hover:text-brand"
                 >
                   <span className="text-base font-semibold text-gray-800">
-                    {CATEGORY_LABELS_HI[cat.key] ?? cat.label}
+                    {DEPARTMENT_LABELS_HI[cat.key] ?? cat.label}
                   </span>
                   <span className="text-xs font-normal text-gray-400">{cat.label}</span>
                 </button>

@@ -6,6 +6,7 @@ from typing import Optional
 
 import bcrypt
 
+from app.ticketing.intake_locale import normalize_kiosk_language
 from app.ticketing.models import (
     DEFAULT_CATEGORIES,
     Hospital,
@@ -129,6 +130,28 @@ class HospitalStore:
                 _mongo_write_failed = True
         return hospital
 
+    async def set_default_language(
+        self, hospital_id: str, default_language: str
+    ) -> Optional[Hospital]:
+        global _mongo_write_failed
+        lang = normalize_kiosk_language(default_language)
+        hospital = await self.get(hospital_id)
+        if not hospital:
+            return None
+        hospital.default_language = lang
+        doc = hospital.model_dump(mode="json")
+        _mem_hospitals[hospital_id] = doc
+        if not _mongo_write_failed:
+            try:
+                await _hospitals_col().update_one(
+                    {"hospital_id": hospital_id},
+                    {"$set": {"default_language": lang}},
+                )
+            except Exception as exc:
+                log.warning("Hospital default_language write failed: %s", exc)
+                _mongo_write_failed = True
+        return hospital
+
     @staticmethod
     def verify_kiosk_pin(hospital: Hospital, pin: str) -> bool:
         if not hospital.kiosk_pin_hash:
@@ -150,6 +173,25 @@ class HospitalStore:
             except Exception as exc:
                 log.warning("Category write failed: %s", exc)
         return cat
+
+    async def ensure_default_categories(self, hospital_id: str) -> int:
+        """Backfill any DEFAULT_CATEGORIES missing for an existing hospital."""
+        existing = await self.list_categories(hospital_id, active_only=False)
+        have = {c.key for c in existing}
+        added = 0
+        for key, label in DEFAULT_CATEGORIES:
+            if key in have:
+                continue
+            await self.create_category(
+                TicketCategory(
+                    hospital_id=hospital_id,
+                    key=key,
+                    label=label,
+                    active=True,
+                )
+            )
+            added += 1
+        return added
 
     async def list_categories(
         self, hospital_id: str, active_only: bool = True

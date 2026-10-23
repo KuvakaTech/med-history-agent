@@ -7,9 +7,19 @@ Department is never asked; it is inferred and reported via finish_triage.
 
 from __future__ import annotations
 
+from app.ticketing.category_playbooks import (
+    consultation_supplement,
+    triage_routing_block,
+)
 from app.ticketing.consultation_engine import (
     MAX_CONSULTATION_TURNS,
     MIN_CONSULTATION_TURNS,
+)
+from app.ticketing.intake_locale import (
+    consultation_voice_persona,
+    triage_department_question_ban,
+    triage_intake_field_examples,
+    triage_voice_persona,
 )
 from app.ticketing.triage_engine import MAX_TRIAGE_TURNS, _language_name
 
@@ -25,17 +35,16 @@ def triage_system_instruction(
 ) -> str:
     lang = _language_name(language)
     cat_list = _category_list(categories)
+    routing_hints = triage_routing_block([c.key for c in categories])
+    field_examples = triage_intake_field_examples(language)
+    dept_ban = triage_department_question_ban(language)
     return f"""\
-You are a warm, friendly female AI receptionist at a hospital conducting a brief pre-visit intake over a live voice call. Speak as a woman. In Hindi use feminine verb forms (kartī hūn, pūchh saktī hūn).
+{triage_voice_persona(language)}
 
 Patient gender: {gender}. Speak only in {lang}.
 
 GOAL — in at most {MAX_TRIAGE_TURNS} short exchanges, ONE question at a time, learn:
-  1. The patient's name. If you are not sure you heard it, ask again. When you have a name, state it back as a short check (e.g. "Aapka naam Priya hai, theek hai?") and wait. If they correct it, use the correction. NEVER ask permission to repeat — do not say "kya main ise dohra sakti hoon", "can I repeat that", or similar.
-  2. The patient's age
-  3. The patient's address
-  4. Father's / अभिभावक's name. Ask: "Kya aap apne Pita ya अभिभावक ka naam bata sake hai". Store guardian_name as the name they give. If they decline or do not answer after the retry cap, leave it blank and move on.
-  5. Why they came in today, in enough detail to route them to a department
+{field_examples}
 
 ANTI-LOOP — CRITICAL:
 - If an answer is unclear, silent, or off-topic, ask that SAME question ONE more time.
@@ -44,10 +53,11 @@ ANTI-LOOP — CRITICAL:
 
 INTERNAL DEPARTMENTS (never read this list aloud, never ask the patient to pick one):
 {cat_list}
+{routing_hints}
 
 RULES:
 - Ask ONE short question per turn. Conversational, not a form.
-- NEVER ask "which department do you need?" / "किस विभाग में जाना चाहती हैं?" or similar.
+- {dept_ban}
 - NEVER re-ask something they already clearly gave AND confirmed.
 - After a greeting, ask their name. State the name back (do not ask if you may repeat it). Then age. Then address. Then father's / अभिभावक's name. Then why they came.
 - Call finish_triage only after those identity fields have been asked or skipped AND you have a reason, OR you have reached {MAX_TRIAGE_TURNS} patient answers.
@@ -67,15 +77,17 @@ def consultation_system_instruction(
     age: str,
     gender: str,
     routing_summary: str,
+    category_key: str | None = None,
 ) -> str:
     lang = _language_name(language)
+    dept_extra = consultation_supplement(category_key)
     complaint_block = (
         f"Routing summary from reception (already collected — do NOT re-ask 'what brings you in'):\n  {routing_summary}"
         if routing_summary.strip()
         else "Chief complaint is not yet known — start by asking what the main problem is."
     )
     return f"""\
-You are a junior clinical screener — a female medical AI assistant taking pre-consultation history BEFORE the patient meets the {category_label} physician. This is a live voice call. Speak as a woman. In Hindi use feminine verb forms.
+{consultation_voice_persona(language)} You are taking history BEFORE the patient meets the {category_label} physician.
 
 You are NOT replacing the doctor. Gather essential clinical history so the physician can use their time well.
 
@@ -106,6 +118,7 @@ QUESTIONING:
 When all required areas are sufficiently covered, OR you have asked {MAX_CONSULTATION_TURNS} questions, call finish_consultation.
 
 RED FLAGS — notice urgent symptoms (chest pain, severe breathlessness, worst-ever headache, stroke signs, vomiting blood, fainting, allergic swelling, suicidal thoughts, high fever with confusion). Acknowledge briefly and continue the history; do not diagnose. The physician will see the full record after the call.
+{dept_extra}
 """
 
 

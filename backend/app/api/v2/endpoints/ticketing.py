@@ -26,6 +26,7 @@ from app.ticketing import events as ev
 from app.ticketing.hospital_store import hospital_store
 from app.ticketing.models import CASTE_VALUES, VISIT_TYPE_VALUES, TicketSession, hospital_public_dict, to_ist_str
 from app.ticketing.patient_store import ticket_patient_store
+from app.ticketing.post_call_extract import ensure_soap_summary
 from app.ticketing.session_store import ticket_session_store
 from app.ticketing.voice_session import TicketVoiceSession
 
@@ -74,12 +75,14 @@ class UnlockResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     hospital_name: str
+    default_language: str = "hi"
     collect_caste: bool = False
 
 
 class HospitalConfigResponse(BaseModel):
     slug: str
     name: str
+    default_language: str = "hi"
     collect_caste: bool = False
     has_kiosk_pin: bool = False
 
@@ -114,6 +117,7 @@ async def hospital_config(slug: str) -> HospitalConfigResponse:
     return HospitalConfigResponse(
         slug=hospital.slug,
         name=hospital.name,
+        default_language=hospital.default_language or "hi",
         collect_caste=bool(public.get("collect_caste")),
         has_kiosk_pin=bool(public.get("has_kiosk_pin")),
     )
@@ -137,6 +141,7 @@ async def unlock_kiosk(slug: str, payload: UnlockRequest) -> UnlockResponse:
         access_token=token,
         expires_in=settings.TICKETING_KIOSK_TOKEN_HOURS * 3600,
         hospital_name=hospital.name,
+        default_language=hospital.default_language or "hi",
         collect_caste=hospital.collect_caste,
     )
 
@@ -222,6 +227,8 @@ async def get_session_result(
         raise HTTPException(status_code=404, detail="Session not found.")
     if session.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Session not found.")
+
+    session = await ensure_soap_summary(session)
 
     patient = await ticket_patient_store.get(session.patient_id)
     patient_info = None
@@ -325,6 +332,7 @@ async def voice_stream(
         await ws.close(code=1008)
         return
 
+    await hospital_store.ensure_default_categories(hospital.hospital_id)
     categories = await hospital_store.list_categories(
         hospital.hospital_id, active_only=True
     )

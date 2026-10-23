@@ -36,7 +36,15 @@ Transcript:
 
 
 class SummarizationService:
-    async def summarize(self, transcript: str) -> dict:
+    async def summarize(
+        self,
+        transcript: str,
+        *,
+        provider: str = "default",
+        model: str | None = None,
+        max_tokens: int = 2048,
+        output_language: str = "hi",
+    ) -> dict:
         from pydantic import BaseModel
         from typing import Optional
 
@@ -61,8 +69,20 @@ class SummarizationService:
             assessment: Optional[str] = None
             plan: Optional[str] = None
 
-        prompt = SUMMARIZE_PROMPT.format(transcript=transcript)
-        result = await llm.complete_structured(prompt, SOAPNote, max_tokens=2048)
+        lang_note = ""
+        if (output_language or "").lower() == "en":
+            lang_note = (
+                "\n\nWrite the entire SOAP note in English (all section text in English)."
+            )
+        prompt = SUMMARIZE_PROMPT.format(transcript=transcript) + lang_note
+        result = await llm.complete_structured(
+            prompt,
+            SOAPNote,
+            max_tokens=max_tokens,
+            fast=False,
+            provider=provider,  # type: ignore[arg-type]
+            model=model,
+        )
         
         # Return both SOAP note and full transcript
         soap_note = result.model_dump(mode="json")  # type: ignore[union-attr]

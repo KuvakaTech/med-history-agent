@@ -51,6 +51,7 @@ export const ticketApi = {
   ): Promise<{
     slug: string;
     name: string;
+    default_language: string;
     collect_caste: boolean;
     has_kiosk_pin: boolean;
   }> => {
@@ -71,6 +72,7 @@ export const ticketApi = {
     expires_in: number;
     hospital_name: string;
     collect_caste: boolean;
+    default_language?: string;
   }> => {
     const res = await fetch(`${API_V2}/t/${slug}/unlock`, {
       method: "POST",
@@ -189,7 +191,7 @@ export const adminApi = {
 
   setHospitalSettings: (
     token: string,
-    data: { collect_caste: boolean },
+    data: { collect_caste?: boolean; default_language?: string },
     hospital_id?: string | null
   ) => {
     const q = hospital_id ? `?hospital_id=${hospital_id}` : "";

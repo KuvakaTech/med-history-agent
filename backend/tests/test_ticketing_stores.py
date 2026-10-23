@@ -390,6 +390,16 @@ async def test_hospital_create_seeds_default_categories():
     keys = {c.key for c in cats}
     assert "general_medicine" in keys
     assert "gynecology" in keys
+    assert "orthopedics" in keys
+
+
+@pytest.mark.asyncio
+async def test_ensure_default_categories_idempotent_on_fresh_hospital():
+    from app.ticketing.hospital_store import hospital_store
+    h = Hospital(slug="backfill-cat-test", name="Backfill Test")
+    await hospital_store.create(h)
+    assert await hospital_store.ensure_default_categories(h.hospital_id) == 0
+    assert await hospital_store.ensure_default_categories(h.hospital_id) == 0
 
 
 @pytest.mark.asyncio
