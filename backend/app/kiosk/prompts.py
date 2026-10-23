@@ -140,11 +140,12 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
         )
     if is_gwalior_nagar_seva(centre):
         return (
-            "\n\nAsk exactly ONE question per turn, then wait for the answer. "
-            "Greet in Hindi first: disclose you are AI, privacy line, and that "
-            "shikayat darj karna muft hai; offer Hindi or English. "
-            "They may register a new complaint, mention an old complaint number, "
-            "or ask brief information — adapt to what they need. "
+            "\n\nAsk exactly ONE question per turn, at most 20 words, then wait. "
+            "First turn is only the two S1 lines: welcome to the Gwalior Smart City "
+            "Nagar Seva kiosk, then nayi shikayat, purani ka status, ya koi jaankari. "
+            "Do not disclose that you are AI, do not say the privacy line, and do not "
+            "offer Hindi or English at the greeting. English only if they ask. "
+            "Privacy line is once, just before you ask their name. "
             "When speaking Hindi, use Devanagari script for everything you say aloud "
             "— it is shown live on the kiosk screen. "
             "When speaking English, use English on screen (do not transliterate). "
@@ -154,8 +155,8 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
             "The system assigns the official number only after the citizen ends the call; "
             "it appears on the result screen. "
             "Never claim a receipt was printed, SMS sent, or live status checked. "
-            "Mandatory confirm-back once before goodbye."
-            + _GRIEVANCE_CLOSE_RUNTIME
+            "Mandatory confirm-back once. Then one goodbye, then call finish_complaint "
+            "once. Never repeat the closing and never speak tool names aloud."
         )
     lang = _language_name(language)
     return (
@@ -244,11 +245,11 @@ def kickoff_text(centre: KioskCentre, language: str) -> str:
     if is_gwalior_nagar_seva(centre):
         return (
             f"The citizen is now at the Nagar Seva kiosk for {centre.name}. "
-            "Greet warmly in Hindi (Section S1): disclose you are AI, privacy and "
-            "muft shikayat line, offer Hindi or English, then ask whether they want "
-            "a new complaint, to mention an old complaint number, or brief information. "
-            "If they already describe a problem, start intake immediately. "
-            "Do not wait for further instructions."
+            "Say only: Namaste ji. Gwalior Smart City ke Nagar Seva kiosk mein "
+            "swaagat hai. Then: Bataiye — nayi shikayat, purani ka status, ya koi "
+            "jaankari? Do not disclose you are AI, do not give the privacy line, "
+            "and do not offer Hindi or English. If they already describe a problem, "
+            "start intake immediately. Do not wait for further instructions."
         )
     lang = _language_name(language)
     return (

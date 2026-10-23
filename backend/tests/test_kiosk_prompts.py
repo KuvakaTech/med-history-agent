@@ -111,15 +111,20 @@ def test_gwalior_nagar_seva_prompt_loads():
     )
     assert prompt_file_for_centre(centre) == "gwalior_nagar_seva_system.txt"
     text = system_instruction(centre, "hi")
-    assert "NAGAR SEVA" in text.upper() or "Nagar Seva Sahayika" in text
+    assert "Nagar Seva Sahayika" in text
+    assert "Gwalior Smart City" in text
+    assert "at most 20 words" in text
     assert "MPMKVVCL" in text
     assert "Swami Vivekanand" in text or "ward 29" in text.lower()
     assert "NEVER invent, guess, or speak any number" in text
     assert "NS-GWL-" in text
+    assert "Yeh kiosk kiska hai" in text
     kick = kickoff_text(centre, "hi")
     assert "Nagar Seva" in kick
-    assert "Hindi or English" in kick
-    assert "Do NOT ask Hindi or English" not in kick
+    assert "Gwalior Smart City" in kick
+    assert "nayi shikayat" in kick
+    assert "do not offer Hindi or English" in kick
+    assert "Do not disclose you are AI" in kick
 
 
 def test_jan_sunwai_v3_prompt_loads():
