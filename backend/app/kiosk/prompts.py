@@ -101,7 +101,23 @@ _JAN_SUNWAI_V3_CLOSE_RUNTIME = (
 )
 
 
-def _grievance_runtime(centre: KioskCentre, language: str) -> str:
+def _relation_question(gender: str | None) -> str:
+    if (gender or "").strip().lower() == "male":
+        return (
+            'SCREEN GENDER: male. Relation question, say exactly: '
+            '"Pita ji ka naam bata dijiye ji." Do not say pati.'
+        )
+    return (
+        'SCREEN GENDER: female. Relation question, say exactly: '
+        '"Pita ji ya pati ka naam?"'
+    )
+
+
+def _grievance_runtime(
+    centre: KioskCentre,
+    language: str,
+    gender: str | None = None,
+) -> str:
     if is_jan_sunwai_v3(centre):
         return (
             "\n\nAsk exactly ONE question per turn, then wait for the answer. "
@@ -141,8 +157,9 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
     if is_gwalior_nagar_seva(centre):
         return (
             "\n\nAsk exactly ONE question per turn, at most 20 words, then wait. "
-            "First turn is only the two S1 lines: welcome to the Gwalior Smart City "
-            "Nagar Seva kiosk, then nayi shikayat, purani ka status, ya koi jaankari. "
+            "The S1 welcome is the exception: say it in full. "
+            "First turn is only: Namaste ji. Gwalior Smart City ke Nagar Seva kiosk "
+            "mein swaagat hai? Bataiye mai apki kya seva kar sakti hu. "
             "Do not disclose that you are AI, do not say the privacy line, and do not "
             "offer Hindi or English at the greeting. English only if they ask. "
             "Privacy line is once, just before you ask their name. "
@@ -156,7 +173,8 @@ def _grievance_runtime(centre: KioskCentre, language: str) -> str:
             "it appears on the result screen. "
             "Never claim a receipt was printed, SMS sent, or live status checked. "
             "Mandatory confirm-back once. Then one goodbye, then call finish_complaint "
-            "once. Never repeat the closing and never speak tool names aloud."
+            "once. Never repeat the closing and never speak tool names aloud. "
+            + _relation_question(gender)
         )
     lang = _language_name(language)
     return (
@@ -178,9 +196,10 @@ def system_instruction(
     centre: KioskCentre,
     language: str,
     phone_on_record: str | None = None,
+    gender: str | None = None,
 ) -> str:
     base = _load_base_prompt(centre)
-    runtime = _grievance_runtime(centre, language)
+    runtime = _grievance_runtime(centre, language, gender=gender)
     phone_note = ""
     if phone_on_record:
         phone_note = (
@@ -246,8 +265,8 @@ def kickoff_text(centre: KioskCentre, language: str) -> str:
         return (
             f"The citizen is now at the Nagar Seva kiosk for {centre.name}. "
             "Say only: Namaste ji. Gwalior Smart City ke Nagar Seva kiosk mein "
-            "swaagat hai. Then: Bataiye — nayi shikayat, purani ka status, ya koi "
-            "jaankari? Do not disclose you are AI, do not give the privacy line, "
+            "swaagat hai? Bataiye mai apki kya seva kar sakti hu. "
+            "Do not disclose you are AI, do not give the privacy line, "
             "and do not offer Hindi or English. If they already describe a problem, "
             "start intake immediately. Do not wait for further instructions."
         )

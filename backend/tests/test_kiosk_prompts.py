@@ -122,9 +122,24 @@ def test_gwalior_nagar_seva_prompt_loads():
     kick = kickoff_text(centre, "hi")
     assert "Nagar Seva" in kick
     assert "Gwalior Smart City" in kick
-    assert "nayi shikayat" in kick
+    assert "Bataiye mai apki kya seva kar sakti hu" in kick
     assert "do not offer Hindi or English" in kick
     assert "Do not disclose you are AI" in kick
+
+
+def test_gwalior_relation_question_follows_screen_gender():
+    centre = KioskCentre(
+        slug="gwalior-nagar-seva",
+        name="Gwalior Nagar Seva",
+        prompt_file="gwalior_nagar_seva_system.txt",
+    )
+    male = system_instruction(centre, "hi", gender="male").split("SCREEN GENDER:", 1)[1]
+    assert "Pita ji ka naam bata dijiye ji." in male
+    assert "ya pati" not in male
+    female = system_instruction(centre, "hi", gender="female").split("SCREEN GENDER:", 1)[1]
+    assert "Pita ji ya pati ka naam?" in female
+    unknown = system_instruction(centre, "hi").split("SCREEN GENDER:", 1)[1]
+    assert "Pita ji ya pati ka naam?" in unknown
 
 
 def test_jan_sunwai_v3_prompt_loads():

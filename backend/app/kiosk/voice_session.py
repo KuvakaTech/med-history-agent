@@ -301,6 +301,7 @@ class KioskVoiceSession:
                 self.centre,
                 self.session.language,
                 phone_on_record=self.session.phone,
+                gender=self.session.gender,
             )
             tools = complaint_tools(v3=is_jan_sunwai_v3(self.centre))
             kickoff = kickoff_text(self.centre, self.session.language)
