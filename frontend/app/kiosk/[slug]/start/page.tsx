@@ -40,7 +40,7 @@ function usePageTitle(slug: string) {
     if (isVaranasiNagarNigamSlug(slug)) {
       document.title = "Varanasi Nagar Nigam";
     } else if (isGwaliorNagarSevaSlug(slug)) {
-      document.title = "Gwalior Nagar Seva";
+      document.title = "Gwalior Smart City";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
@@ -389,8 +389,8 @@ function GrievanceStart({
         </div>
       ) : isGwaliorNagarSevaSlug(slug) ? (
         <div className="flex flex-col self-start leading-tight">
-          <span className="text-xl font-extrabold text-orange-600">ग्वालियर नगर सेवा</span>
-          <span className="text-xs font-bold text-orange-500 tracking-widest">NAGAR PALIK NIGAM GWALIOR</span>
+          <span className="text-xl font-extrabold text-orange-600">ग्वालियर स्मार्ट सिटी</span>
+          <span className="text-xs font-bold text-orange-500 tracking-widest">GWALIOR SMART CITY</span>
         </div>
       ) : isJanSunwaiSlug(slug) ? (
         <div className="flex flex-col self-start leading-tight">

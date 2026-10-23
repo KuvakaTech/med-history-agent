@@ -22,8 +22,8 @@ const CARDS = [
     icon: "🏛️",
   },
   {
-    title: "Gwalior Nagar Seva",
-    sub: "Nagar Palik Nigam Gwalior civic kiosk",
+    title: "Gwalior Smart City",
+    sub: "Nagar Seva civic kiosk",
     href: "/kiosk/gwalior-nagar-seva/start",
     icon: "🏛️",
   },

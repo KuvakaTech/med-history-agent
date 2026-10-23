@@ -192,7 +192,7 @@ export default function KioskCallPage() {
     if (isVaranasiNagarNigamSlug(slug)) {
       document.title = "Varanasi Nagar Nigam";
     } else if (isGwaliorNagarSevaSlug(slug)) {
-      document.title = "Gwalior Nagar Seva";
+      document.title = "Gwalior Smart City";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
@@ -306,7 +306,7 @@ export default function KioskCallPage() {
           ) : isVaranasiNagarNigamSlug(slug) ? (
             <span className="text-sm font-extrabold text-orange-600">वाराणसी नगर निगम</span>
           ) : isGwaliorNagarSevaSlug(slug) ? (
-            <span className="text-sm font-extrabold text-orange-600">ग्वालियर नगर सेवा</span>
+            <span className="text-sm font-extrabold text-orange-600">ग्वालियर स्मार्ट सिटी</span>
           ) : isJanSunwaiSlug(slug) ? (
             <span className="text-sm font-extrabold text-orange-600">वाराणसी जन सुनवाई</span>
           ) : isBarwaniJanSunwaiSlug(slug) ? (
