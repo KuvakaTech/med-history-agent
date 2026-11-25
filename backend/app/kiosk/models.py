@@ -55,6 +55,11 @@ _SLUG_DEFAULTS: dict[str, dict[str, str]] = {
         "complaint_prefix": "JS-VNS",
         "centre_kind": "grievance",
     },
+    "betul-jan-sunwai": {
+        "prompt_file": "betul_jan_sunwai_system.txt",
+        "complaint_prefix": "JS-BTL",
+        "centre_kind": "grievance",
+    },
     "barwani-jan-sunwai": {
         "prompt_file": "barwani_jan_sunwai",
         "complaint_prefix": "JS-BWN",

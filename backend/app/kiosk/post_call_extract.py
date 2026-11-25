@@ -284,6 +284,10 @@ def _is_v3_centre(centre: KioskCentre) -> bool:
     return prompt_file_for_centre(centre) == "jan_sunwai_v3_system.txt"
 
 
+def _is_betul_centre(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == "betul_jan_sunwai_system.txt"
+
+
 def _ist_now() -> datetime:
     return datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
 
@@ -330,7 +334,11 @@ def _addressed_to_from_record(data: dict[str, Any]) -> Optional[dict[str, str]]:
     return None
 
 
-def _addressed_to_from_extract(extracted: JanSunwaiV3MetaExtract) -> Optional[dict[str, str]]:
+def _addressed_to_from_extract(
+    extracted: JanSunwaiV3MetaExtract,
+    *,
+    default_location: str = "जनपद वाराणसी",
+) -> Optional[dict[str, str]]:
     if not any(
         (
             extracted.addressed_to_officer,
@@ -342,7 +350,7 @@ def _addressed_to_from_extract(extracted: JanSunwaiV3MetaExtract) -> Optional[di
     return {
         "officer": extracted.addressed_to_officer or "",
         "office": extracted.addressed_to_office or "",
-        "location": extracted.addressed_to_location or "जनपद वाराणसी",
+        "location": extracted.addressed_to_location or default_location,
     }
 
 
@@ -384,9 +392,12 @@ def _grievance_from_v3_extract(
     session_type: str,
     print_mode: str,
     print_text: Optional[str],
+    *,
+    default_location: str = "जनपद वाराणसी",
 ) -> GrievanceRecord:
     addressed_to = _addressed_to_from_record(record or {}) or _addressed_to_from_extract(
-        extracted
+        extracted,
+        default_location=default_location,
     )
     residential = _address_from_extract("residential", extracted)
     complaint_addr = None
@@ -463,6 +474,7 @@ _DEPARTMENT_HINDI: dict[str, str] = {
     "employment": "रोजगार",
     "agriculture": "कृषि",
     "certificates": "प्रमाण पत्र",
+    "forest_tribal": "वन / जनजातीय",
     "out_of_scope": "अन्य / बाह्य",
     "other": "अन्य",
     "to_be_assigned": "निर्धारित होना शेष",
@@ -737,6 +749,347 @@ def _address_from_extract(prefix: str, data: GrievanceExtract) -> GrievanceAddre
     )
 
 
+_BETUL_META_EXTRACT_PROMPT = """\
+Extract a structured Betul Jan Sunwai kiosk record from this voice transcript.
+District: Betul, Madhya Pradesh. Do not use Varanasi offices, tehsils, or addressees.
+
+The kiosk has these outputs:
+- COMPLAINT (session_type=complaint): print_mode MUST be application_letter.
+- INFORMATION (session_type=information): the answer is in the knowledge base;
+  print_mode MUST be info_sheet.
+- FLOW C / unknown answer (session_type=information_request): print_mode MUST be
+  info_request_sheet. The department will contact the citizen on the registered mobile.
+- MIXED (actionable grievance + information question): session_type=mixed;
+  print_mode MUST be application_letter.
+
+Rules:
+- Use ONLY what is explicitly said. Do not invent facts, documents, officers, khasra, fees, or IDs.
+- Do NOT generate the printable letter body here — only structured fields.
+- Phone was captured at intake — do not extract phone from transcript, and never print it.
+- Never extract Aadhaar, bank account, OTP, or passwords.
+- urgency: "urgent" for emergencies, safety threats, land grab/threat, wildlife in the village,
+  self-harm; else "normal".
+- department_tag: health, water, electricity, road, ration, land_revenue, pension_welfare,
+  sanitation, education, police_safety, employment, agriculture, certificates, forest_tribal,
+  out_of_scope, other, to_be_assigned.
+- addressed_to_officer, addressed_to_office, addressed_to_location: competent officer for
+  Mode A letters. Location is जिला बैतूल. Null officer/office for a pure info sheet.
+- documents_to_attach_or_required: only documents that were discussed.
+- category_details: tehsil and block from Betul, Multai, Amla, Bhainsdehi, Athner, Shahpur,
+  Ghoradongri, Chicholi, Bhimpur, Prabhat Pattan; ward or gram panchayat; revenue/land fields
+  (khasra, b1_khata, rakba); out_of_scope; route_to; callback_required true for complaint
+  and information_request, false for a fully answered information session.
+- out_of_scope matters (RTI, civil sub-judice, government-employee service) →
+  department_tag out_of_scope + category_details.out_of_scope=true.
+
+Transcript:
+{transcript}
+"""
+
+_BETUL_LETTER_PROMPT = """\
+Write the FULL one-page A4 printable document for a Betul Jan Sunwai kiosk session.
+
+Document type: {doc_kind}
+Header must be: जन सुनवाई, जिला प्रशासन बैतूल (म.प्र.)
+Use शुद्ध सरकारी हिंदी for application_letter; simple clear Hindi for info_sheet
+and info_request_sheet. The document is ALWAYS Hindi, even if the citizen spoke Marathi.
+Follow Section 13.2 (letter) or 13.3 (info sheet) from the Betul Jan Sunwai spec.
+For application_letter, address the competent officer and include
+"द्वारा: जनसुनवाई, कलेक्टर कार्यालय, जिला बैतूल" plus the numbered संलग्नक list
+from documents_to_attach_or_required.
+For info_request_sheet, keep the question and replace the answer, document list,
+and where-to-go with: आपका प्रश्न दर्ज कर लिया गया है। संबंधित विभाग आपके पंजीकृत
+मोबाइल नंबर पर संपर्क करेगा। Include name and address. Do not print the mobile number.
+Leave {{DATE}} and {{TIME}} as literal tokens — the system fills them later.
+NEVER include any complaint number, reference ID, tracking number, or mobile number.
+NEVER mention वाराणसी or Varanasi.
+
+Use ONLY facts from the structured record and transcript below. Do not invent khasra, fees,
+officers, or documents not mentioned.
+
+Structured record (JSON):
+{record_json}
+
+Transcript:
+{transcript}
+
+Output ONLY the printable document text. No JSON, no markdown fences, no commentary.
+"""
+
+
+def _resolve_betul_modes(
+    session: KioskSession,
+    extracted: JanSunwaiV3MetaExtract,
+    record: Optional[dict[str, Any]],
+) -> tuple[str, str]:
+    session_type = (
+        (record or {}).get("session_type")
+        or session.finish_session_type
+        or extracted.session_type
+        or "complaint"
+    )
+    print_mode = (
+        (record or {}).get("print_mode")
+        or session.finish_print_mode
+        or extracted.print_mode
+        or "application_letter"
+    )
+    session_type = str(session_type).strip().lower()
+    print_mode = str(print_mode).strip().lower()
+    if session_type == "mixed":
+        print_mode = "application_letter"
+    elif session_type == "information_request":
+        print_mode = "info_request_sheet"
+    elif session_type == "information" and print_mode == "application_letter":
+        print_mode = "info_sheet"
+    allowed = ("application_letter", "info_sheet", "info_request_sheet", "none")
+    if print_mode not in allowed:
+        if session_type in ("complaint", "mixed"):
+            print_mode = "application_letter"
+        elif session_type == "information_request":
+            print_mode = "info_request_sheet"
+        else:
+            print_mode = "info_sheet"
+    return session_type, print_mode
+
+
+def _betul_needs_printable(print_mode: str) -> bool:
+    return print_mode in ("application_letter", "info_sheet", "info_request_sheet")
+
+
+def template_betul_print_document(
+    extracted: JanSunwaiV3MetaExtract,
+    print_mode: str,
+) -> str:
+    """Deterministic Betul Section 13 fallback when LLM document generation fails."""
+    if print_mode == "info_request_sheet":
+        return _template_betul_info_request(extracted)
+    if print_mode == "info_sheet":
+        return _template_betul_info_sheet(extracted)
+    return _template_betul_application_letter(extracted)
+
+
+def _template_betul_application_letter(extracted: JanSunwaiV3MetaExtract) -> str:
+    name = _blank_line(extracted.full_name)
+    father = _blank_line(extracted.father_guardian_name)
+    address = _format_residential_line(extracted)
+    officer = _blank_line(extracted.addressed_to_officer, "संबंधित अधिकारी")
+    office = _blank_line(extracted.addressed_to_office, "संबंधित कार्यालय")
+    location = _blank_line(extracted.addressed_to_location, "जिला बैतूल")
+    subject = (
+        extracted.confirmed_summary
+        or extracted.chief_complaint_or_query
+        or extracted.verbatim_problem
+        or extracted.narrative
+        or "शिकायत के संबंध में"
+    )
+    facts = (
+        extracted.narrative
+        or extracted.verbatim_problem
+        or extracted.confirmed_summary
+        or extracted.chief_complaint_or_query
+        or "_______________"
+    )
+    prayer = extracted.desired_outcome or "संबंधित विभाग से उचित कार्यवाही की जाए।"
+    docs = extracted.documents_to_attach_or_required or ["संबंधित दस्तावेज़"]
+    dept = _department_hindi(extracted.department_tag)
+    attachments = _numbered_lines(list(docs), "संबंधित दस्तावेज़")
+    return f"""                 जन सुनवाई, जिला प्रशासन बैतूल (म.प्र.)
+      दिनांक: {{{{DATE}}}}        समय: {{{{TIME}}}}
+      विभाग: {dept}     प्रकृति: शिकायत / प्रार्थना पत्र
+
+सेवा में,
+        श्रीमान {officer} महोदय,
+        {office}, {location}
+        द्वारा: जनसुनवाई, कलेक्टर कार्यालय, जिला बैतूल
+
+विषय : {subject}।
+
+महोदय,
+        सविनय निवेदन है कि मैं {name}, पुत्र/पुत्री श्री {father},
+निवासी {address}, जिला बैतूल का निवासी/निवासिनी हूँ। {facts}
+
+        अतः महोदय से सविनय निवेदन है कि {prayer}
+
+                                              प्रार्थी,
+                                              नाम : {name}
+                                              पिता/पति : {father}
+                                              पता : {address}
+                                              हस्ताक्षर / अंगूठा निशानी : ....................
+
+संलग्नक (साथ लगाए जाने वाले दस्तावेज़) :
+{attachments}"""
+
+
+def _template_betul_info_sheet(extracted: JanSunwaiV3MetaExtract) -> str:
+    name = _blank_line(extracted.full_name, "")
+    question = (
+        extracted.chief_complaint_or_query
+        or extracted.confirmed_summary
+        or extracted.verbatim_problem
+        or extracted.narrative
+        or "_______________"
+    )
+    answer = (
+        extracted.narrative
+        or extracted.confirmed_summary
+        or extracted.desired_outcome
+        or "कृपया संबंधित कार्यालय में संपर्क करें।"
+    )
+    docs = extracted.documents_to_attach_or_required or ["पहचान पत्र", "संबंधित आवेदन/प्रपत्र"]
+    route = (
+        extracted.addressed_to_office
+        or (extracted.category_details or {}).get("route_to")
+        or "लोक सेवा केंद्र, जिला बैतूल"
+    )
+    dept = _department_hindi(extracted.department_tag)
+    name_line = f"      नाम: {name}          " if name else "      "
+    doc_lines = _numbered_lines(list(docs), "संबंधित दस्तावेज़")
+    return f"""                 जन सुनवाई, जिला प्रशासन बैतूल (म.प्र.)
+      दिनांक: {{{{DATE}}}}        समय: {{{{TIME}}}}
+{name_line}विषय-क्षेत्र: {dept}
+
+आपका प्रश्न : {question}
+
+संक्षिप्त उत्तर : {answer}
+
+आवश्यक दस्तावेज़ / प्रक्रिया :
+{doc_lines}
+
+कहाँ जाएँ / कैसे करें : {route}
+
+नोट : शुल्क व समय-सीमा संबंधित कार्यालय पर पुष्टि कर लें।"""
+
+
+def _template_betul_info_request(extracted: JanSunwaiV3MetaExtract) -> str:
+    name = _blank_line(extracted.full_name)
+    address = _format_residential_line(extracted)
+    question = (
+        extracted.chief_complaint_or_query
+        or extracted.confirmed_summary
+        or extracted.verbatim_problem
+        or extracted.narrative
+        or "_______________"
+    )
+    dept = _department_hindi(extracted.department_tag)
+    return f"""                 जन सुनवाई, जिला प्रशासन बैतूल (म.प्र.)
+      दिनांक: {{{{DATE}}}}        समय: {{{{TIME}}}}
+      नाम: {name}          विषय-क्षेत्र: {dept}
+      पता: {address}
+
+आपका प्रश्न : {question}
+
+आपका प्रश्न दर्ज कर लिया गया है। संबंधित विभाग आपके पंजीकृत मोबाइल नंबर पर संपर्क करेगा।"""
+
+
+def _betul_doc_kind(print_mode: str) -> str:
+    if print_mode == "application_letter":
+        return "application_letter (प्रार्थना पत्र / Section 13.2)"
+    if print_mode == "info_request_sheet":
+        return "info_request_sheet (Flow C जानकारी पत्र / Section 13.3)"
+    return "info_sheet (जानकारी पत्र / Section 13.3)"
+
+
+async def _generate_betul_print_document_llm(
+    extracted: JanSunwaiV3MetaExtract,
+    transcript_text: str,
+    print_mode: str,
+) -> Optional[str]:
+    prompt = _BETUL_LETTER_PROMPT.format(
+        doc_kind=_betul_doc_kind(print_mode),
+        record_json=json.dumps(
+            extracted.model_dump(mode="json", exclude_none=True),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        transcript=transcript_text,
+    )
+    try:
+        text = await llm.complete(
+            prompt,
+            fast=False,
+            max_tokens=8192,
+            provider="anthropic",
+            model=settings.KIOSK_POST_CALL_MODEL or None,
+        )
+        cleaned = (text or "").strip()
+        return cleaned or None
+    except Exception as exc:
+        log.warning(
+            "Kiosk Betul print document LLM failed: %s",
+            exc,
+            exc_info=True,
+        )
+        return None
+
+
+async def _run_betul_post_call_extract(
+    session: KioskSession,
+    centre: KioskCentre,
+    transcript_text: str,
+) -> KioskSession:
+    record = parse_jansunwai_record(transcript_text)
+    extracted = JanSunwaiV3MetaExtract()
+    try:
+        extracted = await llm.complete_structured(  # type: ignore[assignment]
+            _BETUL_META_EXTRACT_PROMPT.format(transcript=transcript_text),
+            JanSunwaiV3MetaExtract,
+            fast=False,
+            max_tokens=4096,
+            provider="anthropic",
+            model=settings.KIOSK_POST_CALL_MODEL or None,
+        )
+    except Exception as exc:
+        log.error(
+            "Kiosk Betul post-call meta extract failed for %s: %s",
+            session.session_id,
+            exc,
+            exc_info=True,
+        )
+
+    session_type, print_mode = _resolve_betul_modes(session, extracted, record)
+    print_text: Optional[str] = None
+    if record and record.get("print_document_text"):
+        print_text = str(record["print_document_text"])
+
+    if _betul_needs_printable(print_mode) and not (print_text or "").strip():
+        print_text = await _generate_betul_print_document_llm(
+            extracted, transcript_text, print_mode
+        )
+
+    if _betul_needs_printable(print_mode) and not (print_text or "").strip():
+        print_text = template_betul_print_document(extracted, print_mode)
+
+    print_text = fill_print_placeholders(print_text)
+
+    session.grievance = _grievance_from_v3_extract(
+        extracted,
+        record,
+        session_type,
+        print_mode,
+        print_text,
+        default_location="जिला बैतूल",
+    )
+
+    if _betul_needs_printable(print_mode) and not (print_text or "").strip():
+        session.status = "partial"
+    else:
+        session.status = "completed"
+
+    if print_mode == "application_letter" and session.status == "completed":
+        session.complaint_number = await next_complaint_number(
+            session.centre_id,
+            prefix=complaint_prefix_for_centre(centre),
+        )
+    else:
+        session.complaint_number = None
+
+    session.phase = "result"
+    session.ended_at = datetime.utcnow()
+    await kiosk_session_store.update(session)
+    return session
+
+
 async def run_post_call_extract(
     session: KioskSession,
     centre: KioskCentre,
@@ -748,6 +1101,9 @@ async def run_post_call_extract(
         session.ended_at = datetime.utcnow()
         await kiosk_session_store.update(session)
         return session
+
+    if _is_betul_centre(centre):
+        return await _run_betul_post_call_extract(session, centre, transcript_text)
 
     if _is_v3_centre(centre):
         return await _run_v3_post_call_extract(session, centre, transcript_text)

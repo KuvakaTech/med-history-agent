@@ -5,7 +5,11 @@ import os
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
-from app.kiosk.models import KioskCentre, prompt_file_for_centre
+from app.kiosk.models import (
+    KioskCentre,
+    complaint_prefix_for_centre,
+    prompt_file_for_centre,
+)
 from app.kiosk.prompts import (
     is_guddi_talk,
     is_guddi_v5,
@@ -169,6 +173,26 @@ def test_jan_sunwai_v3_prompt_loads():
     assert "Rajatalab" in text
     assert "confirm name" in text.lower() or "CONFIRM" in text
     assert "Never claim documents were already explained" in text
+
+
+def test_betul_jan_sunwai_prompt_loads():
+    centre = KioskCentre(slug="betul-jan-sunwai", name="Betul Jan Sunwai")
+    assert prompt_file_for_centre(centre) == "betul_jan_sunwai_system.txt"
+    assert complaint_prefix_for_centre(centre) == "JS-BTL"
+    text = system_instruction(centre, "hi", phone_on_record="9876543210")
+    assert "बैतूल" in text
+    assert "info_request_sheet" in text
+    assert "information_request" in text
+    assert "MARATHI" in text
+    assert "actually speaking Marathi" in text
+    assert "Do NOT ask for their name before" in text
+    assert "JS-BTL" in text
+    assert "confirm their full name" not in text.lower()
+    kick = kickoff_text(centre, "hi")
+    assert "Do not ask their name yet" in kick
+    assert "confirm their full name" not in kick.lower()
+    assert "Marathi" in kick
+    assert "language choice" in kick.lower()
 
 
 def test_guddi_talk_prompt_is_speech_only():

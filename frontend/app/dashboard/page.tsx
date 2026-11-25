@@ -16,6 +16,13 @@ const CARDS = [
     icon: "🗣️",
   },
   {
+    title: "Betul Jan Sunwai",
+    sub: "Zila Prashasan Betul",
+    href: "/kiosk/betul-jan-sunwai/start",
+    icon: "🗣️",
+    logo: "/kiosk/betul-logo.svg",
+  },
+  {
     title: "Nagar Nigam",
     sub: "Municipal corporation kiosk",
     href: "/kiosk/varanasi-nagar-nigam/start",
@@ -66,7 +73,12 @@ export default function DashboardPage() {
                 rel="noopener noreferrer"
                 className="card flex flex-col items-center justify-center gap-3 py-12 px-6 text-center border-2 border-gray-200 hover:border-brand/40 hover:shadow-md transition-all active:scale-[0.98]"
               >
-                <span className="text-4xl">{c.icon}</span>
+                {"logo" in c && c.logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={c.logo} alt="" className="h-14 w-14" />
+                ) : (
+                  <span className="text-4xl">{c.icon}</span>
+                )}
                 <div className="space-y-1">
                   <p className="text-lg font-semibold text-gray-900">{c.title}</p>
                   <p className="text-xs text-gray-400">{c.sub}</p>

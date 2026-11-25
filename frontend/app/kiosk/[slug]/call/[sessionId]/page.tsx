@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { BetulLogo } from "@/components/BetulLogo";
 import { KioskVoiceWS, kioskApi } from "@/lib/kiosk-api";
 import type { CentreResponse, KioskWSEvent } from "@/lib/kiosk-types";
 import {
   isBarwaniJanSunwaiSlug,
+  isBetulJanSunwaiSlug,
   isGuddiTalkSlug,
   isGwaliorNagarSevaSlug,
   isJanSunwaiSlug,
@@ -53,18 +55,19 @@ export default function KioskCallPage() {
   const isLearning = !isTalk && (isLearningSlug(slug) || centre?.centre_kind === "learning");
   const isGuddi = isLearning || isTalk;
   const isV3 = isJanSunwaiV3Slug(slug);
+  const isLetterKiosk = isV3 || isBetulJanSunwaiSlug(slug);
   const agentLabel = isGuddi ? "गुड्डी" : "AI सहायक";
   const userLabel = isGuddi ? "बच्चा" : "आप";
   const sessionLabel = isGuddi
     ? "हिंदी सीखना"
-    : isV3
+    : isLetterKiosk
       ? "जन सुनवाई"
       : isGwaliorNagarSevaSlug(slug)
         ? "नगर सेवा"
         : "शिकायत दर्ज";
   const processingLabel = isGuddi
     ? "सीखने का रिकॉर्ड बन रहा है…"
-    : isV3
+    : isLetterKiosk
       ? "आपका दस्तावेज़ तैयार हो रहा है…"
       : "शिकायत दर्ज की जा रही है…";
   const resultQuery = isGuddi ? "" : "?autoprint=1";
@@ -161,7 +164,7 @@ export default function KioskCallPage() {
       case "result_ready":
         void afterPlaybackDrain(() => {
           beginProcessing();
-          if (isV3 && !v3PrintReady(event)) {
+          if (isLetterKiosk && !v3PrintReady(event)) {
             void pollForV3Result();
             return;
           }
@@ -195,6 +198,8 @@ export default function KioskCallPage() {
       document.title = "Gwalior Smart City";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
+    } else if (isBetulJanSunwaiSlug(slug)) {
+      document.title = "बैतूल जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
       document.title = "बड़वानी जन सुनवाई";
     } else if (slug === "barwani-guddi" || isGuddiTalkSlug(slug)) {
@@ -309,6 +314,8 @@ export default function KioskCallPage() {
             <span className="text-sm font-extrabold text-orange-600">ग्वालियर स्मार्ट सिटी</span>
           ) : isJanSunwaiSlug(slug) ? (
             <span className="text-sm font-extrabold text-orange-600">वाराणसी जन सुनवाई</span>
+          ) : isBetulJanSunwaiSlug(slug) ? (
+            <BetulLogo size="sm" />
           ) : isBarwaniJanSunwaiSlug(slug) ? (
             <span className="text-sm font-extrabold text-orange-600">बड़वानी जन सुनवाई</span>
           ) : (

@@ -11,6 +11,7 @@ from app.kiosk.vocabulary import words_for_topic
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 _BARWANI_PROMPT_KEY = "barwani_jan_sunwai"
 _JAN_SUNWAI_V3_PROMPT_KEY = "jan_sunwai_v3_system.txt"
+_BETUL_JAN_SUNWAI_PROMPT_KEY = "betul_jan_sunwai_system.txt"
 _GUDDI_TALK_PROMPT_KEY = "guddi_talk_system.txt"
 _GUDDI_V5_PROMPT_KEY = "guddi_v5_talk_system.txt"
 _GUDDI_V6_PROMPT_KEY = "guddi_v6_talk_system.txt"
@@ -19,6 +20,10 @@ _GWALIOR_NAGAR_SEVA_PROMPT_KEY = "gwalior_nagar_seva_system.txt"
 
 def is_jan_sunwai_v3(centre: KioskCentre) -> bool:
     return prompt_file_for_centre(centre) == _JAN_SUNWAI_V3_PROMPT_KEY
+
+
+def is_betul_jan_sunwai(centre: KioskCentre) -> bool:
+    return prompt_file_for_centre(centre) == _BETUL_JAN_SUNWAI_PROMPT_KEY
 
 
 def is_guddi_talk(centre: KioskCentre) -> bool:
@@ -87,6 +92,22 @@ _GRIEVANCE_CLOSE_RUNTIME = (
     "and never speak tool names aloud."
 )
 
+_BETUL_CLOSE_RUNTIME = (
+    " After your spoken close (Section 15A for a complaint letter, 15B for an "
+    "information sheet, 15C for an unknown question), say goodbye exactly ONCE, "
+    "then immediately call finish_complaint with session_type and print_mode. "
+    "complaint → application_letter; information → info_sheet; "
+    "information_request (Flow C, answer not in Section 11) → info_request_sheet; "
+    "mixed → application_letter. Before calling finish_complaint on a complaint "
+    "or information_request you MUST have confirmed the citizen's name. For a "
+    "letter you MUST have orally enumerated every required document and told them "
+    "to sign it and present it to the officers at today's Jan Sunwai. Never "
+    "repeat the closing, never keep talking after goodbye, never speak tool names "
+    "aloud, and NEVER speak or display the <<<JANSUNWAI_RECORD>>> block — the "
+    "backend builds the printed document after the call. The printed document is "
+    "always Hindi."
+)
+
 _JAN_SUNWAI_V3_CLOSE_RUNTIME = (
     " After your spoken close (Section 15A for a complaint letter, 15B for an "
     "information sheet), say goodbye exactly ONCE, then immediately call "
@@ -118,6 +139,36 @@ def _grievance_runtime(
     language: str,
     gender: str | None = None,
 ) -> str:
+    if is_betul_jan_sunwai(centre):
+        return (
+            "\n\nAsk exactly ONE question per turn, then wait for the answer. "
+            "Greet in Hindi first (Section 2.1): disclose you are AI, say the "
+            "privacy line, then invite a complaint OR an information question. "
+            "Do NOT ask for their name before you know what they need. Name and "
+            "address are required later for a complaint and for Flow C, and "
+            "optional for a pure information answer. "
+            "When speaking Hindi, use Devanagari script for everything you say aloud "
+            "— it is shown live on the kiosk screen. When you switch to simple "
+            "Marathi, use Devanagari for that too. "
+            "MARATHI: this deployment allows simple spoken Marathi. Greet and "
+            "continue in Hindi. Switch to simple Marathi ONLY while the citizen "
+            "is actually speaking Marathi, and switch back to Hindi when they do. "
+            "A Hindi sentence with a few Marathi words (kaay, aahe, nako, bhau) "
+            "does NOT switch the language. Do not offer a Hindi/Marathi choice. "
+            "Do not speak Gondi or Korku. "
+            "The mobile number is already on record — never ask for it, never "
+            "read it aloud, and never print it. "
+            "CRITICAL — COMPLAINT NUMBER: You do NOT know any reference number during "
+            "this call. NEVER invent, guess, or speak any complaint/tracking number "
+            "(no JS-BTL- or random digits). "
+            "The system handles references after the call; never voice or print an ID. "
+            "Decide the mode early (Section 6): complaint → application letter; "
+            "information in the knowledge base → info sheet; question not in "
+            "Section 11 → Flow C information_request and info_request_sheet; "
+            "mixed grievance+question → application_letter only. "
+            "Never invent a document, officer, fee, or outcome."
+            + _BETUL_CLOSE_RUNTIME
+        )
     if is_jan_sunwai_v3(centre):
         return (
             "\n\nAsk exactly ONE question per turn, then wait for the answer. "
@@ -247,6 +298,15 @@ def system_instruction_learning(
 
 
 def kickoff_text(centre: KioskCentre, language: str) -> str:
+    if is_betul_jan_sunwai(centre):
+        return (
+            f"The citizen is now at the kiosk for {centre.name}. "
+            "Greet them warmly in Hindi (Section 2.1): disclose you are AI, "
+            "give the privacy line, then invite either a complaint or an "
+            "information question. Do not ask their name yet. Do not offer a "
+            "language choice. Speak simple Marathi only if they are speaking "
+            "Marathi. Do not wait for further instructions."
+        )
     if is_jan_sunwai_v3(centre):
         return (
             f"The citizen is now at the kiosk for {centre.name}. "

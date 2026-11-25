@@ -38,6 +38,7 @@ from app.kiosk.models import (
 )
 from app.kiosk.post_call_extract import run_post_call_extract
 from app.kiosk.prompts import (
+    is_betul_jan_sunwai,
     is_guddi_v5,
     is_guddi_v6,
     is_jan_sunwai_v3,
@@ -333,7 +334,10 @@ class KioskVoiceSession:
                 phone_on_record=self.session.phone,
                 gender=self.session.gender,
             )
-            tools = complaint_tools(v3=is_jan_sunwai_v3(self.centre))
+            tools = complaint_tools(
+                v3=is_jan_sunwai_v3(self.centre),
+                betul=is_betul_jan_sunwai(self.centre),
+            )
             kickoff = kickoff_text(self.centre, self.session.language)
 
         self._phase_done = asyncio.Event()

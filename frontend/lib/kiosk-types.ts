@@ -206,6 +206,10 @@ export function isJanSunwaiV3Slug(slug: string): boolean {
   return slug === "varanasi-jan-sunwai-v3";
 }
 
+export function isBetulJanSunwaiSlug(slug: string): boolean {
+  return slug === "betul-jan-sunwai";
+}
+
 export function isBarwaniJanSunwaiSlug(slug: string): boolean {
   return slug === "barwani-jan-sunwai";
 }
