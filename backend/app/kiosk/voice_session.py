@@ -115,6 +115,77 @@ def _cut_repeated_receipt_close(text: str) -> str:
     return raw[:end].strip()
 
 
+# A Betul goodbye has already finished if one of these sits before a second close.
+_BETUL_CLOSE_FINISH_RE = re.compile(
+    r"(?:अलविदा|alvida|अब आप जा सकते|ab aap ja sakte|आपका दिन शुभ|din shubh|"
+    r"अपना ख्याल|apna khayal|जन सुनवाई में आने के लिए|jan sunwai mein aane ke liye)",
+    re.IGNORECASE,
+)
+
+# Phrases the model restarts a close with. A second hit, after a finished
+# goodbye, is the repeated ending.
+_BETUL_CLOSE_REPEAT_RES = (
+    re.compile(r"शिकायत दर्ज", re.IGNORECASE),
+    re.compile(r"shikayat darj", re.IGNORECASE),
+    re.compile(r"अब आप जा सकते", re.IGNORECASE),
+    re.compile(r"ab aap ja sakte", re.IGNORECASE),
+    re.compile(r"जन सुनवाई में आने के लिए", re.IGNORECASE),
+    re.compile(r"jan sunwai mein aane ke liye", re.IGNORECASE),
+    re.compile(r"अलविदा", re.IGNORECASE),
+    re.compile(r"alvida", re.IGNORECASE),
+    re.compile(r"ठीक है", re.IGNORECASE),
+    re.compile(r"theek hai", re.IGNORECASE),
+)
+
+
+def _sentence_start(text: str, index: int) -> int:
+    prev = max(
+        text.rfind("।", 0, index),
+        text.rfind(".", 0, index),
+        text.rfind("!", 0, index),
+        text.rfind("?", 0, index),
+    )
+    if prev == -1:
+        return index
+    return prev + 1
+
+
+def _cut_repeated_betul_close(text: str) -> str:
+    """Keep one Betul goodbye. Drop a second close glued on after it."""
+    raw = text or ""
+    cut_at: Optional[int] = None
+    for pattern in _BETUL_CLOSE_REPEAT_RES:
+        matches = list(pattern.finditer(raw))
+        if len(matches) < 2:
+            continue
+        second = matches[1].start()
+        between = raw[matches[0].end() : second]
+        if not re.search(r"[.!?।]", between):
+            continue
+        start = _sentence_start(raw, second)
+        if start <= matches[0].start():
+            continue
+        if _BETUL_CLOSE_FINISH_RE.search(raw[:start]) is None:
+            continue
+        if cut_at is None or start < cut_at:
+            cut_at = start
+    if cut_at is None:
+        return raw
+    return raw[:cut_at].strip()
+
+
+def _looks_like_betul_closing(text: str) -> bool:
+    """Betul closings that must end the call even without धन्यवाद."""
+    if _looks_like_grievance_closing(text):
+        return True
+    low = (text or "").lower()
+    if "अलविदा" in low or "alvida" in low:
+        return True
+    registered = "शिकायत दर्ज" in low or "shikayat darj" in low
+    leaving = "जा सकते" in low or "ja sakte" in low
+    return registered and leaving
+
+
 def _looks_like_grievance_closing(text: str) -> bool:
     low = (text or "").lower()
     thanked = any(
@@ -441,6 +512,7 @@ class KioskVoiceSession:
                 return
             text = await self._stop_after_goodbye(text)
             text = await self._stop_repeated_receipt_close(text)
+            text = await self._stop_repeated_betul_close(text)
             display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
         elif event.kind == "agent_transcript_final":
@@ -449,6 +521,7 @@ class KioskVoiceSession:
                 return
             text = await self._stop_after_goodbye(text)
             text = await self._stop_repeated_receipt_close(text)
+            text = await self._stop_repeated_betul_close(text)
             self._enqueue_transcript("agent", text)
             display = to_devanagari_display(text)
             await self._send(ev.agent_speaking(display, self.session.turn_count))
@@ -573,6 +646,19 @@ class KioskVoiceSession:
         self._request_finish()
         return cut
 
+    async def _stop_repeated_betul_close(self, text: str) -> str:
+        """Drop a second Betul goodbye glued onto the first."""
+        if not is_betul_jan_sunwai(self.centre):
+            return text
+        cut = _cut_repeated_betul_close(text)
+        if cut == text:
+            return text
+        if not self._goodbye_cut:
+            self._goodbye_cut = True
+            await self._send(ev.interrupt())
+        self._request_finish()
+        return cut
+
     async def _maybe_auto_finish_on_guddi_close(self, text: str) -> None:
         if self._phase_done.is_set() or self._finish_pending:
             return
@@ -589,6 +675,17 @@ class KioskVoiceSession:
         if _TOOL_LEAK_RE.search(text):
             log.info(
                 "kiosk auto-finish on leaked finish tool for %s",
+                self.session.session_id,
+            )
+            self._request_finish()
+            return
+        if is_betul_jan_sunwai(self.centre):
+            if not _looks_like_betul_closing(text):
+                self._closing_turn_count = 0
+                return
+            self._closing_turn_count += 1
+            log.info(
+                "kiosk auto-finish on Betul closing transcript for %s",
                 self.session.session_id,
             )
             self._request_finish()
