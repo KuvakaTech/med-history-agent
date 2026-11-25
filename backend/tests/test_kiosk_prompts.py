@@ -189,6 +189,9 @@ def test_betul_jan_sunwai_prompt_loads():
     assert "JS-BTL" in text
     assert "confirm their full name" not in text.lower()
     kick = kickoff_text(centre, "hi")
+    assert "बैतूल" in text
+    assert "long ऊ" in text
+    assert "अलविदा" in text
     assert "Do not ask their name yet" in kick
     assert "confirm their full name" not in kick.lower()
     assert "Marathi" in kick

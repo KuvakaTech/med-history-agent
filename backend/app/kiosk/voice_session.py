@@ -150,6 +150,49 @@ def _sentence_start(text: str, index: int) -> int:
     return prev + 1
 
 
+_BETUL_KHAYAL_RE = re.compile(
+    r"अपना ख्याल[^।.!?]*|apna khayal[^।.!?]*",
+    re.IGNORECASE,
+)
+_BETUL_THANKS_RE = re.compile(
+    r"जन सुनवाई में आने के लिए धन्यवाद[^।.!?]*|"
+    r"jan sunwai mein aane ke liye dhany\w*[^।.!?]*",
+    re.IGNORECASE,
+)
+_ALVIDA_RE = re.compile(r"\s*(?:अलविदा|alvida)\s*[.!?।]*", re.IGNORECASE)
+_BETUL_SPELLING_RE = re.compile(r"ब[ेै]त[ुू]ल")
+
+
+def _cut_after_betul_sendoff(text: str) -> str:
+    """Stop at धन्यवाद / अपना ख्याल. Drop a recap glued on after the send-off."""
+    raw = text or ""
+    match = _BETUL_KHAYAL_RE.search(raw) or _BETUL_THANKS_RE.search(raw)
+    if match is None:
+        return raw
+    end = match.end()
+    punct = re.match(r"\s*[.!?।]+", raw[end:])
+    if punct:
+        end += punct.end()
+    if not raw[end:].strip():
+        return raw
+    return raw[:end].strip()
+
+
+def _normalize_betul_words(text: str) -> str:
+    """बैतूल with a long ऊ, and no अलविदा."""
+    raw = _BETUL_SPELLING_RE.sub("बैतूल", text or "")
+    raw = re.sub(r"\b(?:betul|baitul|baitool)\b", "बैतूल", raw, flags=re.IGNORECASE)
+    raw = _ALVIDA_RE.sub("", raw)
+    return re.sub(r"[ \t]{2,}", " ", raw).strip()
+
+
+def _prepare_betul_agent_text(text: str) -> str:
+    """One Betul close, spelled बैतूल, ending on धन्यवाद."""
+    cut = _cut_after_betul_sendoff(text or "")
+    cut = _cut_repeated_betul_close(cut)
+    return _normalize_betul_words(cut)
+
+
 def _cut_repeated_betul_close(text: str) -> str:
     """Keep one Betul goodbye. Drop a second close glued on after it."""
     raw = text or ""
@@ -650,9 +693,11 @@ class KioskVoiceSession:
         """Drop a second Betul goodbye glued onto the first."""
         if not is_betul_jan_sunwai(self.centre):
             return text
-        cut = _cut_repeated_betul_close(text)
-        if cut == text:
-            return text
+        trimmed = _cut_repeated_betul_close(_cut_after_betul_sendoff(text))
+        cut = _normalize_betul_words(trimmed)
+        shortened = trimmed.strip() != (text or "").strip()
+        if not shortened:
+            return cut
         if not self._goodbye_cut:
             self._goodbye_cut = True
             await self._send(ev.interrupt())

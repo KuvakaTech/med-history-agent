@@ -19,6 +19,7 @@ from app.kiosk.voice_session import (
     _looks_like_betul_closing,
     _looks_like_grievance_closing,
     _looks_like_guddi_talk_closing,
+    _prepare_betul_agent_text,
 )
 
 
@@ -751,6 +752,23 @@ def test_cut_repeated_betul_close_drops_second_goodbye():
     assert _cut_repeated_betul_close(doubled_sendoff) == sendoff
 
 
+def test_betul_sendoff_drops_glued_recap_and_alvida():
+    glued = (
+        "ऋषभ जी, पानी की दिक्कत के लिए आपकी शिकायत दर्ज हो गई है। "
+        "जन सुनवाई में आने के लिए धन्यवाद जी। अपना ख्याल रखिएगा। "
+        "कोई और सहायता चाहिए?ऋषभ जी, आपने जो जानकारी दी है, उसके हिसाब से "
+        "बैतुल सिटी गली नंबर 4 में पानी की समस्या है। अलविदा।"
+    )
+    cut = _prepare_betul_agent_text(glued)
+    assert cut.endswith("रखिएगा।")
+    assert "कोई और सहायता" not in cut
+    assert "अलविदा" not in cut
+    assert "बैतुल" not in cut
+    assert _prepare_betul_agent_text("बैतुल जन सुनवाई में स्वागत है।") == (
+        "बैतूल जन सुनवाई में स्वागत है।"
+    )
+
+
 def test_betul_closing_without_dhanyavaad_still_counts():
     assert _looks_like_betul_closing(_BETUL_DOUBLED_CLOSE.split("अलविदा।")[0] + "अलविदा।")
     assert not _looks_like_betul_closing("आपका नाम क्या है?")
@@ -768,7 +786,8 @@ async def test_betul_drops_glued_second_close_and_finishes():
     await voice._handle_live_event(event)
 
     saved = voice._transcript_q.get_nowait()
-    assert saved.text.endswith("अलविदा।")
+    assert saved.text.endswith("जा सकते हैं।")
+    assert "अलविदा" not in saved.text
     assert "दर्ज कर ली" not in saved.text
     assert voice._goodbye_cut
     assert voice._finish_pending

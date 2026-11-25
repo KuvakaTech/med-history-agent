@@ -318,6 +318,22 @@ function KioskResultPageInner() {
   );
 }
 
+function screenLetter(text: string): string {
+  const lines = text.replace(/\r\n/g, "\n").split("\n").map((line) => line.trim());
+  const out: string[] = [];
+  let blank = false;
+  for (const line of lines) {
+    if (!line || /^[-_─—–=\s.]+$/.test(line)) {
+      blank = true;
+      continue;
+    }
+    if (blank && out.length) out.push("");
+    blank = false;
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 function V3DocumentResultView({
   slug,
   result,
@@ -394,10 +410,19 @@ function V3DocumentResultView({
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 print:shadow-none print:border-0 print:p-0 print:rounded-none">
             <pre
               data-testid="v3-print-document"
-              className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-900 print:text-[13px] print:leading-snug"
+              className={
+                showLogo
+                  ? "hidden print:block whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-900 print:text-[13px] print:leading-snug"
+                  : "whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-900 print:text-[13px] print:leading-snug"
+              }
             >
               {printDocument}
             </pre>
+            {showLogo && (
+              <pre className="print:hidden whitespace-pre-line font-sans text-sm leading-relaxed text-gray-900">
+                {screenLetter(printDocument)}
+              </pre>
+            )}
           </div>
         </div>
 
