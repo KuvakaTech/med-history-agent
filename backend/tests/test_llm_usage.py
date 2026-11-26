@@ -231,3 +231,54 @@ async def test_default_structured_uses_groq_not_anthropic(monkeypatch):
     mock_anthropic.assert_not_called()
     mock_groq.assert_called_once()
     assert result.full_name == "Via Groq"
+
+
+async def test_legacy_structured_uses_anthropic_not_groq(monkeypatch):
+    """Cabin-only chain. Claude succeeds, so the current Groq model is never called."""
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "groq-key")
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", "")
+
+    from app.kiosk.post_call_extract import GrievanceExtract
+
+    with (
+        patch(
+            "app.agent.llm._anthropic_structured",
+            new=AsyncMock(return_value=GrievanceExtract(full_name="Via Claude")),
+        ) as mock_anthropic,
+        patch("app.agent.llm._groq_structured", new=AsyncMock()) as mock_groq,
+    ):
+        result = await llm.complete_structured(
+            "extract", GrievanceExtract, fast=True, provider="legacy"
+        )
+
+    mock_anthropic.assert_called_once()
+    assert mock_anthropic.await_args.kwargs["fast"] is True
+    mock_groq.assert_not_called()
+    assert result.full_name == "Via Claude"
+
+
+async def test_legacy_structured_falls_back_to_august_groq_model(monkeypatch):
+    """When Claude fails, cabin uses llama-3.3-70b, not settings.GROQ_MODEL."""
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "groq-key")
+    monkeypatch.setattr(settings, "GROQ_MODEL", "openai/gpt-oss-120b")
+
+    from app.kiosk.post_call_extract import GrievanceExtract
+
+    with (
+        patch(
+            "app.agent.llm._anthropic_structured",
+            new=AsyncMock(side_effect=RuntimeError("claude down")),
+        ),
+        patch(
+            "app.agent.llm._groq_structured",
+            new=AsyncMock(return_value=GrievanceExtract(full_name="Via Llama")),
+        ) as mock_groq,
+    ):
+        result = await llm.complete_structured(
+            "extract", GrievanceExtract, provider="legacy"
+        )
+
+    assert mock_groq.await_args.kwargs["model"] == "llama-3.3-70b-versatile"
+    assert result.full_name == "Via Llama"

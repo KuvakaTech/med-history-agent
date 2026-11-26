@@ -39,6 +39,20 @@ def test_v3_complaint_tool_requires_session_and_print_mode():
     assert required == {"reason", "session_type", "print_mode"}
     assert "application_letter" in (decl.description or "")
     assert "citizen name must be confirmed" in (decl.description or "").lower()
+    print_mode = decl.parameters.properties["print_mode"].description or ""
+    session_type = decl.parameters.properties["session_type"].description or ""
+    assert "info_request_sheet" not in print_mode
+    assert "help_desk" in session_type
+
+
+def test_betul_complaint_tool_includes_flow_c():
+    tools = complaint_tools(betul=True)
+    decl = tools[0].function_declarations[0]
+    required = set(decl.parameters.required or [])
+    assert required == {"reason", "session_type", "print_mode"}
+    assert "info_request_sheet" in (decl.parameters.properties["print_mode"].description or "")
+    assert "information_request" in (decl.parameters.properties["session_type"].description or "")
+    assert "help_desk" not in (decl.parameters.properties["session_type"].description or "")
 
 
 def test_parse_order_tool_before_audio_then_turn_complete():

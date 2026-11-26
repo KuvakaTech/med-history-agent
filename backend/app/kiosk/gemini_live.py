@@ -262,7 +262,7 @@ def lesson_tools() -> list[Tool]:
     ]
 
 
-def complaint_tools(*, v3: bool = False) -> list[Tool]:
+def complaint_tools(*, v3: bool = False, betul: bool = False) -> list[Tool]:
     properties: dict = {
         "reason": Schema(
             type=Type.STRING,
@@ -294,6 +294,27 @@ def complaint_tools(*, v3: bool = False) -> list[Tool]:
         properties["print_mode"] = Schema(
             type=Type.STRING,
             description="application_letter | info_sheet | none",
+        )
+        required = ["reason", "session_type", "print_mode"]
+    elif betul:
+        description = (
+            "Call ONCE immediately after the spoken close (Section 15A, 15B, or 15C) — "
+            "deliver a single goodbye, then call this tool with session_type and "
+            "print_mode. Before calling: for a complaint or information_request the "
+            "citizen name must be confirmed; for a letter you must have orally "
+            "enumerated every required document and told them to present it at today's "
+            "Jan Sunwai. mixed → print_mode application_letter. information_request → "
+            "print_mode info_request_sheet. Do not repeat closing phrases or keep talking."
+        )
+        properties["session_type"] = Schema(
+            type=Type.STRING,
+            description=(
+                "complaint | information | information_request | mixed — primary session mode"
+            ),
+        )
+        properties["print_mode"] = Schema(
+            type=Type.STRING,
+            description="application_letter | info_sheet | info_request_sheet | none",
         )
         required = ["reason", "session_type", "print_mode"]
     return [

@@ -25,6 +25,14 @@ CENTRES = [
         "complaint_prefix": "JS-VNS",
     },
     {
+        "slug": "betul-jan-sunwai",
+        "name": "Betul Jan Sunwai",
+        "default_language": "hi",
+        "centre_kind": "grievance",
+        "prompt_file": "betul_jan_sunwai_system.txt",
+        "complaint_prefix": "JS-BTL",
+    },
+    {
         "slug": "barwani-jan-sunwai",
         "name": "Barwani Jan Sunwai",
         "default_language": "hi",

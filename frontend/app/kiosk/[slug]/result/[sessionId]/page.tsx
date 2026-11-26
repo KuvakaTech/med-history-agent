@@ -1,6 +1,7 @@
 "use client";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { BetulLogo } from "@/components/BetulLogo";
 import { kioskApi } from "@/lib/kiosk-api";
 import type {
   GrievanceAddress,
@@ -9,6 +10,7 @@ import type {
 } from "@/lib/kiosk-types";
 import {
   isBarwaniJanSunwaiSlug,
+  isBetulJanSunwaiSlug,
   isGuddiTalkSlug,
   isGwaliorNagarSevaSlug,
   isJanSunwaiSlug,
@@ -65,6 +67,9 @@ function KioskResultPageInner() {
 
   const isLearning = result?.centre_kind === "learning" || result?.centre_kind === "talk";
   const isV3 = isJanSunwaiV3Slug(slug);
+  const isBetul = isBetulJanSunwaiSlug(slug);
+  const isLetterKiosk = isV3 || isBetul;
+  const centreLabel = isBetul ? "बैतूल जन सुनवाई" : "वाराणसी जन सुनवाई";
   const printDocument =
     result?.print_document_text || result?.grievance?.print_document_text || "";
   const printMode = result?.print_mode || result?.grievance?.print_mode || "";
@@ -80,11 +85,11 @@ function KioskResultPageInner() {
 
   useEffect(() => {
     if (!result || !autoprint || isLearning || countdownStartedRef.current) return;
-    const shouldAutoprint = isV3 ? hasPrintableDoc : true;
+    const shouldAutoprint = isLetterKiosk ? hasPrintableDoc : true;
     if (!shouldAutoprint) return;
     countdownStartedRef.current = true;
     setCountdown(5);
-  }, [result, autoprint, isLearning, isV3, hasPrintableDoc]);
+  }, [result, autoprint, isLearning, isLetterKiosk, hasPrintableDoc]);
 
   useEffect(() => {
     if (countdown === null) return;
@@ -113,7 +118,9 @@ function KioskResultPageInner() {
     if (isVaranasiNagarNigamSlug(slug)) {
       document.title = "Varanasi Nagar Nigam";
     } else if (isGwaliorNagarSevaSlug(slug)) {
-      document.title = "Gwalior Nagar Seva";
+      document.title = "Gwalior Smart City";
+    } else if (isBetul) {
+      document.title = "बैतूल जन सुनवाई";
     } else if (isJanSunwaiSlug(slug)) {
       document.title = "वाराणसी जन सुनवाई";
     } else if (isBarwaniJanSunwaiSlug(slug)) {
@@ -126,7 +133,7 @@ function KioskResultPageInner() {
     return () => {
       document.title = "Community Health Assistant";
     };
-  }, [slug]);
+  }, [slug, isBetul]);
 
   if (loading) {
     return (
@@ -145,7 +152,7 @@ function KioskResultPageInner() {
           className="btn-primary"
           onClick={() => router.push(`/kiosk/${slug}/start`)}
         >
-          {slug === "barwani-guddi" || isGuddiTalkSlug(slug) ? "नया सबक" : isV3 ? "नई बात" : "नई शिकायत"}
+          {slug === "barwani-guddi" || isGuddiTalkSlug(slug) ? "नया सबक" : isLetterKiosk ? "नई बात" : "नई शिकायत"}
         </button>
       </main>
     );
@@ -164,15 +171,15 @@ function KioskResultPageInner() {
 
   const g = result.grievance;
   const isPartial = result.status === "partial";
-  const newSessionLabel = isV3 ? "नई बात" : "नई शिकायत";
+  const newSessionLabel = isLetterKiosk ? "नई बात" : "नई शिकायत";
   const docTitle =
     printMode === "application_letter"
       ? "प्रार्थना पत्र"
-      : printMode === "info_sheet"
+      : printMode === "info_sheet" || printMode === "info_request_sheet"
         ? "जानकारी पत्र"
         : "जन सुनवाई";
 
-  if (isV3 && hasPrintableDoc) {
+  if (isLetterKiosk && hasPrintableDoc) {
     return (
       <V3DocumentResultView
         slug={slug}
@@ -181,6 +188,8 @@ function KioskResultPageInner() {
         printRef={printRef}
         printDocument={printDocument}
         docTitle={docTitle}
+        centreLabel={centreLabel}
+        showLogo={isBetul}
         newSessionLabel={newSessionLabel}
         countdown={countdown}
         setCountdown={setCountdown}
@@ -188,23 +197,27 @@ function KioskResultPageInner() {
     );
   }
 
-  if (isV3 && printMode === "none" && !isPartial) {
+  if (isLetterKiosk && printMode === "none" && !isPartial) {
     return (
       <V3HelpDeskResultView
         slug={slug}
         result={result}
         router={router}
+        centreLabel={centreLabel}
+        showLogo={isBetul}
         newSessionLabel={newSessionLabel}
       />
     );
   }
 
-  if (isV3) {
+  if (isLetterKiosk) {
     return (
       <V3IncompleteResultView
         slug={slug}
         result={result}
         router={router}
+        centreLabel={centreLabel}
+        showLogo={isBetul}
         newSessionLabel={newSessionLabel}
       />
     );
@@ -251,7 +264,7 @@ function KioskResultPageInner() {
           {isVaranasiNagarNigamSlug(slug) ? (
             <p className="text-lg font-extrabold text-orange-600">वाराणसी नगर निगम</p>
           ) : isGwaliorNagarSevaSlug(slug) ? (
-            <p className="text-lg font-extrabold text-orange-600">ग्वालियर नगर सेवा</p>
+            <p className="text-lg font-extrabold text-orange-600">ग्वालियर स्मार्ट सिटी</p>
           ) : isJanSunwaiSlug(slug) ? (
             <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
           ) : isBarwaniJanSunwaiSlug(slug) ? (
@@ -305,6 +318,22 @@ function KioskResultPageInner() {
   );
 }
 
+function screenLetter(text: string): string {
+  const lines = text.replace(/\r\n/g, "\n").split("\n").map((line) => line.trim());
+  const out: string[] = [];
+  let blank = false;
+  for (const line of lines) {
+    if (!line || /^[-_─—–=\s.]+$/.test(line)) {
+      blank = true;
+      continue;
+    }
+    if (blank && out.length) out.push("");
+    blank = false;
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 function V3DocumentResultView({
   slug,
   result,
@@ -312,6 +341,8 @@ function V3DocumentResultView({
   printRef,
   printDocument,
   docTitle,
+  centreLabel,
+  showLogo,
   newSessionLabel,
   countdown,
   setCountdown,
@@ -322,6 +353,8 @@ function V3DocumentResultView({
   printRef: React.RefObject<HTMLDivElement>;
   printDocument: string;
   docTitle: string;
+  centreLabel: string;
+  showLogo?: boolean;
   newSessionLabel: string;
   countdown: number | null;
   setCountdown: (v: number | null) => void;
@@ -363,7 +396,13 @@ function V3DocumentResultView({
 
       <div ref={printRef} className="max-w-2xl mx-auto px-4 py-8 print:max-w-none print:px-8 print:py-6">
         <div className="text-center space-y-2 print:hidden mb-4">
-          <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
+          {showLogo ? (
+            <div className="flex justify-center">
+              <BetulLogo />
+            </div>
+          ) : (
+            <p className="text-lg font-extrabold text-orange-600">{centreLabel}</p>
+          )}
           <h1 className="text-xl font-bold text-gray-900">आपका दस्तावेज़ तैयार है</h1>
         </div>
 
@@ -371,10 +410,19 @@ function V3DocumentResultView({
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 print:shadow-none print:border-0 print:p-0 print:rounded-none">
             <pre
               data-testid="v3-print-document"
-              className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-900 print:text-[13px] print:leading-snug"
+              className={
+                showLogo
+                  ? "hidden print:block whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-900 print:text-[13px] print:leading-snug"
+                  : "whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-900 print:text-[13px] print:leading-snug"
+              }
             >
               {printDocument}
             </pre>
+            {showLogo && (
+              <pre className="print:hidden whitespace-pre-line font-sans text-sm leading-relaxed text-gray-900">
+                {screenLetter(printDocument)}
+              </pre>
+            )}
           </div>
         </div>
 
@@ -391,11 +439,15 @@ function V3IncompleteResultView({
   slug,
   result,
   router,
+  centreLabel,
+  showLogo,
   newSessionLabel,
 }: {
   slug: string;
   result: SessionResultResponse;
   router: ReturnType<typeof useRouter>;
+  centreLabel: string;
+  showLogo?: boolean;
   newSessionLabel: string;
 }) {
   return (
@@ -412,7 +464,13 @@ function V3IncompleteResultView({
       </header>
 
       <div className="max-w-2xl mx-auto px-6 py-12 space-y-6 text-center">
-        <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
+        {showLogo ? (
+          <div className="flex justify-center">
+            <BetulLogo />
+          </div>
+        ) : (
+          <p className="text-lg font-extrabold text-orange-600">{centreLabel}</p>
+        )}
         <h1 className="text-xl font-bold text-gray-900">अधूरी बातचीत</h1>
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl py-4 px-5">
           आपका प्रार्थना पत्र / जानकारी पत्र तैयार नहीं हो सका। कृपया काउंटर पर कर्मचारी
@@ -438,11 +496,15 @@ function V3HelpDeskResultView({
   slug,
   result,
   router,
+  centreLabel,
+  showLogo,
   newSessionLabel,
 }: {
   slug: string;
   result: SessionResultResponse;
   router: ReturnType<typeof useRouter>;
+  centreLabel: string;
+  showLogo?: boolean;
   newSessionLabel: string;
 }) {
   return (
@@ -459,7 +521,13 @@ function V3HelpDeskResultView({
       </header>
 
       <div className="max-w-2xl mx-auto px-6 py-12 space-y-6 text-center">
-        <p className="text-lg font-extrabold text-orange-600">वाराणसी जन सुनवाई</p>
+        {showLogo ? (
+          <div className="flex justify-center">
+            <BetulLogo />
+          </div>
+        ) : (
+          <p className="text-lg font-extrabold text-orange-600">{centreLabel}</p>
+        )}
         <h1 className="text-xl font-bold text-gray-900">धन्यवाद</h1>
         <p className="text-base text-gray-700">
           आपकी बात सुन ली गई। किसी दस्तावेज़ की आवश्यकता नहीं है।

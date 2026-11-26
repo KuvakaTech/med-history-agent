@@ -12,13 +12,16 @@ from app.kiosk.models import KioskCentre, KioskSession, KioskTranscriptEntry
 from app.kiosk.post_call_extract import (
     GrievanceExtract,
     JanSunwaiV3MetaExtract,
+    _BETUL_META_EXTRACT_PROMPT,
     _JAN_SUNWAI_V3_META_EXTRACT_PROMPT,
     _extract_prompt_for_centre,
+    _resolve_betul_modes,
     _resolve_v3_modes,
     fill_print_placeholders,
     format_transcript,
     parse_jansunwai_record,
     run_post_call_extract,
+    template_betul_print_document,
     template_v3_print_document,
 )
 
@@ -158,6 +161,69 @@ def test_resolve_v3_modes_mixed_forces_application_letter():
     session_type, print_mode = _resolve_v3_modes(session, extracted, None)
     assert session_type == "mixed"
     assert print_mode == "application_letter"
+
+
+def test_resolve_v3_modes_unknown_print_mode_still_rewritten():
+    session = KioskSession(centre_id="c1")
+    extracted = JanSunwaiV3MetaExtract(
+        session_type="information",
+        print_mode="info_request_sheet",
+    )
+    session_type, print_mode = _resolve_v3_modes(session, extracted, None)
+    assert session_type == "information"
+    assert print_mode == "info_sheet"
+
+
+def test_resolve_betul_modes_information_request():
+    session = KioskSession(
+        centre_id="c1",
+        finish_session_type="information_request",
+        finish_print_mode="info_sheet",
+    )
+    extracted = JanSunwaiV3MetaExtract(session_type="information", print_mode="info_sheet")
+    session_type, print_mode = _resolve_betul_modes(session, extracted, None)
+    assert session_type == "information_request"
+    assert print_mode == "info_request_sheet"
+
+
+def test_resolve_betul_modes_mixed_forces_application_letter():
+    session = KioskSession(centre_id="c1")
+    extracted = JanSunwaiV3MetaExtract(session_type="mixed", print_mode="info_sheet")
+    session_type, print_mode = _resolve_betul_modes(session, extracted, None)
+    assert session_type == "mixed"
+    assert print_mode == "application_letter"
+
+
+def test_betul_extract_prompt_is_betul_specific():
+    assert "Betul" in _BETUL_META_EXTRACT_PROMPT
+    assert "info_request_sheet" in _BETUL_META_EXTRACT_PROMPT
+    assert "Multai" in _BETUL_META_EXTRACT_PROMPT
+    assert "जिला बैतूल" in _BETUL_META_EXTRACT_PROMPT
+    assert "Sadar" not in _BETUL_META_EXTRACT_PROMPT
+    assert "PVVNL" not in _BETUL_META_EXTRACT_PROMPT
+
+
+def test_template_betul_print_does_not_use_varanasi():
+    meta = JanSunwaiV3MetaExtract(
+        full_name="Ramesh Uikey",
+        department_tag="land_revenue",
+        chief_complaint_or_query="kabza",
+    )
+    letter = template_betul_print_document(meta, "application_letter")
+    sheet = template_betul_print_document(meta, "info_request_sheet")
+    assert "बैतूल" in letter
+    assert "वाराणसी" not in letter
+    assert "प्रार्थना पत्र" in letter
+    assert "{{DATE}}" in letter
+    assert "पंजीकृत मोबाइल" in sheet
+    assert "वाराणसी" not in sheet
+
+
+def test_template_v3_header_stays_varanasi():
+    meta = JanSunwaiV3MetaExtract(full_name="Ram Kumar")
+    text = template_v3_print_document(meta, "application_letter")
+    assert "वाराणसी" in text
+    assert "बैतूल" not in text
 
 
 def test_resolve_v3_modes_mixed_overrides_record_info_sheet():

@@ -14,8 +14,12 @@ from app.kiosk.models import KioskCentre, KioskSession
 from app.kiosk.voice_session import (
     KioskVoiceSession,
     _cut_at_first_goodbye,
+    _cut_repeated_betul_close,
+    _cut_repeated_receipt_close,
+    _looks_like_betul_closing,
     _looks_like_grievance_closing,
     _looks_like_guddi_talk_closing,
+    _prepare_betul_agent_text,
 )
 
 
@@ -700,6 +704,110 @@ def test_looks_like_grievance_closing():
     )
     assert _looks_like_grievance_closing(closing)
     assert not _looks_like_grievance_closing("आपका नाम क्या है?")
+    gwalior = (
+        "Dhanyavaad ji. Rasid sambhaal kar rakhiye. Shikayat ki koi fees nahi hai."
+    )
+    assert _looks_like_grievance_closing(gwalior)
+
+
+def test_cut_repeated_receipt_close():
+    once = "धन्यवाद जी। रसीद संभाल कर रखिये। शिकायत की कोई फीस नहीं है।"
+    assert _cut_repeated_receipt_close(once) == once
+    doubled = (
+        "धन्यवाद जी। रसीद संभाल कर रखिये। शिकायत की कोई फीस नहीं है।"
+        "धन्यवाद जी। रसीद संभाल कर रखिये। शिकायत ."
+    )
+    assert _cut_repeated_receipt_close(doubled) == once
+    mixed = (
+        "धन्यवाद जी। रसीद संभाल कर रखिए, शिकायत की कोई फीस नहीं है। "
+        "आपकी शिकायत दर्ज हो गई है.धन्यवाद जी. रसीद संभाल कर रखिये. "
+        "शिकायत की कोई फीस नहीं है.धन्यवाद जी. रसीद संभाल"
+    )
+    cut = _cut_repeated_receipt_close(mixed)
+    assert cut.count("धन्यवाद") == 1
+    assert "दर्ज" not in cut
+    assert cut.endswith("है।")
+
+
+_BETUL_DOUBLED_CLOSE = (
+    "ठीक है। आपकी शिकायत दर्ज हो गई है। आपकी समस्या के समाधान के लिए "
+    "ज़रूरी कार्रवाई की जाएगी। अब आप जा सकते हैं। अलविदा।"
+    "ठीक है। आपकी शिकायत दर्ज कर ली गई है। अब आप जा सकते हैं। धन्यवाद!"
+)
+
+
+def test_cut_repeated_betul_close_drops_second_goodbye():
+    once = (
+        "ठीक है। आपकी शिकायत दर्ज हो गई है। आपकी समस्या के समाधान के लिए "
+        "ज़रूरी कार्रवाई की जाएगी। अब आप जा सकते हैं। अलविदा।"
+    )
+    assert _cut_repeated_betul_close(_BETUL_DOUBLED_CLOSE) == once
+    assert _cut_repeated_betul_close(once) == once
+    sendoff = (
+        "आपकी शिकायत दर्ज हो चुकी है। जन सुनवाई में आने के लिए धन्यवाद। "
+        "अपना ख्याल रखिएगा।"
+    )
+    assert _cut_repeated_betul_close(sendoff) == sendoff
+    doubled_sendoff = sendoff + " जन सुनवाई में आने के लिए धन्यवाद। अपना ख्याल रखिएगा।"
+    assert _cut_repeated_betul_close(doubled_sendoff) == sendoff
+
+
+def test_betul_sendoff_drops_glued_recap_and_alvida():
+    glued = (
+        "ऋषभ जी, पानी की दिक्कत के लिए आपकी शिकायत दर्ज हो गई है। "
+        "जन सुनवाई में आने के लिए धन्यवाद जी। अपना ख्याल रखिएगा। "
+        "कोई और सहायता चाहिए?ऋषभ जी, आपने जो जानकारी दी है, उसके हिसाब से "
+        "बैतुल सिटी गली नंबर 4 में पानी की समस्या है। अलविदा।"
+    )
+    cut = _prepare_betul_agent_text(glued)
+    assert cut.endswith("रखिएगा।")
+    assert "कोई और सहायता" not in cut
+    assert "अलविदा" not in cut
+    assert "बैतुल" not in cut
+    assert _prepare_betul_agent_text("बैतुल जन सुनवाई में स्वागत है।") == (
+        "बैतूल जन सुनवाई में स्वागत है।"
+    )
+
+
+def test_betul_closing_without_dhanyavaad_still_counts():
+    assert _looks_like_betul_closing(_BETUL_DOUBLED_CLOSE.split("अलविदा।")[0] + "अलविदा।")
+    assert not _looks_like_betul_closing("आपका नाम क्या है?")
+
+
+@pytest.mark.asyncio
+async def test_betul_drops_glued_second_close_and_finishes():
+    session = KioskSession(centre_id="c1", phone="9999999999", language="hi")
+    centre = KioskCentre(slug="betul-jan-sunwai", name="Betul Jan Sunwai")
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
+
+    event = LiveEvent(kind="agent_transcript_final", text=_BETUL_DOUBLED_CLOSE)
+    await voice._handle_live_event(event)
+
+    saved = voice._transcript_q.get_nowait()
+    assert saved.text.endswith("जा सकते हैं।")
+    assert "अलविदा" not in saved.text
+    assert "दर्ज कर ली" not in saved.text
+    assert voice._goodbye_cut
+    assert voice._finish_pending
+    assert not voice._phase_done.is_set()
+
+
+@pytest.mark.asyncio
+async def test_varanasi_keeps_a_glued_second_close():
+    session = KioskSession(centre_id="c1", phone="9999999999", language="hi")
+    centre = KioskCentre(slug="varanasi-jan-sunwai-v3", name="Varanasi")
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    voice = KioskVoiceSession(session=session, ws=ws, centre=centre)
+
+    event = LiveEvent(kind="agent_transcript_final", text=_BETUL_DOUBLED_CLOSE)
+    await voice._handle_live_event(event)
+
+    saved = voice._transcript_q.get_nowait()
+    assert "दर्ज कर ली" in saved.text
+    assert not voice._goodbye_cut
 
 
 @pytest.mark.asyncio

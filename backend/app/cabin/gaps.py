@@ -76,5 +76,6 @@ async def detect_gaps(profile: PatientProfile, panel: ClinicalPanel) -> GapAlert
         system=GAP_SYSTEM_PROMPT,
         fast=True,
         max_tokens=settings.CABIN_GAP_MAX_TOKENS,
+        provider="legacy",
     )
     return result  # type: ignore[return-value]

@@ -5,7 +5,11 @@ import os
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only")
 
-from app.kiosk.models import KioskCentre, prompt_file_for_centre
+from app.kiosk.models import (
+    KioskCentre,
+    complaint_prefix_for_centre,
+    prompt_file_for_centre,
+)
 from app.kiosk.prompts import (
     is_guddi_talk,
     is_guddi_v5,
@@ -111,15 +115,35 @@ def test_gwalior_nagar_seva_prompt_loads():
     )
     assert prompt_file_for_centre(centre) == "gwalior_nagar_seva_system.txt"
     text = system_instruction(centre, "hi")
-    assert "NAGAR SEVA" in text.upper() or "Nagar Seva Sahayika" in text
+    assert "Nagar Seva Sahayika" in text
+    assert "Gwalior Smart City" in text
+    assert "at most 20 words" in text
     assert "MPMKVVCL" in text
     assert "Swami Vivekanand" in text or "ward 29" in text.lower()
     assert "NEVER invent, guess, or speak any number" in text
     assert "NS-GWL-" in text
+    assert "Yeh kiosk kiska hai" in text
     kick = kickoff_text(centre, "hi")
     assert "Nagar Seva" in kick
-    assert "Hindi or English" in kick
-    assert "Do NOT ask Hindi or English" not in kick
+    assert "Gwalior Smart City" in kick
+    assert "Bataiye mai apki kya seva kar sakti hu" in kick
+    assert "do not offer Hindi or English" in kick
+    assert "Do not disclose you are AI" in kick
+
+
+def test_gwalior_relation_question_follows_screen_gender():
+    centre = KioskCentre(
+        slug="gwalior-nagar-seva",
+        name="Gwalior Nagar Seva",
+        prompt_file="gwalior_nagar_seva_system.txt",
+    )
+    male = system_instruction(centre, "hi", gender="male").split("SCREEN GENDER:", 1)[1]
+    assert "Pita ji ka naam bata dijiye ji." in male
+    assert "ya pati" not in male
+    female = system_instruction(centre, "hi", gender="female").split("SCREEN GENDER:", 1)[1]
+    assert "Pita ji ya pati ka naam?" in female
+    unknown = system_instruction(centre, "hi").split("SCREEN GENDER:", 1)[1]
+    assert "Pita ji ya pati ka naam?" in unknown
 
 
 def test_jan_sunwai_v3_prompt_loads():
@@ -149,6 +173,29 @@ def test_jan_sunwai_v3_prompt_loads():
     assert "Rajatalab" in text
     assert "confirm name" in text.lower() or "CONFIRM" in text
     assert "Never claim documents were already explained" in text
+
+
+def test_betul_jan_sunwai_prompt_loads():
+    centre = KioskCentre(slug="betul-jan-sunwai", name="Betul Jan Sunwai")
+    assert prompt_file_for_centre(centre) == "betul_jan_sunwai_system.txt"
+    assert complaint_prefix_for_centre(centre) == "JS-BTL"
+    text = system_instruction(centre, "hi", phone_on_record="9876543210")
+    assert "बैतूल" in text
+    assert "info_request_sheet" in text
+    assert "information_request" in text
+    assert "MARATHI" in text
+    assert "actually speaking Marathi" in text
+    assert "Do NOT ask for their name before" in text
+    assert "JS-BTL" in text
+    assert "confirm their full name" not in text.lower()
+    kick = kickoff_text(centre, "hi")
+    assert "बैतूल" in text
+    assert "long ऊ" in text
+    assert "अलविदा" in text
+    assert "Do not ask their name yet" in kick
+    assert "confirm their full name" not in kick.lower()
+    assert "Marathi" in kick
+    assert "language choice" in kick.lower()
 
 
 def test_guddi_talk_prompt_is_speech_only():
