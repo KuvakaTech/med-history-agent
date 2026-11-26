@@ -101,7 +101,7 @@ export default function KioskAdminDashboard() {
             topic: isLearningCentre && topicSearch ? topicSearch : undefined,
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
-            limit: 200,
+            limit: 500,
           }),
           kioskAdminApi.getCurrentCentre(t, cid || null),
         ]);

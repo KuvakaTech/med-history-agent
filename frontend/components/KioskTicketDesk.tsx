@@ -3,6 +3,9 @@ import { useMemo, useState } from "react";
 import clsx from "clsx";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CheckCircle2,
   ClipboardList,
   FileText,
@@ -21,6 +24,7 @@ import {
 
 type LevelTab = "all" | 1 | 2 | 3;
 type StatusTab = "open" | "escalated" | "overdue" | "closed" | "all";
+type SortDir = "asc" | "desc";
 
 const STATUS_TABS: Array<{ key: StatusTab; label: string }> = [
   { key: "open", label: "Open" },
@@ -125,6 +129,10 @@ export default function KioskTicketDesk({
   const [statusTab, setStatusTab] = useState<StatusTab>("open");
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
+  // Sort is purely client-side — the backend returns sessions unordered by
+  // ended_at, so we re-sort the already-fetched list in place rather than
+  // round-tripping to the API for something this cheap.
+  const [endedSort, setEndedSort] = useState<SortDir | null>(null);
 
   const counts = useMemo(() => {
     const open = tickets.filter((t) => !t.closed);
@@ -161,13 +169,28 @@ export default function KioskTicketDesk({
     }));
   }, [tickets, levelTab]);
 
-  const filtered = useMemo(
-    () =>
-      tickets.filter(
-        (t) => (levelTab === "all" || t.level === levelTab) && matchesStatus(t, statusTab)
-      ),
-    [tickets, levelTab, statusTab]
-  );
+  const filtered = useMemo(() => {
+    const rows = tickets.filter(
+      (t) => (levelTab === "all" || t.level === levelTab) && matchesStatus(t, statusTab)
+    );
+    if (!endedSort) return rows;
+    // Still-open tickets have no ended_at — park them at the end regardless
+    // of direction so the sort only ever reorders tickets that actually closed.
+    const withTime = rows.map((t) => ({
+      t,
+      ms: t.session.ended_at ? new Date(t.session.ended_at).getTime() : null,
+    }));
+    withTime.sort((a, b) => {
+      if (a.ms === null && b.ms === null) return 0;
+      if (a.ms === null) return 1;
+      if (b.ms === null) return -1;
+      return endedSort === "asc" ? a.ms - b.ms : b.ms - a.ms;
+    });
+    return withTime.map((r) => r.t);
+  }, [tickets, levelTab, statusTab, endedSort]);
+
+  const cycleEndedSort = () =>
+    setEndedSort((prev) => (prev === null ? "desc" : prev === "desc" ? "asc" : null));
 
   const detailsTicket = tickets.find((t) => t.session.session_id === detailsId) ?? null;
   const closingTicket = tickets.find((t) => t.session.session_id === closingId) ?? null;
@@ -214,13 +237,30 @@ export default function KioskTicketDesk({
               <th className="px-4 py-3 text-left font-semibold text-gray-500">Assigned officer</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-500">Level</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-500">SLA</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-500">
+                <button
+                  type="button"
+                  onClick={cycleEndedSort}
+                  className="inline-flex items-center gap-1 hover:text-gray-800"
+                  title="Sort by ended at"
+                >
+                  Ended At
+                  {endedSort === "desc" ? (
+                    <ArrowDown size={12} />
+                  ) : endedSort === "asc" ? (
+                    <ArrowUp size={12} />
+                  ) : (
+                    <ArrowUpDown size={12} className="text-gray-300" />
+                  )}
+                </button>
+              </th>
               <th className="px-5 py-3 text-right font-semibold text-gray-500">Action</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
                   <ClipboardList size={22} className="mx-auto mb-2 text-gray-300" />
                   No tickets match this filter.
                 </td>
@@ -274,6 +314,9 @@ export default function KioskTicketDesk({
                       <p className="text-[11px] text-gray-400">
                         {t.slaHours}h per level{t.urgent ? " · urgent" : ""}
                       </p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">
+                      {t.session.ended_at_ist || "—"}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-2">
